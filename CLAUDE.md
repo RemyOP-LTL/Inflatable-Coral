@@ -22,6 +22,7 @@ Anything marked TBD has not been decided. Do not guess; ask Remy.
 - Venue: Burning Man (outdoor desert: wind, dust, off-grid power, transport and assembly on site). Not yet worked through; raise when relevant.
 - Skin material: corrugated plastic sheet, 1 mm wall. For now only the top layer is simulated; the rest is ignored until later. Sheets are 4 x 8 ft (48 x 96 in).
 - Skin holes: pentagons get normal (round) holes for the polyps; all other polygons get the offset cutout that thins toward the middle of each shared edge.
+- Cutting: Remy hopes to buy his own CNC router and cut the plastic himself (router not chosen yet; its bed size and tooling will set limits on part size and cut details). Fusion 360 CAM is for this.
 - Skin test shapes: tube 12-16 in across (tubular coral), and later a domed brain-coral shape.
 - Polyp material: nylon fabric (woven, no stretch), sewn, like inflatable costumes. Default design `polyp-5-taper`: 5 fingers, cuff slides over a 5 in tube. See `polyps/fabric-pattern/`.
 - Number of polyps: one per pentagon panel (count follows the skin layout).
@@ -62,4 +63,4 @@ Lessons carried over:
 
 ## Team
 - Remy — lead
-- TBD: names and who works on what
+- No one else yet. Remy will update this section when that changes.
