@@ -10,15 +10,16 @@ A large coral sculpture, 20 ft tall, with living polyps and integrated illuminat
 - polyps/  — Inflatable polyps. Sub-folders:
     - fabric-pattern/ — sewn nylon pattern, string channels
     - motor/          — motor that winds the string
-    - electronics/    — controller, driver, power
+    - electronics/    — custom board with motor controllers and LEDs; controller, power
     - air/            — blowers, ducting, pressure (workstream, just started)
+- lighting/ — Integrated illumination for the whole sculpture (not started)
 - shared/  — Dimensions, materials, and mounting points that all parts must agree on. Check here before assuming a number.
 
 ## Key facts
 Anything marked TBD has not been decided. Do not guess; ask Remy.
 - CAD tool: **Fusion 360.** The Onshape files in the older repo are reference only.
 - Overall size: **20 ft tall** (assumed, per Remy 2026-10-30); width TBD. The 12-16 in tube is a test shape; whether it is a real branch size is not settled.
-- Illumination: integrated lighting is part of the sculpture. Not designed yet; no folder yet. Ask Remy whether to add a `lighting/` folder when that work starts.
+- Illumination: integrated lighting is part of the sculpture. Not designed yet; see `lighting/`. Per-polyp LEDs are planned for the custom board in `polyps/electronics/`.
 - Venue: Burning Man (outdoor desert: wind, dust, off-grid power, transport and assembly on site). Not yet worked through; raise when relevant.
 - Skin material: corrugated plastic sheet, 1 mm wall. For now only the top layer is simulated; the rest is ignored until later. Sheets are 4 x 8 ft (48 x 96 in).
 - Skin holes: pentagons get normal (round) holes for the polyps; all other polygons get the offset cutout that thins toward the middle of each shared edge.

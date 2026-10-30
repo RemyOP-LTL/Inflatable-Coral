@@ -7,7 +7,7 @@ Inflatable polyps. One sits in each pentagon panel of the skin.
 - `air/` — blowers, ducting and pressure (a separate workstream).
 - `fabric-pattern/` — the sewn nylon pattern, including string channels.
 - `motor/` — the motor that winds the string.
-- `electronics/` — controller, motor driver, blowers, power.
+- `electronics/` — custom board with motor controllers and LEDs; controller, power.
 
 ## How a polyp works (from Remy)
 - Made of nylon fabric, sewn together, like inflatable costumes.
