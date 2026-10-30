@@ -15,7 +15,7 @@ Inflatable polyps. One sits in each pentagon panel of the skin.
 - A motor winds up the string to collapse the polyp. Releasing the string lets the air inflate it again.
 
 ## Status
-Not started in this repo. Remy has a basic polyp shape from another thread, to be handed over.
+Fabric pattern in `fabric-pattern/` (copied from the Modeling repo and re-run successfully). Design `polyp-5-taper`: 5 fingers on a cuff that slides over a 5 in tube. Motor and electronics not started.
 
 ## Open questions
 - Polyp size and finger count (sets pentagon size in `skin/`).
@@ -23,4 +23,5 @@ Not started in this repo. Remy has a basic polyp shape from another thread, to b
 - Centre pull or per-finger pull.
 
 ## Next
-- Receive the basic polyp shape and put it in `fabric-pattern/`.
+- Settle polyp size against the skin hole (see `shared/CLAUDE.md`).
+- Choose centre pull or per-finger pull, then add string channels to the pattern.
