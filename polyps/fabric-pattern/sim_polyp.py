@@ -197,6 +197,9 @@ def build(single=False):
     vol = np.einsum("ij,ij->i", Xm[F[:, 0]], np.cross(Xm[F[:, 1]], Xm[F[:, 2]])).sum()
     if vol < 0:
         F = F[:, [0, 2, 1]]
+    # the string seam: down the inside of the finger, from the tip to the centre point
+    ce = edges["centre"]
+    string_path = newid[ce[int(np.argmax(uv[ce][:, 1])):]]
     tip_local = np.argmin(np.linalg.norm(uv - [0, P.THUMB_LENGTH], axis=1))
     tips = newid[[2 * k * npts + tip_local for k in ks]]
     centre = newid[np.argmin(np.linalg.norm(uv - [P.W0 / 2, -P.TRI_DEPTH], axis=1))]
@@ -208,7 +211,7 @@ def build(single=False):
             idx = np.unique(newid[np.concatenate([edges["v_top"], edges["v_cuff"]]) + off])
             planes.append((idx, np.array([-math.sin(b), math.cos(b), 0.0])))
     return dict(X=Xm, F=F, E=E, L=L, BP=BP, LB=LB, seam=seam, hem=hem, tips=tips, centre=centre,
-                planes=planes, single=single)
+                planes=planes, single=single, string_path=string_path, cuff=Xm[:, 2] < -0.05)
 
 
 def _scatter(n, idx, vals):
@@ -218,9 +221,32 @@ def _scatter(n, idx, vals):
     return out
 
 
-def relax(m, iters=4000, pressure=1.0, stiff=60.0, log=False, tie=None):
-    """tie: if set, the centre of the top is tied down to this height (a cord to the tube end)."""
-    """Find the resting shape: minimise (stretch energy + tube contact - pressure x volume)."""
+def string_energy(X, string):
+    """Energy and gradient of one taut string: it is anchored at the fingertip, runs along the
+    seam to the centre point, then straight to the hitch. It can't get longer than its length
+    (a stiff spring pulls back if it would), but it goes slack freely."""
+    p, c, H = string["path"], string["centre"], string["hitch"]
+    d = X[p[1:]] - X[p[:-1]]
+    l = np.linalg.norm(d, axis=1) + 1e-12
+    hv = X[c] - H
+    lh = np.linalg.norm(hv) + 1e-12
+    viol = l.sum() + lh - string["length"]
+    g = np.zeros_like(X)
+    if viol <= 0:
+        return 0.0, g
+    coef = 2 * string["k"] * viol
+    np.add.at(g, p[1:], coef * d / l[:, None])
+    np.add.at(g, p[:-1], -coef * d / l[:, None])
+    g[c] += coef * hv / lh
+    return string["k"] * viol ** 2, g
+
+
+def relax(m, iters=4000, pressure=1.0, stiff=60.0, log=False, tie=None, x0=None, hollow=False, string=None):
+    """Find the resting shape: minimise (stretch energy + tube contact - pressure x volume).
+    tie: if set, the centre of the top is tied down to this height (a cord to the tube end).
+    x0: start from this shape instead of the pattern's first guess.
+    hollow: the tube is open (a thin wall, no cap): the top can be pulled down into it.
+    string: dict for string_energy(), a taut string from the fingertip to a hitch point."""
     from scipy.optimize import minimize
     F, E, L, BP, LB = m["F"], m["E"], m["L"], m["BP"], m["LB"]
     N = len(m["X"])
@@ -260,6 +286,9 @@ def relax(m, iters=4000, pressure=1.0, stiff=60.0, log=False, tie=None):
         inside = (pen_side > 0) & (pen_top > 0)
         use_side = inside & (pen_side <= pen_top)
         use_top = inside & ~use_side
+        if hollow:                      # open tube: only the cuff, which started outside, meets the wall
+            use_side = inside & m["cuff"]
+            use_top = np.zeros_like(inside)
         en += kt * np.sum(pen_side[use_side] ** 2) + kt * np.sum(pen_top[use_top] ** 2)
         g[use_side, 0] -= 2 * kt * pen_side[use_side] * X[use_side, 0] / rho[use_side]
         g[use_side, 1] -= 2 * kt * pen_side[use_side] * X[use_side, 1] / rho[use_side]
@@ -276,9 +305,13 @@ def relax(m, iters=4000, pressure=1.0, stiff=60.0, log=False, tie=None):
             dc = X[c] - np.array([0, 0, tie])
             en += kh * np.sum(dc ** 2)
             g[c] += 2 * kh * dc
+        if string is not None:
+            es, gs = string_energy(X, string)
+            en += es
+            g += gs
         return en, g.ravel()
 
-    res = minimize(f, m["X"].ravel(), jac=True, method="L-BFGS-B",
+    res = minimize(f, (m["X"] if x0 is None else x0).ravel(), jac=True, method="L-BFGS-B",
                    options=dict(maxiter=iters, maxcor=20))
     X = res.x.reshape(-1, 3)
     if log:
@@ -287,8 +320,9 @@ def relax(m, iters=4000, pressure=1.0, stiff=60.0, log=False, tie=None):
     return X
 
 
-def render(m, X, path, title):
-    import matplotlib.pyplot as plt
+def draw_polyp(ax, m, X, el, az, strings=None, lim=5.5):
+    """Draw the polyp and the tube on a 3D axes, seen from elevation `el` and azimuth `az`.
+    strings: optional list of (N, 3) lines (the cords) drawn on top in blue."""
     from mpl_toolkits.mplot3d.art3d import Poly3DCollection
     F = m["F"]
     seam = m["seam"]
@@ -309,28 +343,33 @@ def render(m, X, path, title):
                       (tube_r * math.cos(b), tube_r * math.sin(b), z1), (tube_r * math.cos(a), tube_r * math.sin(a), z1)])
     quads = np.array(quads)
     qn = np.column_stack([np.cos((th[:-1] + th[1:]) / 2), np.sin((th[:-1] + th[1:]) / 2), np.zeros(48)])
+    ela, aza = math.radians(el), math.radians(az)
+    view = np.array([math.cos(ela) * math.cos(aza), math.cos(ela) * math.sin(aza), math.sin(ela)])
+    key = view * 0.6 + np.array([0, 0, 0.8]) + 0.4 * np.array([-math.sin(aza), math.cos(aza), 0])
+    key /= np.linalg.norm(key)
+    shade = 0.35 + 0.65 * np.clip(np.abs(n @ key), 0, 1) * (0.55 + 0.45 * np.clip(n @ view, 0, 1))
+    cols = np.where(seam_face[:, None], 0.45 * dark + 0.55 * fabric, fabric) * shade[:, None]
+    tshade = 0.45 + 0.5 * np.clip(qn @ key, 0, 1)
+    tcols = np.array([0.80, 0.81, 0.84]) * tshade[:, None]
+    polys = list(quads) + list(tri)
+    allc = np.vstack([tcols, cols])
+    allc = np.column_stack([np.clip(allc, 0, 1), np.ones(len(allc))])
+    pc = Poly3DCollection(polys, facecolors=allc, edgecolors=allc, linewidths=0.25)
+    ax.add_collection3d(pc)
+    for line in strings or []:
+        ax.plot(line[:, 0], line[:, 1], line[:, 2], color="tab:blue", lw=1.6, zorder=10)
+    ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim); ax.set_zlim(-P.CUFF_HEIGHT - 2.5, P.FINGER_LENGTH + 1.0)
+    ax.set_box_aspect((2 * lim, 2 * lim, P.FINGER_LENGTH + 3.5 + P.CUFF_HEIGHT), zoom=1.25)
+    ax.view_init(elev=el, azim=az)
+    ax.set_axis_off()
 
+
+def render(m, X, path, title):
+    import matplotlib.pyplot as plt
     fig = plt.figure(figsize=(11, 6.4))
     for i, (el, az, lbl) in enumerate([(14, 35, "From the side"), (60, 35, "From above")]):
         ax = fig.add_subplot(1, 2, i + 1, projection="3d")
-        ela, aza = math.radians(el), math.radians(az)
-        view = np.array([math.cos(ela) * math.cos(aza), math.cos(ela) * math.sin(aza), math.sin(ela)])
-        key = view * 0.6 + np.array([0, 0, 0.8]) + 0.4 * np.array([-math.sin(aza), math.cos(aza), 0])
-        key /= np.linalg.norm(key)
-        shade = 0.35 + 0.65 * np.clip(np.abs(n @ key), 0, 1) * (0.55 + 0.45 * np.clip(n @ view, 0, 1))
-        cols = np.where(seam_face[:, None], 0.45 * dark + 0.55 * fabric, fabric) * shade[:, None]
-        tshade = 0.45 + 0.5 * np.clip(qn @ key, 0, 1)
-        tcols = np.array([0.80, 0.81, 0.84]) * tshade[:, None]
-        polys = list(quads) + list(tri)
-        allc = np.vstack([tcols, cols])
-        allc = np.column_stack([np.clip(allc, 0, 1), np.ones(len(allc))])
-        pc = Poly3DCollection(polys, facecolors=allc, edgecolors=allc, linewidths=0.25)
-        ax.add_collection3d(pc)
-        lim = 5.5
-        ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim); ax.set_zlim(-P.CUFF_HEIGHT - 2.5, P.FINGER_LENGTH + 1.0)
-        ax.set_box_aspect((2 * lim, 2 * lim, P.FINGER_LENGTH + 3.5 + P.CUFF_HEIGHT), zoom=1.25)
-        ax.view_init(elev=el, azim=az)
-        ax.set_axis_off()
+        draw_polyp(ax, m, X, el, az)
         ax.set_title(lbl, fontsize=10)
     fig.suptitle(title, fontsize=12)
     fig.text(0.5, 0.04, "Simulated from the flat pattern pieces: dark bands are seams, grey is the 5 in tube. "

@@ -29,6 +29,19 @@ Every file is in `designs/`, and its name starts with the design name, so a patt
 
 Patterns longer than one page are split over 2 landscape pages. Trim the later page on its dashed tape line, lay it over the earlier page so the lines and diamonds match, and tape. Print at **100 % / "Actual size"** and check the 1 in test square.
 
+## The polyp tool (easiest way to try sizes)
+
+`polyp_tool.py` is a small page that opens in your web browser. You change numbers and see the result. You don't edit any code.
+
+    python3 polyp_tool.py
+
+- Fields: cuff diameter, cuff ease, cuff length, finger length, number of fingers, finger fullness, lean out, turn length, tunnel width.
+- The flat pattern redraws about a second after you change a number, with a link to the printable PDF.
+- **Simulate inflated** (about 30 s) shows the sewn polyp with air in it.
+- **Simulate string pull** (about 2 min) pulls the cords from one hitch point (see "What the string pull does" below).
+- Results are saved in `tool-output/` (not kept in git). Press Ctrl+C in the terminal to stop it.
+- It only runs on your own computer. It runs `make_pattern.py` and `sim_pull.py` for you, so the results match them.
+
 ## Scripts
 
 - **make_pattern.py**: draws the pattern. The settings are at the top. Options:
@@ -37,6 +50,8 @@ Patterns longer than one page are split over 2 landscape pages. Trim the later p
   - `--no-sim` skips the 3D simulation.
   - To override settings without editing the file, put them in `POLYP`, for example `POLYP="FINGERS=6,FINGER_LENGTH=8"`.
 - **sim_polyp.py**: the cloth simulation behind the `-3d.png` pictures.
+- **sim_pull.py**: the string-pull simulation. `python3 sim_pull.py --out designs` makes `<design>-pull.png` and `<design>-pull.csv`. Options: `--hitch 1.0` (inches below the centre point), `--pull-max 10`, `--steps 10`.
+- **polyp_tool.py**: the browser page above.
 
 The scripts need `numpy`, `scipy`, `matplotlib` and `shapely` (`pip3 install numpy scipy matplotlib shapely`).
 
@@ -90,6 +105,26 @@ Decided 2026-10-30. One cord per finger pulls the finger in. The cord is **Dynee
 - **At the centre.** Each cord comes out of the centre point and ends in a tied loop. All five loops are hitched together by the one central string that winds onto the motor spool.
 - **Not simulated.** The 3D simulation ignores the tunnel, the cord and the extra bulk. The 3D picture is the same as the plain taper's.
 
+## What the string pull does (sim_pull.py)
+
+The five cords run from the fingertips along the inner seams to the centre point, then straight down to one hitch point. The hitch starts 1 in below the centre point (inside the cuff). It is pulled down a little at a time, and the fabric settles into a new shape each time.
+
+Assumptions: the cord can't stretch; it is just taut when the polyp is fully inflated; there is no friction in the tunnels; the air pressure stays constant (the blower keeps up); the tube is open, so the top can be pulled down into it. Not simulated: fingers pressing on each other (one finger is held between mirror planes), gravity, fabric thickness, and the cord drag.
+
+Forces are in pounds-force **per 1 psi of air pressure**. Multiply by the real pressure: at 0.25 psi (about 7 inches of water), the force is a quarter of the numbers shown.
+
+Results for the default design (1 in hitch):
+
+| Hitch pulled down | Pull force (lbf per psi) | Fingertip height above the tube end |
+|---|---|---|
+| 0 in | 0 | 6.8 in |
+| 1 in | 2.6 | 6.7 in |
+| 3 in | 5.4 | 6.2 in |
+| 5 in | 8.7 | 5.3 in |
+| 6 in | 14.1 | 4.8 in |
+
+Past about 6 in the cord can't shorten any more without stretching the fabric, so the simulation stops there. The fingers curl inward and come down about 2 in, but they stay mostly standing. They don't fully collapse. Pulling a finger by a cord along one seam makes it bend into an arc. It doesn't crumple. The force rises steeply near the end.
+
 ## How the pattern shapes the fingers
 
 - **Width.** The flat piece is half the finger's circumference, so a sewn finger is about (2 × flat width) / π across.
@@ -141,4 +176,5 @@ What it leaves out: gravity, fabric thickness, seam-allowance bulk, the inflatio
 - Remy preferred 5 fingers (`polyp-5-wide`).
 - Then: 5 fingers, skinnier and longer (7.5 in), with the end kept the same size (`polyp-5-club`), plus a longer version with a rounded point (`polyp-5-club-pointed`).
 - Added `polyp-5-taper`, with fingers that taper to a real point. Files are now named by design.
-- Now: `polyp-5-taper-string` adds the string tunnel along each finger's inner seam.
+- `polyp-5-taper-string` adds the string tunnel along each finger's inner seam.
+- Now: `polyp_tool.py` (browser page for changing sizes) and `sim_pull.py` (string-pull simulation).
