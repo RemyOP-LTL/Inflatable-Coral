@@ -40,3 +40,6 @@ Re-run on 2026-10-30 to check it: `python3 make_pattern.py --out <folder>` (abou
 - Check polyp-to-polyp collision once the skin layout gives the pentagon spacing.
 - **If asked:** output a 3D surface of the inflated polyp (for example STL or STEP) so Remy can design the motor and blower assembly around it in Fusion 360. Not started.
 - Size the motor spool for five bunched cords plus the central string (`../motor/`).
+
+## Working rule (from Remy, 2026-10-30)
+After any change to the pattern or simulation, run it and send Remy a snapshot of the outputs (the piece picture, the 3D picture and the PDF) in the chat, so he can see the effect without going to GitHub.
