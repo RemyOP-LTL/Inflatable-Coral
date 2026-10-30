@@ -3,7 +3,7 @@
 ## What this is
 A large coral sculpture, 20 ft tall, with living polyps and integrated illumination, for Burning Man. A tube- or dome-shaped coral form is covered in a skin of flat plastic panels joined with tabs and rivets. Fabric polyps sit in the pentagon panels; they inflate with air and collapse when a motor winds a string. Remy wants to keep the description general for now; details of the look and the motion are still to be settled.
 
-**Deadline:** Burning Man, next August (2027; confirm the exact dates). Today is 2026-10-30, so about ten months.
+**Deadline:** finished by **August 15, 2027**, to leave time to transport it to Burning Man. Today is 2026-10-30, so about nine and a half months.
 
 ## The parts
 - skin/    — Pattern for the outer skin. A tool that turns a 3D surface into polygon panels, then into flat sections to cut. Includes a simulation of how the skin behaves.
@@ -23,7 +23,7 @@ Anything marked TBD has not been decided. Do not guess; ask Remy.
 - Venue: Burning Man (outdoor desert: wind, dust, off-grid power, transport and assembly on site). Not yet worked through; raise when relevant.
 - Skin material: corrugated plastic sheet, 1 mm wall. For now only the top layer is simulated; the rest is ignored until later. Sheets are 4 x 8 ft (48 x 96 in).
 - Skin holes: pentagons get normal (round) holes for the polyps; all other polygons get the offset cutout that thins toward the middle of each shared edge.
-- Cutting: Remy hopes to buy his own CNC router and cut the plastic himself (router not chosen yet; its bed size and tooling will set limits on part size and cut details). Fusion 360 CAM is for this.
+- Cutting: Remy plans to buy his own CNC router and cut the plastic himself. Likely choice: a 4 x 8 ft Avid CNC router (not bought yet), which fits the 4 x 8 ft sheets. Exact model, tooling and usable cutting area still to confirm, since they limit part size and cut details. Fusion 360 CAM is for this.
 - Skin test shapes: tube 12-16 in across (tubular coral), and later a domed brain-coral shape.
 - Polyp material: nylon fabric (woven, no stretch), sewn, like inflatable costumes. Default design `polyp-5-taper`: 5 fingers, cuff slides over a 5 in tube. See `polyps/fabric-pattern/`.
 - Number of polyps: one per pentagon panel (count follows the skin layout).
