@@ -14,7 +14,7 @@ Dimensions, materials, and mounting points that all parts must agree on. Check h
 | Polyp finger | 5 fingers, 8.5 in long, 3.24 in wide at base | polyp-5-taper |
 | Pentagon hole | round; size must fit the polyp tube | Remy |
 
-## Conflicts to resolve
+## Conflicts to resolve (deferred by Remy, 2026-10-30: build general, scalable tools first; match sizes later)
 - The polyp tube (5 in) needs a hole of at least about 5 in. The current hex57 layout has about 5 in pentagons with a 3.75 in hole. See `skin/CLAUDE.md`.
 
 ## Next

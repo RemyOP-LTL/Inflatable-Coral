@@ -17,7 +17,7 @@ Re-run on 2026-10-30 to check it: `python3 make_pattern.py --out <folder>` (abou
 - The 3D picture comes from a cloth simulation of the actual flat piece (air pressure, no stretch, no seam stiffness). Findings: inflated fingers come out shorter than the flat piece; they can rest spread or bunched upright; air pressure rounds off the points. It ignores gravity, fabric thickness, seam bulk, the air inlet, and fingers pressing on each other.
 
 ## Not in the design yet
-- The pull string and its channels (centre pull, or a channel inside each finger). Needed for the motor.
+- The string tunnels. Decided 2026-10-30: the seam along each finger becomes a tunnel; the string is sewn in at the tip, runs free in the tunnel, and ends in a loop at the centre where all five loops meet. Not yet drawn into the pattern.
 - Where the air goes in, and how the cuff seals to the tube.
 
 ## Open questions
@@ -26,4 +26,4 @@ Re-run on 2026-10-30 to check it: `python3 make_pattern.py --out <folder>` (abou
 - Make one test finger pair to check the curve and length against the simulation.
 
 ## Next
-- Add the string channels to the pattern once Remy picks centre pull or per-finger pull.
+- Add the seam tunnels to the pattern: decide whether the 3/8 in seam allowance is enough or the tunnel needs extra fabric, and how the string anchors at the tip.

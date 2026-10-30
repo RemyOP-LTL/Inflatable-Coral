@@ -4,7 +4,7 @@
 Controller, motor driver, blowers and power for the polyps.
 
 ## Design intent (from Remy)
-- Air comes from individual blowers or one large central blower, depending on polyp size and design.
+- Air supply is its own workstream: see `../air/`.
 - The motor winds the string to collapse the polyp; the blower inflates it.
 
 ## Status

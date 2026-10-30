@@ -21,7 +21,7 @@ To run it (Mac): `pip3 install numpy scipy matplotlib`, then in `skin/hex57/` ru
 Layout prototype exists, outside Fusion. Nothing built in Fusion 360 yet. At default settings: 58 pentagons, about 23 % coverage, about 5 in across, no two touching; shapes about 0.27 in out of flat on average.
 
 ## Open questions
-- **Hole size vs the polyp (conflict):** the polyp cuff slides over a 5 in tube, so the pentagon hole must be at least about 5 in. `hex57/HANDOFF.md` says a 5 in hole needs pentagons about 6.45 in across, and the current layout gives about 5 in pentagons with a 3.75 in hole. Needs a decision (smaller polyp tube, bigger pentagons, or a different attachment).
+- **Hole size vs the polyp (deferred by Remy, 2026-10-30; the goal is generalized tools, matching comes later):** the polyp cuff slides over a 5 in tube, so the pentagon hole must be at least about 5 in. `hex57/HANDOFF.md` says a 5 in hole needs pentagons about 6.45 in across, and the current layout gives about 5 in pentagons with a 3.75 in hole. Needs a decision (smaller polyp tube, bigger pentagons, or a different attachment).
 - Plastic stretch: decided to assume none. Shared edge lengths must match.
 - Pentagon spacing is set by where the polyps go, so polyp size sets pentagon size.
 

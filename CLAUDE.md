@@ -8,7 +8,8 @@ An inflatable coral sculpture. A tube- or dome-shaped coral form is covered in a
 - polyps/  — Inflatable polyps. Sub-folders:
     - fabric-pattern/ — sewn nylon pattern, string channels
     - motor/          — motor that winds the string
-    - electronics/    — controller, driver, blowers
+    - electronics/    — controller, driver, power
+    - air/            — blowers, ducting, pressure (workstream, just started)
 - shared/  — Dimensions, materials, and mounting points that all parts must agree on. Check here before assuming a number.
 
 ## Key facts
@@ -20,7 +21,8 @@ Anything marked TBD has not been decided. Do not guess; ask Remy.
 - Skin test shapes: tube 12-16 in across (tubular coral), and later a domed brain-coral shape.
 - Polyp material: nylon fabric (woven, no stretch), sewn, like inflatable costumes. Default design `polyp-5-taper`: 5 fingers, cuff slides over a 5 in tube. See `polyps/fabric-pattern/`.
 - Number of polyps: one per pentagon panel (count follows the skin layout).
-- Polyp actuation: string wound by a motor; air from blowers. Motor: likely a stepper, not chosen.
+- Polyp actuation: five finger strings, one per finger, run in a tunnel on each finger's seam and meet at a loop; a central string hitched through the five loops winds onto a motor spool. Air from blowers (see polyps/air/). Motor: likely a stepper, not chosen.
+- Design goal for now: build generalized, scalable tools. Matching skin hole size to polyp size is deferred until things can be scaled and changed easily.
 - Motor controller: TBD (not chosen yet)
 - Fusion 360 integration (how the skin layout gets into Fusion): decided to deal with it later.
 
