@@ -28,6 +28,7 @@ Anything marked TBD has not been decided. Do not guess; ask Remy.
 - Polyp actuation: five finger strings, one per finger, run in a tunnel on each finger's seam and meet at a loop; a central string hitched through the five loops winds onto a motor spool. Air from blowers (see polyps/air/). Motor: likely a stepper, not chosen.
 - Design goal for now: build generalized, scalable tools. Matching skin hole size to polyp size is deferred until things can be scaled and changed easily.
 - Motor controller: TBD (not chosen yet)
+- Motion (Remy's assumption, 2026-10-30; details later): waves of motion across the polyps, all-at-once inflation, and ideally some reactivity to people. This means each polyp (or group) must be individually controllable, and some sensing is likely needed. Not designed yet.
 
 ## Goals and workflow
 Remy wants **generalized, scalable tools**, not a one-off model: change a parameter (tube size, polygon size, polyp size) and the skin and polyps update. Matching sizes between parts comes later, once things scale easily.
