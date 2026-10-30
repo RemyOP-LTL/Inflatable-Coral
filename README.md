@@ -1,1 +1,1 @@
-# Inflatable-Coral
+# Inflatable-Coral, Start with CLAUDE.md
