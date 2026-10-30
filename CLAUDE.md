@@ -1,7 +1,9 @@
 # Coral Sculpture
 
 ## What this is
-An inflatable coral sculpture. A tube- or dome-shaped coral form is covered in a skin of flat plastic panels joined with tabs and rivets. Fabric polyps sit in the pentagon panels; they inflate with air and collapse when a motor winds a string. Where it will be shown: TBD (ask Remy).
+A large coral sculpture, 20 ft tall, with living polyps and integrated illumination, for Burning Man. A tube- or dome-shaped coral form is covered in a skin of flat plastic panels joined with tabs and rivets. Fabric polyps sit in the pentagon panels; they inflate with air and collapse when a motor winds a string. Remy wants to keep the description general for now; details of the look and the motion are still to be settled.
+
+**Deadline:** Burning Man, next August (2027; confirm the exact dates). Today is 2026-10-30, so about ten months.
 
 ## The parts
 - skin/    — Pattern for the outer skin. A tool that turns a 3D surface into polygon panels, then into flat sections to cut. Includes a simulation of how the skin behaves.
@@ -15,7 +17,9 @@ An inflatable coral sculpture. A tube- or dome-shaped coral form is covered in a
 ## Key facts
 Anything marked TBD has not been decided. Do not guess; ask Remy.
 - CAD tool: **Fusion 360.** The Onshape files in the older repo are reference only.
-- Overall size: TBD (height x width)
+- Overall size: **20 ft tall** (assumed, per Remy 2026-10-30); width TBD. The 12-16 in tube is a test shape; whether it is a real branch size is not settled.
+- Illumination: integrated lighting is part of the sculpture. Not designed yet; no folder yet. Ask Remy whether to add a `lighting/` folder when that work starts.
+- Venue: Burning Man (outdoor desert: wind, dust, off-grid power, transport and assembly on site). Not yet worked through; raise when relevant.
 - Skin material: corrugated plastic sheet, 1 mm wall. For now only the top layer is simulated; the rest is ignored until later. Sheets are 4 x 8 ft (48 x 96 in).
 - Skin holes: pentagons get normal (round) holes for the polyps; all other polygons get the offset cutout that thins toward the middle of each shared edge.
 - Skin test shapes: tube 12-16 in across (tubular coral), and later a domed brain-coral shape.
