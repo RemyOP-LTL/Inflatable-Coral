@@ -9,7 +9,6 @@ An inflatable coral sculpture. A tube- or dome-shaped coral form is covered in a
     - fabric-pattern/ — sewn nylon pattern, string channels
     - motor/          — motor that winds the string
     - electronics/    — controller, driver, blowers
-- motors/  — Reserved for any motion that is not a polyp (TBD). Polyp motors live in polyps/motor/.
 - shared/  — Dimensions, materials, and mounting points that all parts must agree on. Check here before assuming a number.
 
 ## Key facts
