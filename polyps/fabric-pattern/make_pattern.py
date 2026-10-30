@@ -17,7 +17,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
-from shapely.geometry import Polygon
+from shapely.geometry import LineString, Polygon
 
 # ---------------- SETTINGS ----------------
 TUBE_DIAMETER = 5.0     # the tube the polyp slides over
@@ -38,6 +38,10 @@ TURN_LENGTH = 1.5       # distance above the crotch over which they turn outward
                         # above that they curve gently back to vertical at the tip
 SEAM = 3 / 8            # seam allowance on every sewn edge
 HEM = 1.0               # extra at the wrist edge, folded up for a hem
+TUNNEL = 1              # 1 = add the string tunnel (see below). 0 = plain seams, the earlier pattern.
+TUNNEL_WIDTH = 0.25     # finished width of the tunnel: from the seam to the second stitch line.
+                        # Dyneema boa-style cord is about 1 mm, so this leaves it plenty of room.
+STRING_LOOP = 1.0       # length of cord left sticking out of the centre point for the tied loop
 # ------------------------------------------
 
 # Any setting can be overridden from the command line, e.g.
@@ -49,6 +53,8 @@ FINGERS = int(FINGERS)
 
 THUMBS = FINGERS
 THUMB_LENGTH = FINGER_LENGTH
+TUNNEL_SEAM = TUNNEL_WIDTH + SEAM                # seam allowance on the string seam only:
+                                                 # the tunnel, plus the usual margin past its stitch line
 CIRC = math.pi * TUBE_DIAMETER + EASE        # finished cuff circumference
 W0 = CIRC / FINGERS                          # finished width of one piece at the crotch
 TRI_DEPTH = (W0 / 2) / math.tan(math.pi / FINGERS)   # crotch line to centre of the top
@@ -140,9 +146,39 @@ def v_slash(cut):
     return np.array([tip, (0, 0)])
 
 
+def tunnel_path():
+    """The string seam on the sewing line: from the fingertip down the inner edge (the side
+    facing the centre of the polyp), then down the triangle's straight edge to its point,
+    which is the centre of the top. The string runs along this seam."""
+    o = bend(thumb_outline())
+    tip = (len(o) + 1) // 2 - 1                      # outline goes left edge, tip, right edge
+    return np.vstack([o[tip:], [(W0 / 2, -TRI_DEPTH)]])
+
+
+def _tunnel_allowance_path(lead=0.4):
+    """tunnel_path() with a short lead-in down the outer edge, so the wide allowance
+    wraps the tip point cleanly instead of leaving a step there."""
+    o = bend(thumb_outline())
+    tip = (len(o) + 1) // 2 - 1
+    seg = np.hypot(*np.diff(o[:tip + 1], axis=0).T)
+    back = np.cumsum(seg[::-1])                       # distance back from the tip
+    i = tip - int(np.searchsorted(back, lead)) - 1
+    return np.vstack([o[i:tip], tunnel_path()])
+
+
+def tunnel_stitch_line():
+    """Second line of stitching, TUNNEL_WIDTH outside the seam. The two seam allowances,
+    sewn together here, form the tunnel between the seam and this line."""
+    return np.array(LineString(tunnel_path()).offset_curve(TUNNEL_WIDTH, join_style=2, mitre_limit=3.0).coords)
+
+
 def cut_line(piece_fn, has_cuff):
     base = piece_fn(HEM - SEAM if has_cuff else 0.0)
     cut = Polygon(base).buffer(SEAM, join_style=2, mitre_limit=3.0)
+    if TUNNEL:                                       # wider allowance, on the string seam only
+        wide = LineString(_tunnel_allowance_path()).buffer(TUNNEL_SEAM, cap_style=2, join_style=3,
+                                                single_sided=True)
+        cut = cut.union(wide.buffer(0))
     return np.array(cut.exterior.coords)
 
 
@@ -152,7 +188,29 @@ def _rot(p):
     return np.column_stack([p[:, 1], -p[:, 0]])
 
 
-def page(pdf, sew, cut, notches, title, lines, footer, grain_x, grain_y, text_xy, slash):
+def draw_tunnel(ax, line, rotated=True, fontsize=6.5):
+    """Mark the string tunnel on a drawing: the second stitch line, the knot at the tip,
+    and the point where the cord comes out at the centre. `rotated` is True on the printed
+    pages (finger pointing right) and False on the plain piece picture."""
+    f = _rot if rotated else np.atleast_2d
+    r = f(line)
+    ax.plot(r[:, 0], r[:, 1], color="tab:blue", lw=0.9, ls=(0, (5, 2)))
+    tip, end = f(tunnel_path()[[0, -1]])
+    ax.plot([tip[0]], [tip[1]], marker="o", ms=5, color="tab:blue")
+    ax.plot([end[0]], [end[1]], marker="o", ms=5, color="tab:blue")
+    if rotated:
+        ax.text(tip[0] + 0.15, tip[1] + 0.35, "knot + stitch the cord\nto the seam here",
+                fontsize=fontsize, color="tab:blue", ha="left", va="bottom")
+        ax.text(end[0] - 0.1, end[1] - 0.25, "cord comes out here,\ntie the loop",
+                fontsize=fontsize, color="tab:blue", ha="right", va="top")
+    else:
+        ax.text(tip[0] + 0.3, tip[1] + 0.3, "knot + stitch\nthe cord here",
+                fontsize=fontsize, color="tab:blue", ha="left", va="bottom")
+        ax.text(end[0] + 0.3, end[1] - 0.1, "cord comes out\nhere, tie the loop",
+                fontsize=fontsize, color="tab:blue", ha="left", va="top")
+
+
+def page(pdf, sew, cut, notches, title, lines, footer, grain_x, grain_y, text_xy, slash, tunnel=None):
     """Landscape pages, true size. The piece is drawn turned so the finger points right.
     If it is too long for one page it is split over several, with tape lines to join them."""
     rc, rs = _rot(cut), _rot(sew)
@@ -180,6 +238,8 @@ def page(pdf, sew, cut, notches, title, lines, footer, grain_x, grain_y, text_xy
         ax.text(g[:, 0].mean(), g[0, 1] + 0.08, "grain", fontsize=7, ha="center")
         sl = _rot(slash)
         ax.plot(sl[:, 0], sl[:, 1], "k-", lw=1.4)
+        if tunnel is not None:
+            draw_tunnel(ax, tunnel)
         ax.plot([0], [0], "ko", ms=4)
         t = _rot([(0.12, -0.55)])[0]
         ax.text(t[0], t[1], "slash to dot", fontsize=6.5, ha="center", va="top")
@@ -225,7 +285,7 @@ def page(pdf, sew, cut, notches, title, lines, footer, grain_x, grain_y, text_xy
 
 def main():
     out = sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else "."
-    name = sys.argv[sys.argv.index("--name") + 1] if "--name" in sys.argv else f"polyp-{FINGERS}-taper" if TAPER else f"polyp-{FINGERS}-club"
+    name = sys.argv[sys.argv.index("--name") + 1] if "--name" in sys.argv else f"polyp-{FINGERS}-taper" + ("-string" if TUNNEL else "") if TAPER else f"polyp-{FINGERS}-club"
     os.makedirs(out, exist_ok=True)
     sa = '3/8"' if abs(SEAM - 0.375) < 1e-6 else f'{SEAM}"'
     foot = (f'Solid line = cut.  Dashed line = sew.  Seam allowance {sa} included.  '
@@ -236,16 +296,23 @@ def main():
     lines = [f"Cut {2 * FINGERS}", f"({FINGERS} pairs: fold fabric", f"in two and cut {FINGERS})", "",
              "Outer edge + tip + inner edge", "+ triangle's straight edge", "= seam to its twin",
              "", "Both sides of the V", "= seams to the", "neighbouring finger"]
+    tun = tunnel_stitch_line() if TUNNEL else None
+    if TUNNEL:
+        lines += ["", "Blue = string tunnel (inner edge,", "tip to centre). Sew the seam, then",
+                  f'sew the two allowances together {TUNNEL_WIDTH:g}"', "out on the blue line. Cord runs",
+                  "between them. Wider allowance."]
     with PdfPages(os.path.join(out, f"{name}-pattern.pdf")) as pdf:
         page(pdf, b, b_cut, side_notches, f"FINGER HALF  -  {name}", lines, foot, grain_x=-0.7,
              grain_y=(-2.6, -0.3), text_xy=tuple(bend(np.array([[0.0, 0.4 * FINGER_LENGTH]]))[0]),
-             slash=slash)
+             slash=slash, tunnel=tun)
 
     fig, ax = plt.subplots(figsize=(5, 7))
     ax.plot(b_cut[:, 0], b_cut[:, 1], "k-", lw=1.4)
     ax.plot(b[:, 0], b[:, 1], "k--", lw=0.7)
     ax.plot(slash[:, 0], slash[:, 1], "k-", lw=1.4)
     ax.plot([0], [0], "ko", ms=4)
+    if TUNNEL:
+        draw_tunnel(ax, tun, rotated=False, fontsize=7)
     ax.set_aspect("equal")
     ax.set_title(f"{name}: finger half - cut {2 * FINGERS}\nSolid = cut line, dashed = sewing line", fontsize=10)
     ax.grid(alpha=0.3)
@@ -260,6 +327,10 @@ def main():
         make_preview(os.path.join(out, f"{name}-3d.png"), f"Simulated from the flat pattern, inflated (fingers turn out {SPLAY:g}\u00b0, then back up)")
 
     print(f"cuff circumference {CIRC:.3f}  piece width at crotch {W0:.3f}")
+    if TUNNEL:
+        seg = np.diff(tunnel_path(), axis=0)
+        print(f"string tunnel {np.hypot(seg[:, 0], seg[:, 1]).sum():.2f} in on the flat, tip to centre "
+              f"(+ {STRING_LOOP:g} in cord out of the centre for the loop)")
     print(f"cut size {np.ptp(b_cut[:, 0]):.2f} x {np.ptp(b_cut[:, 1]):.2f}")
 
 

@@ -4,7 +4,7 @@ A fabric coral polyp made of **five fingers** around a round "wrist" (cuff) that
 
 Each finger is two mirror-image halves, so the seam runs from the centre of the top, out over the fingertip, and down the cuff. There's one pattern piece, and you cut 10 of it (5 pairs). The fingers **lean outward just above the cuff, then curve back up to vertical** at the tips. By default each finger starts at full width and tapers to a sharp point.
 
-**Default design: `polyp-5-taper`** (since 2026-10-29). Fingers taper from full width to a sharp point.
+**Default design: `polyp-5-taper-string`** (since 2026-10-30). The `polyp-5-taper` shape, plus a string tunnel on each finger.
 
 | Tapered point (`polyp-5-taper`, default) | Club tip (`polyp-5-club`) |
 |---|---|
@@ -20,7 +20,8 @@ Every file is in `designs/`, and its name starts with the design name, so a patt
 | Design | What it is | How to make it |
 |---|---|---|
 | `polyp-5-club` | 5 fingers, 7.5 in long. Each finger narrows to a skinnier middle, and the rounded end is as wide as `polyp-5-wide`'s. | `POLYP="TAPER=0,FINGER_LENGTH=7.5" python3 make_pattern.py --out designs --name polyp-5-club` |
-| `polyp-5-taper` | **Default.** 5 fingers, 8.5 in long. Each finger starts at the full crotch width, like the earlier versions, and tapers all the way to a **sharp point**, like a horn. | `python3 make_pattern.py --out designs` (the default settings) |
+| `polyp-5-taper-string` | **Default.** `polyp-5-taper` with the string tunnel added (see "The string tunnel" below). Same shape, same 3D picture. Only the cut line and the markings differ. | `python3 make_pattern.py --out designs` |
+| `polyp-5-taper` | The same without the tunnel (the earlier default). | 5 fingers, 8.5 in long. Each finger starts at the full crotch width, like the earlier versions, and tapers all the way to a **sharp point**, like a horn. | `python3 make_pattern.py --out designs` `POLYP="TUNNEL=0" python3 make_pattern.py --out designs` |
 | `polyp-5-club-pointed` | Like the club, but 8.5 in long, with a rounded point on the end. | `POLYP="FINGER_LENGTH=8.5,TIP_LENGTH=2.8,TIP_POINT=1" ...` (made with an earlier version of the script) |
 | `polyp-5-wide` | 5 fingers at an even width, 6 in long. | earlier version of the script |
 | `polyp-6` | 6 fingers, 6 in long, lean out and curve back up. | earlier version of the script |
@@ -58,6 +59,9 @@ The scripts need `numpy`, `scipy`, `matplotlib` and `shapely` (`pip3 install num
 | `TURN_LENGTH` | 1.5 in | the distance over which they turn outward. Above that, they curve back to vertical. |
 | `SEAM` | 3/8 in | seam allowance, already added to every edge |
 | `HEM` | 1.0 in | extra at the bottom of the cuff for the hem |
+| `TUNNEL` | 1 | 1 = add the string tunnel. 0 = plain seams (the earlier `polyp-5-taper`). |
+| `TUNNEL_WIDTH` | 0.25 in | finished width of the tunnel. The cord is about 1 mm, so this is roomy. |
+| `STRING_LOOP` | 1.0 in | cord left out of the centre point for the tied loop (shown in the printout, not drawn) |
 
 The cuff comes out 16.21 in around. At the crotch (where a finger starts), each piece is 3.24 in wide, because five fingers have to fill the cuff's circumference. With `TAPER = 1` (the default), the finger tapers from there to a point. The cut piece is about 5.0 × 13.2 in. With `TAPER = 0`, the finger narrows to `BODY_WIDTH` over the first 1.5 in and widens to `TIP_WIDTH` over the last 1.5 in before the rounded end.
 
@@ -74,6 +78,17 @@ Sew with the right (good) sides of the fabric facing each other, on the dashed l
 3. **Check the middle.** All 10 triangle points meet at the centre of the top. Hand-stitch any small hole closed.
 4. **Hem.** Fold the bottom edge up 1/4 in, then up 3/4 in, and stitch.
 5. **Turn it right side out** through the wrist and push the fingers out.
+
+## The string tunnel
+
+Decided 2026-10-30. One cord per finger pulls the finger in. The cord is **Dyneema cord like a shoe boa lace** (about 1 mm).
+
+- **Where.** On the finger's inner edge (the side facing the centre), from the fingertip down to the triangle's point, which is the centre of the top. It is drawn in blue on the pattern. It is the same seam in both halves of the pair.
+- **Extra fabric, on this seam only.** The seam allowance here is `TUNNEL_WIDTH + SEAM` = 5/8 in instead of 3/8 in. Every other edge keeps 3/8 in. It is 11.25 in of tunnel on the flat piece, from the tip to the centre.
+- **How the tunnel is formed.** Sew the seam as normal. Don't press the allowances to one side. Leave them sticking out, lay them flat against each other, and sew them together along the blue line, 1/4 in out from the seam. The cord runs between the two allowances, in the flat pocket between the seam and the blue line. Leave the blue line open at the centre end so the cord can come out.
+- **Anchor at the tip.** Tie a knot in the cord and stitch over it at the fingertip, so it can't pull out. Everything else runs free.
+- **At the centre.** Each cord comes out of the centre point and ends in a tied loop. All five loops are hitched together by the one central string that winds onto the motor spool.
+- **Not simulated.** The 3D simulation ignores the tunnel, the cord and the extra bulk. The 3D picture is the same as the plain taper's.
 
 ## How the pattern shapes the fingers
 
@@ -125,4 +140,5 @@ What it leaves out: gravity, fabric thickness, seam-allowance bulk, the inflatio
 - Next: fingers lean out at the base and curve back to vertical, and they're longer, 6 in (`polyp-6`).
 - Remy preferred 5 fingers (`polyp-5-wide`).
 - Then: 5 fingers, skinnier and longer (7.5 in), with the end kept the same size (`polyp-5-club`), plus a longer version with a rounded point (`polyp-5-club-pointed`).
-- Now: added `polyp-5-taper`, with fingers that taper to a real point. Files are now named by design.
+- Added `polyp-5-taper`, with fingers that taper to a real point. Files are now named by design.
+- Now: `polyp-5-taper-string` adds the string tunnel along each finger's inner seam.
