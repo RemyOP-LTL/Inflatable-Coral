@@ -24,7 +24,19 @@ Anything marked TBD has not been decided. Do not guess; ask Remy.
 - Polyp actuation: five finger strings, one per finger, run in a tunnel on each finger's seam and meet at a loop; a central string hitched through the five loops winds onto a motor spool. Air from blowers (see polyps/air/). Motor: likely a stepper, not chosen.
 - Design goal for now: build generalized, scalable tools. Matching skin hole size to polyp size is deferred until things can be scaled and changed easily.
 - Motor controller: TBD (not chosen yet)
-- Fusion 360 integration (how the skin layout gets into Fusion): decided to deal with it later.
+
+## Goals and workflow
+Remy wants **generalized, scalable tools**, not a one-off model: change a parameter (tube size, polygon size, polyp size) and the skin and polyps update. Matching sizes between parts comes later, once things scale easily.
+
+Who does what:
+- **Claude** does the complicated surfacing: laying the polygon pattern on a surface, flattening it into cuttable sections, and the polyp pattern and simulation math. Python first, as standalone scripts.
+- **Remy** is very proficient in CAD. He will model things in Fusion 360 from time to time to point Claude in the right direction. What Remy does by hand versus hands to Claude is not settled yet; ask when a task could go either way.
+
+What each part must hand to Remy:
+- **Skin:** the layout is generated in Python. It goes into Fusion 360 so Remy can tweak and adjust it and look at the CAM (cutting) side. It must arrive as editable geometry, with shared corners and flat sections ready for a 4 x 8 ft sheet. How it gets into Fusion is deferred.
+- **Polyp fabric pattern:** besides the flat sewing pattern, output a **3D surface** of the inflated polyp. Remy designs the motor and blower assembly around that surface himself.
+
+Sessions: this repo's top-level planning (this file, goals, structure) is kept in one planning session. Detailed work happens in separate sessions, one per folder or topic (for example, the polyp string and fingers).
 
 ## Reference: older work (read-only)
 Repo `RemyOP-LTL/Modeling`, folder `hex-tubes/`. Never edit it. The latest skin layout from there (`layouts/hex57`) has been copied into `skin/hex57/`; background notes are in `skin/reference/`.
