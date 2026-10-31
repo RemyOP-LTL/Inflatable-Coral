@@ -33,7 +33,9 @@ Patterns longer than one page are split over 2 landscape pages. Trim the later p
 
 `polyp_tool.py` is a small page that opens in your web browser. You change numbers and see the result. You don't edit any code.
 
-    python3 polyp_tool.py
+**Easiest way (Mac):** double-click `Run Polyp Tool.command`. The first time, right-click it, choose Open, then Open again (macOS asks about files from the internet). It sets itself up in a private folder (`.venv`, a few minutes, once) and then opens the tool. Needs Python 3, which macOS offers to install if it is missing. Tested on Linux only, not yet on a Mac.
+
+**By typing:** `python3 polyp_tool.py` (needs numpy, scipy, matplotlib and shapely installed).
 
 - Fields: cuff diameter, cuff ease, cuff length, finger length, number of fingers, finger fullness, lean out, turn length, tunnel width.
 - The flat pattern redraws about a second after you change a number, with a link to the printable PDF.
@@ -52,6 +54,7 @@ Patterns longer than one page are split over 2 landscape pages. Trim the later p
 - **sim_polyp.py**: the cloth simulation behind the `-3d.png` pictures.
 - **sim_pull.py**: the string-pull simulation. `python3 sim_pull.py --out designs` makes `<design>-pull.png` and `<design>-pull.csv`. Options: `--hitch 1.0` (inches below the centre point), `--pull-max 10`, `--steps 10`.
 - **polyp_tool.py**: the browser page above.
+- **snapshot.html**: a page showing the latest outputs of the default design. Open it in a browser here, or Claude publishes it as a link.
 
 The scripts need `numpy`, `scipy`, `matplotlib` and `shapely` (`pip3 install numpy scipy matplotlib shapely`).
 

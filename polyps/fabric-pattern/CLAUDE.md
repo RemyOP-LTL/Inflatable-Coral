@@ -54,5 +54,7 @@ Re-run on 2026-10-30 to check it: `python3 make_pattern.py --out <folder>` (abou
 - Size the motor spool for about 6 in of central string travel and the pull force above (`../motor/`).
 - Try other designs in the tool (shorter fingers, a different fullness) to see if the fingers fold in further.
 
-## Working rule (from Remy, 2026-10-30)
-After any change to the pattern or simulation, run it and send Remy a snapshot of the outputs (the piece picture, the 3D picture and the PDF) in the chat, so he can see the effect without going to GitHub.
+## Working rule (from Remy, 2026-10-30, updated 2026-10-31)
+After any change to the pattern or simulation, run it and show Remy a snapshot of the outputs (the piece picture, the 3D picture, the pull picture and the PDF) in the chat. Also republish the link page `snapshot.html` (as an Artifact, with the pictures and PDF from `designs/`) and give Remy the link, so he can open anything with one click. Update the date and numbers in `snapshot.html` first.
+
+Remy is not comfortable in the terminal. Never ask him to type commands. Give him a link or a double-click file instead (`Run Polyp Tool.command`). Remy is open to working in a local session (Claude desktop app pointed at his repo folder) so that things run on his own Mac.

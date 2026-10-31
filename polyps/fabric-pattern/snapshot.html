@@ -1,0 +1,107 @@
+<title>Polyp Outputs</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* Layout: one reading column. Each output is a captioned figure on a white plate, links beside it. */
+  :root {
+    --bg: #eef1f4;
+    --panel: #ffffff;
+    --fg: #1d2530;
+    --muted: #5b6673;
+    --line: #d3dae2;
+    --accent: #1f5fa8;
+    --plate: #ffffff;
+    --font-body: "IBM Plex Sans", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141a21; --panel: #1b232c; --fg: #e6ebf0; --muted: #9aa6b3; --line: #2c3743; --accent: #7db3f0;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141a21; --panel: #1b232c; --fg: #e6ebf0; --muted: #9aa6b3; --line: #2c3743; --accent: #7db3f0;
+    color-scheme: dark;
+  }
+  body {
+    background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+    padding-block: 28px 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .wrap { max-width: 980px; margin: 0 auto; display: grid; gap: 22px; }
+  h1 { font-size: 28px; font-weight: 600; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+  h2 { font-size: 17px; font-weight: 600; margin: 0; }
+  .meta { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); margin: 6px 0 0; overflow-wrap: anywhere; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; display: grid; gap: 12px; min-width: 0; }
+  p { margin: 0; max-width: 68ch; }
+  .muted { color: var(--muted); }
+  .plate { background: var(--plate); border-radius: 6px; padding: 8px; display: grid; justify-items: center; }
+  .plate img { display: block; max-width: 100%; height: auto; }
+  .plate.narrow img { max-height: 620px; width: auto; }
+  .links { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; }
+  a { color: var(--accent); font-weight: 500; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; font-size: 14px; min-width: 420px; }
+  th, td { text-align: right; padding: 5px 14px 5px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child { text-align: left; }
+  th { font-weight: 500; color: var(--muted); font-size: 12.5px; }
+  ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 68ch; }
+  code { font-family: var(--font-mono); font-size: 13px; }
+  .note { border-left: 3px solid var(--accent); padding-left: 12px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Polyp outputs</h1>
+    <p class="meta">design polyp-5-taper-string · branch claude/polyp-string-fingers · updated 2026-10-31</p>
+  </header>
+
+  <section>
+    <h2>Flat pattern</h2>
+    <p class="muted">One finger half, cut 10. Solid line is the cut, dashed is the sew line, blue is the string tunnel (inner seam, tip to centre) on a wider 5/8 in allowance.</p>
+    <div class="plate narrow"><img src="designs/polyp-5-taper-string-piece.png" alt="Flat pattern piece with the string tunnel drawn in blue"></div>
+    <div class="links"><a href="designs/polyp-5-taper-string-pattern.pdf" target="_blank">Open the printable pattern (PDF, print at 100 %)</a></div>
+  </section>
+
+  <section>
+    <h2>Inflated</h2>
+    <p class="muted">Cloth simulation of the sewn polyp with air in it. The tunnel and cord are not drawn here.</p>
+    <div class="plate"><img src="designs/polyp-5-taper-string-3d.png" alt="Simulated inflated polyp, side and top views"></div>
+  </section>
+
+  <section>
+    <h2>String pull</h2>
+    <p class="muted">Five cords run from the fingertips along the inner seams to one hitch point 1 in below the centre point. The hitch is pulled down in 1 in steps. Constant air pressure, no tunnel friction.</p>
+    <div class="plate"><img src="designs/polyp-5-taper-string-pull.png" alt="Snapshots of the polyp as the string is pulled, with force and fingertip height plotted"></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Hitch pulled down</th><th>Force (lbf per psi)</th><th>Fingertip height (in)</th><th>Centre point height (in)</th></tr></thead>
+        <tbody>
+          <tr><td>0 in</td><td>0.0</td><td>6.8</td><td>1.0</td></tr>
+          <tr><td>1 in</td><td>2.6</td><td>6.7</td><td>0.6</td></tr>
+          <tr><td>2 in</td><td>4.0</td><td>6.4</td><td>0.1</td></tr>
+          <tr><td>3 in</td><td>5.4</td><td>6.2</td><td>-0.4</td></tr>
+          <tr><td>4 in</td><td>6.6</td><td>5.8</td><td>-0.8</td></tr>
+          <tr><td>5 in</td><td>8.7</td><td>5.3</td><td>-1.1</td></tr>
+          <tr><td>6 in</td><td>14.1</td><td>4.8</td><td>-1.2</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">The cord jams between 6 and 7 in of pull. Forces are for 1 psi of air: multiply by your real pressure (0.25 psi gives a quarter). Heights are above the end of the tube.</p>
+    <div class="links"><a href="designs/polyp-5-taper-string-pull.csv" target="_blank">Open the numbers (CSV)</a></div>
+  </section>
+
+  <section>
+    <h2>Run the tool on your Mac</h2>
+    <p class="muted">The tool lets you change cuff diameter, cuff length, finger length and more, and runs the simulations. It needs no typing in a terminal.</p>
+    <ol>
+      <li><a href="https://github.com/remyop-ltl/inflatable-coral/archive/refs/heads/claude/polyp-string-fingers.zip" target="_blank">Download the project as a zip</a> (GitHub asks you to sign in) and open the zip from Downloads.</li>
+      <li>Open the folders <code>polyps</code>, then <code>fabric-pattern</code>.</li>
+      <li>Right-click <code>Run Polyp Tool.command</code>, choose Open, then Open again. You only need the right-click the first time.</li>
+      <li>Wait while it sets itself up (a few minutes, once). Your browser opens with the tool.</li>
+    </ol>
+  </section>
+</div>
