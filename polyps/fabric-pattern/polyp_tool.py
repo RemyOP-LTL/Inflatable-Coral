@@ -105,6 +105,9 @@ def update_code(branch):
     ok, out = git("fetch", "--prune", "origin", timeout=60)
     if not ok:
         return False, "Couldn't reach GitHub. Check your internet connection.\n" + out
+    _, prefix = git("rev-parse", "--show-prefix")
+    if not git("cat-file", "-e", f"origin/{branch}:{prefix}polyp_tool.py")[0]:
+        return False, f"The branch {branch} doesn't have the simulator in it, so I can't switch to it."
     _, cur = git("rev-parse", "--abbrev-ref", "HEAD")
     ok, ahead = git("rev-list", "--count", f"origin/{branch}..HEAD")
     if cur == branch and ok and ahead.isdigit() and int(ahead) > 0:
