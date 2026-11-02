@@ -16,9 +16,11 @@ import hashlib
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
@@ -53,6 +55,78 @@ DEFAULTS = {"CUFF_DIAMETER": (math.pi * 5.0 + 0.5) / math.pi, "EASE": 0.5, "CUFF
 JOBS = {}                         # job id -> dict(state, log, files)
 HEAVY = threading.Semaphore(1)    # only one simulation at a time; they use every processor core
 LOCK = threading.Lock()
+
+
+def git(*args, timeout=60):
+    """Run a git command in this folder. Returns (ok, text)."""
+    try:
+        r = subprocess.run(["git", *args], cwd=HERE, capture_output=True, text=True, timeout=timeout)
+        return r.returncode == 0, (r.stdout + r.stderr).strip()
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return False, str(e)
+
+
+def version_info():
+    """Which version of the code this is, and which newer versions are on GitHub."""
+    ok, _ = git("rev-parse", "--is-inside-work-tree")
+    if not ok:
+        return {"git": False}
+    _, branch = git("rev-parse", "--abbrev-ref", "HEAD")
+    _, line = git("log", "-1", "--format=%h|%cs|%s")
+    sha, date, subject = (line.split("|", 2) + ["", "", ""])[:3]
+    fetched, fetch_msg = git("fetch", "--prune", "origin", timeout=30)
+    behind = 0
+    if fetched:
+        ok2, n = git("rev-list", "--count", f"HEAD..origin/{branch}")
+        behind = int(n) if ok2 and n.isdigit() else 0
+    _, refs = git("for-each-ref", "--sort=-committerdate", "--count=15",
+                  "--format=%(refname:short)|%(committerdate:short)|%(subject)", "refs/remotes/origin")
+    branches = []
+    for ref in refs.splitlines():
+        name, d, subj = (ref.split("|", 2) + ["", ""])[:3]
+        name = name[len("origin/"):] if name.startswith("origin/") else name
+        if name and name != "HEAD":
+            branches.append({"name": name, "date": d, "subject": subj})
+    _, dirty = git("status", "--porcelain", "--untracked-files=no")
+    return {"git": True, "branch": branch, "sha": sha, "date": date, "subject": subject,
+            "online": fetched, "fetch_message": "" if fetched else fetch_msg, "behind": behind,
+            "branches": branches, "dirty": bool(dirty)}
+
+
+def update_code(branch):
+    """Switch to `branch` and bring it up to date, then restart so the new code runs."""
+    if not re.fullmatch(r"[A-Za-z0-9._/-]+", branch or ""):
+        return False, "That branch name isn't valid."
+    if any(j["state"] in ("queued", "running") and not k.startswith("pattern") for k, j in JOBS.items()):
+        return False, "A simulation is still running. Wait for it to finish, then update."
+    ok, out = git("status", "--porcelain", "--untracked-files=no")
+    if out:
+        return False, "Some files in this copy were edited on this computer, so I won't overwrite them:\n" + out
+    ok, out = git("fetch", "--prune", "origin", timeout=60)
+    if not ok:
+        return False, "Couldn't reach GitHub. Check your internet connection.\n" + out
+    _, cur = git("rev-parse", "--abbrev-ref", "HEAD")
+    ok, ahead = git("rev-list", "--count", f"origin/{branch}..HEAD")
+    if cur == branch and ok and ahead.isdigit() and int(ahead) > 0:
+        return False, "This copy has changes that aren't on GitHub, so I won't overwrite them."
+    ok, out = git("checkout", "-B", branch, f"origin/{branch}")
+    if not ok:
+        return False, f"Couldn't switch to {branch}.\n" + out
+    log = out
+    if os.path.exists(os.path.join(HERE, "requirements.txt")):
+        pip = subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "-r", "requirements.txt"],
+                             cwd=HERE, capture_output=True, text=True)
+        if pip.returncode != 0:
+            log += "\n(The library check failed: " + pip.stderr.strip()[-300:] + ")"
+    return True, log
+
+
+def restart_soon():
+    """Start again from the (possibly new) code in a moment, after the reply has gone out."""
+    def go():
+        time.sleep(1.0)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    threading.Thread(target=go, daemon=True).start()
 
 
 def clean(params):
@@ -152,6 +226,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/":
             meta = dict(pattern=PATTERN_FIELDS, pull=PULL_FIELDS, defaults=DEFAULTS)
             self.send(200, PAGE.replace("__META__", json.dumps(meta)), "text/html; charset=utf-8")
+        elif path == "/api/version":
+            self.send(200, json.dumps(version_info()), "application/json")
         elif path.startswith("/api/job/"):
             job = JOBS.get(path.split("/")[-1])
             self.send(200 if job else 404, json.dumps(job or {"state": "unknown"}), "application/json")
@@ -167,6 +243,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send(404, "not found", "text/plain")
 
     def do_POST(self):
+        if urlparse(self.path).path == "/api/update":
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+            ok, log = update_code(body.get("branch"))
+            self.send(200, json.dumps({"ok": ok, "log": log}), "application/json")
+            if ok:
+                restart_soon()
+            return
         if urlparse(self.path).path != "/api/run":
             return self.send(404, "not found", "text/plain")
         try:
@@ -214,6 +297,11 @@ PAGE = r"""<!doctype html>
 <header><h1>Polyp tool</h1><p>Change a setting and the flat pattern redraws. Use the buttons for the 3D simulations. Files are saved in <code>tool-output/</code>.</p></header>
 <main>
   <div>
+    <div class="card" id="version-card" style="margin-bottom:16px"><h2>Version</h2>
+      <div id="version-text" class="derived" style="border:none;margin:0;padding:0">Checking GitHub...</div>
+      <div class="field" style="margin-bottom:0"><select id="branch-select" style="width:100%;font:inherit;padding:4px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink)"></select></div>
+      <button id="update-btn" class="secondary">Get latest changes</button>
+      <div class="status" id="update-log"></div></div>
     <div class="card"><h2>Polyp size</h2><div id="pattern-fields"></div>
       <div class="derived" id="derived"></div>
       <button class="reset" id="reset">Reset to the default design</button></div>
@@ -314,7 +402,33 @@ function finish(kind, key, j) {
 ['pattern', 'inflate', 'pull'].forEach(k => state['seq-' + k] = 0);
 $('run-inflate').onclick = () => run('inflate');
 $('run-pull').onclick = () => run('pull');
-setAll(META.defaults); derived(); run('pattern');
+async function loadVersion(keep) {
+  let v;
+  try { v = await fetch('/api/version').then(x => x.json()); } catch (e) { return false; }
+  const box = $('version-text'), sel = $('branch-select');
+  if (!v.git) { box.textContent = 'This copy isn\'t connected to GitHub, so it can\'t update itself.'; $('update-btn').disabled = true; sel.hidden = true; return true; }
+  const want = keep || v.branch;
+  sel.innerHTML = '';
+  const names = v.branches.map(b => b.name); if (!names.includes(v.branch)) names.unshift(v.branch);
+  names.forEach(n => { const b = v.branches.find(x => x.name === n) || {}; const o = document.createElement('option');
+    o.value = n; o.textContent = n + (b.date ? '  (' + b.date + ')' : '') + (n === v.branch ? '  - running' : ''); if (n === want) o.selected = true; sel.appendChild(o); });
+  const msg = !v.online ? 'Offline, showing what is on this computer.' : v.behind ? '<b>' + v.behind + ' newer change' + (v.behind > 1 ? 's' : '') + ' available</b> on this branch.' : 'Up to date.';
+  box.innerHTML = 'Running <b>' + v.branch + '</b><br>last change ' + v.date + ': ' + (v.subject || '').replace(/</g, '&lt;') + '<br>' + msg;
+  return true;
+}
+$('update-btn').onclick = async () => {
+  const log = $('update-log'), btn = $('update-btn'); btn.disabled = true; log.textContent = 'Updating...';
+  const branch = $('branch-select').value;
+  const r = await fetch('/api/update', {method: 'POST', body: JSON.stringify({branch})}).then(x => x.json()).catch(() => ({ok: false, log: 'Lost the connection.'}));
+  if (!r.ok) { log.textContent = r.log; btn.disabled = false; return; }
+  log.textContent = 'Updated. Restarting the tool...';
+  for (let i = 0; i < 60; i++) {                             // wait for it to come back, then reload
+    await new Promise(res => setTimeout(res, 1000));
+    try { const x = await fetch('/api/version'); if (x.ok) { location.reload(); return; } } catch (e) {}
+  }
+  log.textContent = 'The tool did not come back. Close this tab and open the link again.'; btn.disabled = false;
+};
+setAll(META.defaults); derived(); run('pattern'); loadVersion();
 </script></body></html>
 """
 
