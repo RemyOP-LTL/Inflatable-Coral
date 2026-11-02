@@ -215,21 +215,29 @@ def main():
     ap.add_argument("--units", choices=sorted(UNITS), default="in", help="units the file is in (default in)")
     ap.add_argument("--edge", type=float, help="hexagon side length in inches (default 3.0)")
     ap.add_argument("--flip", action="store_true", help="turn triangles the other way if 'outward' came out wrong")
+    ap.add_argument("--pent-ratio", type=float, help="pentagon side as a multiple of --edge (default 1.15)")
+    ap.add_argument("--coverage", type=float, help="target share of area covered by pentagons, 0.10 to 0.30 (default 0.25)")
+    ap.add_argument("--hole-rim", type=float, help="plastic left around the polyp hole, inches (default 0.5)")
     ap.add_argument("--seed", type=int, help="random seed (default 7)")
     ap.add_argument("--out", help="output folder (default layouts/<mesh name>/)")
     args = ap.parse_args()
-    if args.edge:
-        os.environ["HEX57_EDGE"] = str(args.edge)        # must be set before hex57_layout is imported
+    # These settings are read when hex57_layout is imported, so set them first.
+    for var, val in (("HEX57_EDGE", args.edge), ("HEX57_PENT_RATIO", args.pent_ratio), ("HEX57_COVERAGE", args.coverage),
+                     ("HEX57_HOLE_RIM", args.hole_rim), ("HEX57_SEED", args.seed)):
+        if val is not None:
+            os.environ[var] = str(val)
     import hex57_layout as H                             # noqa: E402  (after the environment is set)
 
     name = os.path.splitext(os.path.basename(args.mesh))[0]
     out_dir = args.out or os.path.join(HERE, "layouts", name)
     os.makedirs(out_dir, exist_ok=True)
-    seed = args.seed if args.seed is not None else H.SEED
-    rng = np.random.default_rng(seed)
+    rng = np.random.default_rng(H.SEED)
 
     print(f"reading {args.mesh}")
     V, F = read_stl(args.mesh) if args.mesh.lower().endswith(".stl") else read_obj(args.mesh)
+    if len(F) == 0:
+        raise SystemExit(f"No triangles found in {os.path.basename(args.mesh)}. It needs to be an OBJ or STL "
+                         "mesh of a surface (in Fusion: right-click the body, Save As Mesh).")
     V = V * UNITS[args.units]
     V, F = weld(V, F, 1e-4)
     V, F = orient_and_clean(V, F, args.flip)

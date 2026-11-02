@@ -16,7 +16,8 @@ A flexible tool that applies a slightly bumpy "polygon" skin, made from sections
 - `hex57/hex57_mesh.py` — (new, 2026-11-02) runs the same layout on any mesh file (OBJ or STL). `hex57/make_test_meshes.py` makes test shapes in `hex57/meshes/` (bent tube, dome, lumpy dome); results are in `hex57/layouts/`.
 - `reference/FUSION-CONTEXT.md` — background and lessons from the Onshape work.
 
-To run it (Mac): `pip3 install numpy scipy matplotlib`, then in `skin/hex57/` run `python3 hex57_layout.py` (about 50 s) and open `viewer.html`.
+**Easiest (Mac):** double-click `hex57/Start Skin Tool.command`: a browser page with a shape picker, sliders and a Run button (see the last section of `hex57/README.md`).
+To run it from Terminal (Mac): `pip3 install numpy scipy matplotlib`, then in `skin/hex57/` run `python3 hex57_layout.py` (about 50 s) and open `viewer.html`.
 To run it on any shape from a mesh file: `python3 hex57_mesh.py meshes/lumpy_dome.obj` (or your own OBJ/STL; add `--units mm` if it is in millimetres), then open `layouts/<name>/viewer.html`. See the last section of `hex57/README.md`.
 
 ## Status
@@ -26,6 +27,7 @@ The layout now works on any surface given as a mesh (2026-11-02). Tried on the t
 ## Done this session (2026-11-02): layout on any surface
 - Split `hex57_layout.py`'s `main()` into the tube setup plus a reusable `run_layout(...)`. The tube result is unchanged (checked: identical corners and polygons before and after). Small changes: `settle` handles any number of open edges (was hard-coded to two), `HEX57_EDGE` environment variable can override `EDGE`, layout.json params now carry the surface settings passed in, and `measure` copes with a surface that has no cut-off shapes.
 - New `hex57_mesh.py`: reads OBJ/STL (units option), welds corners, keeps the biggest piece, orients triangles outward, finds open edges, samples the surface densely, starts from the mesh's own triangles and calls `run_layout`.
+- Remy found Terminal awkward and asked for a window to run and tweak the tool. Built `hex57/skin_app.py`, a browser page (standard-library web server, local only) launched by double-clicking `hex57/Start Skin Tool.command`. Controls (chosen by Remy): shape file (examples or upload, with units and an inside-out switch), hexagon side length, pentagon size ratio, pentagon coverage, hole rim, seed. Each Run starts `hex57_mesh.py` in the background, shows progress, then shows the 3D viewer in the page and keeps the run in `hex57/runs/`. Tested in a browser here (upload, sliders, run, results list, failed run); the 3D viewer itself needs the internet and could not be seen from the test environment. The settings also exist as `hex57_mesh.py` options (`--pent-ratio`, `--coverage`, `--hole-rim`, `--seed`).
 - Decisions: mesh triangles are the starting seeds (the old tube-only honeycomb start is not needed); shapes at an open edge are cut and left out of the counts; no "extra length" trimming on meshes (give the mesh extra surface instead); `--out` defaults to `hex57/layouts/<mesh name>/`.
 - The tube-only code that remains: `TestTube`, `start_honeycomb`, the unrolled picture. All marked TUBE-SPECIFIC.
 
@@ -36,6 +38,7 @@ The layout now works on any surface given as a mesh (2026-11-02). Tried on the t
 
 ## Next
 - (Deferred by Remy) Decide how the layout gets into Fusion 360 (`layout.json` import by a Fusion Python script is the likely route; check what Python libraries Fusion has).
+- Remy to try the browser tool on his Mac (Python 3.9; syntax checked, not run on 3.9) and report what breaks.
 - Try it on a real Fusion export (a branch or the brain-coral dome): check units, outward direction and open edges. Untested: closed tube tip with a narrow neck, Y-fork, sharp creases.
 - Dome-specific question: on a dome the rim shapes are cut off; decide how the dome's base edge should end.
 - Edge-thinning cutout in each polygon.

@@ -196,3 +196,20 @@ It stops with a plain message if the mesh has edges shared by more than two tria
 Checked on the dome: every interior corner is shared by exactly 3 shapes, no edge is shared by more than 2, no two pentagons touch, and corners stay within the 0.4 in lift limit of the surface.
 
 Limits so far: the surface should be one smooth-ish sheet (sharp creases fold the seed triangles and trigger a warning); very large surfaces are sampled more coarsely (at most 300,000 points); a closed tube tip with a narrow neck and Y-shaped forks are untested (the dome's closed pole worked).
+
+
+## Update: the skin tool in a browser window (`skin_app.py`)
+
+No Terminal commands needed day to day. On a Mac, double-click **`Start Skin Tool.command`** in this folder. A Terminal window opens (leave it open) and your browser opens the tool. To stop it, close that Terminal window.
+
+In the page:
+- **Shape:** pick an example or press "Add my own file…" to choose an STL or OBJ from Fusion. Set the units it was exported in. (In Fusion: right-click the body, Save As Mesh.)
+- **Polygon size:** hexagon side length.
+- **Pentagons:** pentagon size relative to hexagons, target share of area, and the plastic left around the polyp hole.
+- **Randomness:** the seed. A different number gives a different arrangement with the same character.
+- Press **Run**. It takes about a minute. The progress shows above, and the 3D viewer fills the page when it's done. Drag to spin; the viewer's own slider still steps through pentagon coverage.
+- Every run is kept (in `runs/`) and listed under "Earlier runs" so you can flip between them. Your settings are remembered in the browser.
+
+It uses the same `hex57_mesh.py` as before, so results match the command line. The page is only visible to your own computer. Files you add go in `uploads/`; both `runs/` and `uploads/` stay out of git.
+
+If the double-click does nothing, or macOS says it can't be opened: right-click the file, choose Open, then Open. If Terminal says a library is missing, run `pip3 install numpy scipy matplotlib` once.

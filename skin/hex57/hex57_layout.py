@@ -52,7 +52,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # ============================================================================
 # Parameters you can tweak (all lengths in inches)
 # ============================================================================
-SEED = 7                    # change for a different random layout
+SEED = int(os.environ.get("HEX57_SEED", 7))   # change for a different random layout
 
 # Every shape is aimed at a regular polygon with sides of the same length, like a geodesic:
 # EDGE for hexagons and heptagons, EDGE * PENT_SIDE_RATIO for pentagons. Equal sides mean every
@@ -60,7 +60,7 @@ SEED = 7                    # change for a different random layout
 # (A bit over 1 on the ratio lets pentagons cover more of the skin, at the cost of a little
 # roundness in the shapes next to them.)
 EDGE = float(os.environ.get("HEX57_EDGE", 3.0))   # hex57_mesh.py --edge sets this
-PENT_SIDE_RATIO = 1.15
+PENT_SIDE_RATIO = float(os.environ.get("HEX57_PENT_RATIO", 1.15))
 
 
 def regular_across(k):
@@ -85,12 +85,12 @@ SIZE_FOLLOWS_RADIUS = 0.7   # 0 = ignore how thin the tube is; 1 = shrink shapes
 REFERENCE_RADIUS = 8.0      # tube radius at which shapes get their full size
 
 # Pentagons
-PENTAGON_COVERAGE = 0.25    # share of the whole skin's area covered by pentagons (0.35 = 35 %)
+PENTAGON_COVERAGE = float(os.environ.get("HEX57_COVERAGE", 0.25))    # share of the whole skin's area covered by pentagons (0.35 = 35 %)
 COVERAGE_STEPS = [0.10, 0.15, 0.20, 0.25, 0.30]   # layouts for the viewer's slider
 # Every pentagon is aimed at the same regular pentagon.
 # Big shapes on a 12 in tube can't be flat: 6.45 in across (what a 5 in hole with 0.5 in of rim
 # needs) bows about 0.5 in; 4.8 in across bows about 0.25 in.
-HOLE_RIM = 0.5              # plastic left between the hole and the pentagon's edge, at the closest point
+HOLE_RIM = float(os.environ.get("HEX57_HOLE_RIM", 0.5))              # plastic left between the hole and the pentagon's edge, at the closest point
 PENT_SIDE = side_for(5)
 PENT_APOTHEM = apothem_for(5)                       # centre to edge
 PENT_ACROSS = PENT_SIDE * regular_across(5)
