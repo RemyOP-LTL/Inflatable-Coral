@@ -199,7 +199,9 @@ def build(single=False):
         F = F[:, [0, 2, 1]]
     # the string seam: down the inside of the finger, from the tip to the centre point
     ce = edges["centre"]
-    string_path = newid[ce[int(np.argmax(uv[ce][:, 1])):]]
+    k_tip = int(np.argmax(uv[ce][:, 1]))
+    string_path = newid[ce[k_tip:]]
+    string_s = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(rest2d[ce[k_tip:]], axis=0), axis=1))])
     tip_local = np.argmin(np.linalg.norm(uv - [0, P.THUMB_LENGTH], axis=1))
     tips = newid[[2 * k * npts + tip_local for k in ks]]
     centre = newid[np.argmin(np.linalg.norm(uv - [P.W0 / 2, -P.TRI_DEPTH], axis=1))]
@@ -211,7 +213,7 @@ def build(single=False):
             idx = np.unique(newid[np.concatenate([edges["v_top"], edges["v_cuff"]]) + off])
             planes.append((idx, np.array([-math.sin(b), math.cos(b), 0.0])))
     return dict(X=Xm, F=F, E=E, L=L, BP=BP, LB=LB, seam=seam, hem=hem, tips=tips, centre=centre,
-                planes=planes, single=single, string_path=string_path, cuff=Xm[:, 2] < -0.05)
+                planes=planes, single=single, string_path=string_path, string_s=string_s, cuff=Xm[:, 2] < -0.05)
 
 
 def _scatter(n, idx, vals):
@@ -241,20 +243,22 @@ def string_energy(X, string):
     return string["k"] * viol ** 2, g
 
 
-def relax(m, iters=4000, pressure=1.0, stiff=60.0, log=False, tie=None, x0=None, hollow=False, string=None):
+def relax(m, iters=4000, pressure=1.0, stiff=60.0, log=False, tie=None, x0=None, hollow=False, string=None, soft=1.0):
     """Find the resting shape: minimise (stretch energy + tube contact - pressure x volume).
     tie: if set, the centre of the top is tied down to this height (a cord to the tube end).
     x0: start from this shape instead of the pattern's first guess.
     hollow: the tube is open (a thin wall, no cap): the top can be pulled down into it.
-    string: dict for string_energy(), a taut string from the fingertip to a hitch point."""
+    string: dict for string_energy(), a taut string from the fingertip to a hitch point.
+    soft: how floppy the fabric is. 1 = as before; smaller numbers make it bend and bunch up more
+    easily compared with the air pressure (real nylon is very floppy)."""
     from scipy.optimize import minimize
     F, E, L, BP, LB = m["F"], m["E"], m["L"], m["BP"], m["LB"]
     N = len(m["X"])
     tube_r = P.TUBE_DIAMETER / 2
     hem = m["hem"]
     ref = np.array([0, 0, -P.CUFF_HEIGHT])
-    kc = 0.02 * stiff          # fabric bunches up much more easily than it stretches
-    kb = 0.02                  # slight body within each piece, none across seams
+    kc = 0.02 * stiff * soft   # fabric bunches up much more easily than it stretches
+    kb = 0.02 * soft                 # slight body within each piece, none across seams
     kt = 400.0                 # tube contact
     kh = 400.0                 # hem stays at the bottom
 

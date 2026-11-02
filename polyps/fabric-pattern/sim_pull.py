@@ -5,6 +5,7 @@ Makes: <name>-pull.png (snapshots and a force curve) and <name>-pull.csv (the nu
 (It stops early if the fingers can't fold any further.)
 Options: --hitch 1.0      where the five strings meet, this far below the centre point (in)
          --pull-max 10    how far the hitch is pulled down in total (in)
+         --soft 0.05      how floppy the fabric is (1 = stiff as in the first version, 0.01 = very floppy)
          --steps 10       how many pulls between 0 and --pull-max
          --name design    start of the file names (default: the design's name)
 The pattern settings are the same as make_pattern.py (use POLYP="FINGER_LENGTH=7,..." to change them).
@@ -14,7 +15,8 @@ at the fingertip, running along the inner seam to the centre point, then straigh
 hitch. The cord can't stretch. The hitch is pulled down a little at a time. Each time, the
 fabric settles into its new shape, so you see the fingers fold in as the cord shortens.
 
-Assumptions: the air pressure stays constant (the blower keeps up); there is no friction in the
+Assumptions: the cord is held only at the tip, the tabs and the centre point, and goes straight in between
+(with TUNNEL=2 it follows the whole seam); the air pressure stays constant (the blower keeps up); there is no friction in the
 tunnel; the tube is open (a thin wall), so the top of the polyp can be pulled down into it; the
 cord is just taut when the polyp is fully inflated. Not simulated: fingers pressing on each other
 (it holds one finger between mirror planes, so neighbours can't cross), gravity, fabric thickness.
@@ -49,14 +51,25 @@ def string_state(m, X, H, length):
     return ell, tension
 
 
-def run(hitch=1.0, pull_max=10.0, steps=10, iters=3000):
+def guide_path(m):
+    """The mesh points the cord passes through. With tabs (the default design) the cord is held
+    only at the tip, at each tab and at the centre point, and goes straight in between. With
+    the continuous tunnel (or no tunnel) it follows every point of the seam."""
+    p = m["string_path"]
+    if P.TUNNEL != 1:
+        return p
+    idx = [int(np.argmin(np.abs(m["string_s"] - c))) for c in P.tab_centres()]
+    return np.array([p[0]] + [p[i] for i in idx] + [p[-1]])
+
+
+def run(hitch=1.0, pull_max=10.0, steps=10, iters=3000, soft=0.05):
     m = S.build(single=True)
     print("inflating the polyp...", flush=True)
-    X = S.relax(m, iters=6000)
-    X = S.relax(m, iters=iters, x0=X, hollow=True)           # same shape, with the tube open
+    X = S.relax(m, iters=6000, soft=soft)
+    X = S.relax(m, iters=iters, x0=X, hollow=True, soft=soft)   # same shape, with the tube open
     c = m["centre"]
     H0 = np.array([0.0, 0.0, X[c, 2] - hitch])
-    p = m["string_path"]
+    p = guide_path(m)
     length = np.linalg.norm(np.diff(X[p], axis=0), axis=1).sum() + np.linalg.norm(X[c] - H0)
     print(f"centre point {X[c, 2]:.2f} in above the tube end; hitch {hitch:g} in below it; "
           f"cord {length:.2f} in from tip to hitch", flush=True)
@@ -65,7 +78,7 @@ def run(hitch=1.0, pull_max=10.0, steps=10, iters=3000):
         H = H0 - [0, 0, d]
         string = dict(path=p, centre=c, hitch=H, length=length, k=STRING_STIFFNESS)
         t0 = time.time()
-        X = S.relax(m, iters=iters, x0=X, hollow=True, string=string)
+        X = S.relax(m, iters=iters, x0=X, hollow=True, string=string, soft=soft)
         ell, T = string_state(m, X, H, length)
         tip = X[m["tips"][0]]
         # air volume, from the same formula the solver uses
@@ -101,7 +114,7 @@ def picture(m, frames, path, title, jammed_at=None):
         lines = []
         for k in range(P.THUMBS):                      # the cord of each finger, then down to the hitch
             R = rot(k)
-            lines.append(np.vstack([fr["X"][m["string_path"]], fr["H"]]) @ R.T)
+            lines.append(np.vstack([fr["X"][guide_path(m)], fr["H"]]) @ R.T)
         S.draw_polyp(ax, full, Xf, 14, 35, strings=lines)
         ax.set_title(f"pull {fr['pull']:.1f} in", fontsize=10)
     ax = fig.add_subplot(rows, cols, n + 1)
@@ -132,9 +145,10 @@ def main():
         f"polyp-{P.FINGERS}-taper" + ("-string" if P.TUNNEL else "") if P.TAPER else f"polyp-{P.FINGERS}-club"
     os.makedirs(out, exist_ok=True)
     hitch, pull_max, steps = _opt("--hitch", 1.0), _opt("--pull-max", 10.0), int(_opt("--steps", 10))
-    m, frames, jammed_at = run(hitch, pull_max, steps)
+    soft = _opt("--soft", 0.05)
+    m, frames, jammed_at = run(hitch, pull_max, steps, soft=soft)
     picture(m, frames, os.path.join(out, f"{name}-pull.png"),
-            f"{name}: pulling the string (hitch {hitch:g} in below the centre point)", jammed_at)
+            f"{name}: pulling the string (hitch {hitch:g} in below the centre point, fabric softness {soft:g})", jammed_at)
     with open(os.path.join(out, f"{name}-pull.csv"), "w") as f:
         f.write("pull_in,force_lbf_per_psi,tip_height_in,tip_out_in,centre_height_in,air_volume_cu_in\n")
         for fr in frames:
