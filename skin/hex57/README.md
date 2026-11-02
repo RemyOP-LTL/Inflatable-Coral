@@ -213,3 +213,18 @@ In the page:
 It uses the same `hex57_mesh.py` as before, so results match the command line. The page is only visible to your own computer. Files you add go in `uploads/`; both `runs/` and `uploads/` stay out of git.
 
 If the double-click does nothing, or macOS says it can't be opened: right-click the file, choose Open, then Open. If Terminal says a library is missing, run `pip3 install numpy scipy matplotlib` once.
+
+
+## Update: holes, cutouts, extension, scale, several tabs (2026-11-02, second round)
+
+**Extension past your surface.** Instead of cutting shapes off at the edge of the mesh you give it, `hex57_mesh.py` now grows the surface outward past each open edge (default 2 rows of shapes, `--extend-rows`; 0 = old behaviour) and lays the pattern across it. The shapes along your own edge are therefore whole shapes. Shapes on the extension are drawn green, are not counted in any statistic, and the 3D viewer says so. The extension continues the surface's own turning at the edge (a tube keeps its bend, a dome keeps curving), smoothed along the edge so bumps don't get exaggerated. It is a guess about what lies beyond your surface, so a surface that is steeply tilted or bumpy right at its edge gives a lumpier skirt. A closed surface has no edge and gets no extension.
+
+**Pentagon size from the hole.** You now give the round hole's diameter (`--hole-diameter`, default 3.75 in) and the plastic left between the hole and each side (`--hole-rim`, default 0.5 in). The pentagon is made just big enough: apothem = hole radius + rim. A 5 in hole with 0.5 in of rim is a pentagon 4.36 in a side, 6.45 in across. If that is much bigger than the hexagon side (`--edge`), the neighbours get squeezed; the browser tool warns above 1.35 times and suggests a bigger hexagon. Pentagons come out a few percent irregular, so the thinnest rim is somewhat under what you ask (about 0.32 in for an asked 0.5 in at the defaults). The viewer shows both numbers. Aiming pentagons larger fixes the rim but costs roundness in the neighbours (`HEX57_PENT_AIM`, default 1.05; 1.11 gave 0.41 in). Not changed, since you ranked roundness first.
+
+**Cutting the holes.** Every full pentagon gets a round hole of the set diameter in the middle. Every other full panel gets a cutout that follows its own outline: `--cutout-rim` of plastic (default 0.5 in) at the middle of each side, widening to `--corner-rim` (default 1.0 in) at the corners, with rounded corners. A panel too small for a cutout (smaller than 0.5 in radius) stays solid. Panels that touch an open edge stay solid. The cuts are real loops of 3D points lying on each panel's surface, saved in `layout.json` (`polygon_info[i].cut = {kind, loop}`) and drawn as real see-through holes in the viewer (untick "Cut holes" to see solid panels). The thinnest plastic around holes and cutouts is measured and shown.
+
+**Scale in the viewer.** A scale bar at the bottom (inches, or feet when long) updates as you zoom, and the panel states the skin's size in inches and feet (not counting the extension). The bar is accurate at the middle of the shape.
+
+**Several tabs.** The browser tool has a "New tab" button. It opens a copy with the same settings. Each tab runs its own job (up to 3 at once) and watches its own result; the "Earlier runs" list is shared, and the ↺ button next to a run puts that run's settings back into the sliders.
+
+`make_test_meshes.py` now makes the tube exactly 8 ft and fades the lumpy dome's bumps out at its base (it used to have cliffs there).

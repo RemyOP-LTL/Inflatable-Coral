@@ -45,6 +45,7 @@ from matplotlib.collections import PolyCollection
 from matplotlib.patches import Patch
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
+import cutouts
 from make_viewer import make_viewer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -60,7 +61,22 @@ SEED = int(os.environ.get("HEX57_SEED", 7))   # change for a different random la
 # (A bit over 1 on the ratio lets pentagons cover more of the skin, at the cost of a little
 # roundness in the shapes next to them.)
 EDGE = float(os.environ.get("HEX57_EDGE", 3.0))   # hex57_mesh.py --edge sets this
-PENT_SIDE_RATIO = float(os.environ.get("HEX57_PENT_RATIO", 1.15))
+
+# Pentagon size. Either set it directly (PENT_SIDE_RATIO) or, better, say how big the round polyp hole
+# is and how much plastic must be left between the hole and each side: the pentagon is then just big
+# enough (its apothem = hole radius + rim). The HEX57_* variables are how hex57_mesh.py and the
+# browser tool pass these in.
+HOLE_RIM = float(os.environ.get("HEX57_HOLE_RIM", 0.5))     # plastic left between the hole and a side, at the closest point
+_hole_d = os.environ.get("HEX57_HOLE_DIAMETER")
+if _hole_d:
+    PENT_SIDE_RATIO = 2 * (float(_hole_d) / 2 + HOLE_RIM) * math.tan(math.pi / 5) / EDGE
+else:
+    PENT_SIDE_RATIO = float(os.environ.get("HEX57_PENT_RATIO", 1.15))
+# Every other panel is cut out as its own outline pulled in: thin rim mid-side, wide rim at the corners.
+CUTOUT_RIM = float(os.environ.get("HEX57_CUTOUT_RIM", 0.5))          # rim at the middle of each side
+CUTOUT_CORNER_RIM = float(os.environ.get("HEX57_CORNER_RIM", 1.0))   # rim at the corners
+CUTOUT_ROUND = 0.5          # how much the cutout's corners are rounded (inches)
+CUTOUT_MIN_RADIUS = 0.5     # a panel whose cutout would be smaller than this stays solid
 
 
 def regular_across(k):
@@ -90,13 +106,12 @@ COVERAGE_STEPS = [0.10, 0.15, 0.20, 0.25, 0.30]   # layouts for the viewer's sli
 # Every pentagon is aimed at the same regular pentagon.
 # Big shapes on a 12 in tube can't be flat: 6.45 in across (what a 5 in hole with 0.5 in of rim
 # needs) bows about 0.5 in; 4.8 in across bows about 0.25 in.
-HOLE_RIM = float(os.environ.get("HEX57_HOLE_RIM", 0.5))              # plastic left between the hole and the pentagon's edge, at the closest point
 PENT_SIDE = side_for(5)
 PENT_APOTHEM = apothem_for(5)                       # centre to edge
 PENT_ACROSS = PENT_SIDE * regular_across(5)
 PENT_AREA = 5 * PENT_APOTHEM ** 2 * math.tan(math.pi / 5)
-HOLE_DIAMETER = round(2 * (PENT_APOTHEM - HOLE_RIM), 2)   # biggest round hole that leaves HOLE_RIM
-PENT_AIM = 1.05            # the neighbours pull pentagons back about 3 %, so the solver aims a bit high
+HOLE_DIAMETER = round(float(_hole_d) if _hole_d else 2 * (PENT_APOTHEM - HOLE_RIM), 2)   # the round hole in every pentagon
+PENT_AIM = float(os.environ.get("HEX57_PENT_AIM", 1.05))            # the neighbours pull pentagons back about 3 %, so the solver aims a bit high
 PENT_PULL = 0.95            # like SIZE_PULL, but for pentagons: nearly all the way to PENT_ACROSS
 PENT_WEIGHT = 30.0
 SHAPE_WEIGHT = 8.0         # pull of other shapes towards regular polygons
@@ -1189,7 +1204,37 @@ def finish(mesh, surf, size):
     info, m = measure(C, polys, skip, surf)
     m["flatness_on_surface_max"] = m_surface["flatness_max"]
     m["flatness_on_surface_mean"] = m_surface["flatness_mean"]
+    add_cuts(C, polys, info, is_end, m)
     return C, fixed, polys, info, m
+
+
+def add_cuts(C, polys, info, is_end, m):
+    """Cut the round hole out of every pentagon and a thin-rimmed cutout out of every other panel.
+    Panels touching an open edge are partial, so they stay solid."""
+    holes = cuts = solid = 0
+    rim_hole, rim_cut = [], []
+    for poly, d, rim_cut_here in zip(polys, info, is_end):
+        d["cut"] = None
+        if rim_cut_here:
+            continue
+        kind = "hole" if d["sides"] == 5 else "cutout"
+        res = cutouts.make_cut(C[poly], kind, HOLE_DIAMETER, CUTOUT_RIM, CUTOUT_CORNER_RIM, CUTOUT_ROUND,
+                               min_radius=CUTOUT_MIN_RADIUS)
+        if res is None:
+            solid += 1
+            continue
+        d["cut"] = res
+        if d["end"]:
+            continue                                     # extension shapes get cuts but are not counted
+        if kind == "hole":
+            holes += 1
+            rim_hole.append(res["rim_min"])
+        else:
+            cuts += 1
+            rim_cut.append(res["rim_min"])
+    m.update(holes=holes, cutouts=cuts, solid_panels=solid,
+             hole_rim_min=float(min(rim_hole)) if rim_hole else None,
+             cutout_rim_min=float(min(rim_cut)) if rim_cut else None)
 
 
 def to_layout(C, fixed, polys, info, m, unrolled, coverage_target, surface_params):
@@ -1205,7 +1250,8 @@ def to_layout(C, fixed, polys, info, m, unrolled, coverage_target, surface_param
         params=dict(SEED=SEED, SIZE_MIN=SIZE_MIN, SIZE_MAX=SIZE_MAX, SIZE_MEAN=SIZE_MEAN,
                     SIZE_PATCH=SIZE_PATCH, SIZE_FOLLOWS_RADIUS=SIZE_FOLLOWS_RADIUS,
                     PENTAGON_COVERAGE=coverage_target, PENT_ACROSS=PENT_ACROSS,
-                    HOLE_DIAMETER=HOLE_DIAMETER, HOLE_RIM=HOLE_RIM,
+                    HOLE_DIAMETER=HOLE_DIAMETER, HOLE_RIM=HOLE_RIM, CUTOUT_RIM=CUTOUT_RIM,
+                    CUTOUT_CORNER_RIM=CUTOUT_CORNER_RIM,
                     FLATTEN_ROUNDS=FLATTEN_ROUNDS, FLATTEN_MAX_OFFSET=FLATTEN_MAX_OFFSET,
                     EDGE=EDGE, PENT_SIDE_RATIO=PENT_SIDE_RATIO, **surface_params),
         vertices=np.round(C, 4).tolist(),
@@ -1216,7 +1262,10 @@ def to_layout(C, fixed, polys, info, m, unrolled, coverage_target, surface_param
         polygon_info=[dict(sides=d["sides"], end=d["end"], area=round(d["area"], 3),
                            across=round(d["across"], 3), flatness=round(d["flatness"], 4),
                            centre=np.round(d["centre"], 4).tolist(),
-                           normal=np.round(d["normal"], 4).tolist()) for d in info],
+                           normal=np.round(d["normal"], 4).tolist(),
+                           cut=None if d.get("cut") is None else
+                           dict(kind=d["cut"]["kind"], loop=np.round(d["cut"]["loop"], 3).tolist()))
+                      for d in info],
         metrics=m,
     )
 
@@ -1292,7 +1341,12 @@ def run_layout(mesh, surf, size, rng, out_dir, render_fn, surface_params):
     for k in sorted(s):
         name = {4: "4 sides", 5: "pentagons", 6: "hexagons", 7: "heptagons", 8: "8 sides"}.get(k, f"{k} sides")
         print(f"  {name:10s} {s[k]:4d}")
-    print(f"  cut at the ends: {m['end_shapes']}")
+    print(f"  extension / cut at an open edge (greyed, not counted): {m['end_shapes']}")
+    print(f"Cut out: {m['holes']} pentagon holes ({HOLE_DIAMETER:g} in round), {m['cutouts']} other panels, "
+          f"{m['solid_panels']} left solid (too small)")
+    if m["hole_rim_min"] is not None:
+        print(f"Thinnest plastic round a hole: {m['hole_rim_min']:.2f} in (asked {HOLE_RIM:g}); "
+              f"round a cutout: {m['cutout_rim_min']:.2f} in (asked {CUTOUT_RIM:g} mid-side)")
     print(f"Size across (in):   min {m['across_min']:.2f}   average {m['across_mean']:.2f}   max {m['across_max']:.2f}")
     print(f"Out of flat (in):   max {m['flatness_max']:.3f}   average {m['flatness_mean']:.3f}"
           f"   (corners on the surface: max {m['flatness_on_surface_max']:.3f}, average {m['flatness_on_surface_mean']:.3f})")

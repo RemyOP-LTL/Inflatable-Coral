@@ -24,7 +24,18 @@ To run it on any shape from a mesh file: `python3 hex57_mesh.py meshes/lumpy_dom
 Layout prototype exists, outside Fusion. Nothing built in Fusion 360 yet. At default settings on the test tube: 58 pentagons, about 23 % coverage, about 5 in across, no two touching; shapes about 0.27 in out of flat on average.
 The layout now works on any surface given as a mesh (2026-11-02). Tried on the tube as a mesh (76 pentagons, 24 %), a 48 in dome (44 pentagons, 25 %, 0.04 in out of flat) and a lumpy dome (47 pentagons, 25 %, 0.22 in out of flat). Not tried on a real Fusion export yet.
 
-## Done this session (2026-11-02): layout on any surface
+## Done this session, second round (2026-11-02): holes, cutouts, extension, scale, tabs
+Remy asked for six things; all built and tested (details in `hex57/README.md`, last section):
+- Scale bar and skin size in the 3D viewer.
+- "New tab" in the browser tool; each tab runs its own job (up to 3 at once).
+- Pentagon size set by hole diameter plus rim (`--hole-diameter`, `--hole-rim`); the tool shows the resulting pentagon size and warns when it is too big for the hexagons.
+- "Weirdness": read as the cut-off, trimmed edges. The surface is now extended past each open edge (`--extend-rows`, default 2) so the shapes along Remy's edge are whole; extension shapes are greyed and not counted. If Remy meant other weirdness, ask what he saw.
+- Round holes cut out of every full pentagon; every other full panel gets a cutout following its outline, thin rim mid-side and wide at corners (`hex57/cutouts.py`). Real see-through holes in the viewer; loops saved in layout.json.
+- Decisions: cutouts defaults 0.5 in mid-side, 1.0 in at corners; panels touching an open edge stay solid; hole diameter is fixed, so the rim varies and the thinnest is reported next to what was asked.
+- Known issue: because pentagons come out a few percent irregular, the thinnest rim round a hole is about 0.32 in when 0.5 in is asked. Fix options: aim pentagons larger (`HEX57_PENT_AIM`, costs roundness of neighbours), or ask for a thicker rim. Needs Remy's call.
+- Testing note: the viewer was checked in a real browser here with the 3D library served locally. The new tab, running two jobs at once, uploads and failed runs were tested. Not run on Remy's Mac (Python 3.9, syntax checked only).
+
+## Done earlier this session (2026-11-02): layout on any surface
 - Split `hex57_layout.py`'s `main()` into the tube setup plus a reusable `run_layout(...)`. The tube result is unchanged (checked: identical corners and polygons before and after). Small changes: `settle` handles any number of open edges (was hard-coded to two), `HEX57_EDGE` environment variable can override `EDGE`, layout.json params now carry the surface settings passed in, and `measure` copes with a surface that has no cut-off shapes.
 - New `hex57_mesh.py`: reads OBJ/STL (units option), welds corners, keeps the biggest piece, orients triangles outward, finds open edges, samples the surface densely, starts from the mesh's own triangles and calls `run_layout`.
 - Remy found Terminal awkward and asked for a window to run and tweak the tool. Built `hex57/skin_app.py`, a browser page (standard-library web server, local only) launched by double-clicking `hex57/Start Skin Tool.command`. Controls (chosen by Remy): shape file (examples or upload, with units and an inside-out switch), hexagon side length, pentagon size ratio, pentagon coverage, hole rim, seed. Each Run starts `hex57_mesh.py` in the background, shows progress, then shows the 3D viewer in the page and keeps the run in `hex57/runs/`. Tested in a browser here (upload, sliders, run, results list, failed run); the 3D viewer itself needs the internet and could not be seen from the test environment. The settings also exist as `hex57_mesh.py` options (`--pent-ratio`, `--coverage`, `--hole-rim`, `--seed`).
@@ -38,6 +49,8 @@ The layout now works on any surface given as a mesh (2026-11-02). Tried on the t
 
 ## Next
 - (Deferred by Remy) Decide how the layout gets into Fusion 360 (`layout.json` import by a Fusion Python script is the likely route; check what Python libraries Fusion has).
+- Decide how to handle the thin rim round pentagon holes (see known issue above).
+- Not done yet from this round: flat sections for the router bed, tabs and rivets; how it gets into Fusion (the cut loops are in layout.json, ready for that).
 - Remy to try the browser tool on his Mac (Python 3.9; syntax checked, not run on 3.9) and report what breaks.
 - Try it on a real Fusion export (a branch or the brain-coral dome): check units, outward direction and open edges. Untested: closed tube tip with a narrow neck, Y-fork, sharp creases.
 - Dome-specific question: on a dome the rim shapes are cut off; decide how the dome's base edge should end.

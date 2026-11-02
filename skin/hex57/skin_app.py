@@ -20,7 +20,7 @@ import threading
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MESHES = os.path.join(HERE, "meshes")
@@ -29,7 +29,8 @@ RUNS = os.path.join(HERE, "runs")
 PORT = 8765
 MAX_UPLOAD = 500 * 1024 * 1024
 
-job = dict(id=None, proc=None, log=[], state="idle", label="", started=0.0)   # the one job that may run at a time
+MAX_JOBS = 3                  # runs going at the same time (each tab can start its own)
+jobs = {}                     # run id -> dict(proc, log, state, label, started)
 lock = threading.Lock()
 
 
@@ -68,34 +69,39 @@ def start_job(p):
     if not mesh:
         return dict(error="Pick a shape file first.")
     with lock:
-        if job["state"] == "running":
-            return dict(error="A run is already going. Wait for it to finish or press Stop.")
+        if sum(1 for j in jobs.values() if j["state"] == "running") >= MAX_JOBS:
+            return dict(error=f"{MAX_JOBS} runs are already going. Wait for one to finish or press Stop in its tab.")
         run_id = time.strftime("%Y%m%d-%H%M%S")
         base = re.sub(r"[^A-Za-z0-9_.-]", "_", os.path.splitext(os.path.basename(mesh))[0])
-        out_dir = os.path.join(RUNS, f"{run_id}_{base}")
+        while os.path.exists(os.path.join(RUNS, f"{run_id}_{base}")):          # two runs started in the same second
+            run_id += "b"
+        job_id = f"{run_id}_{base}"
+        out_dir = os.path.join(RUNS, job_id)
         os.makedirs(out_dir, exist_ok=True)
         cmd = [sys.executable, "-u", os.path.join(HERE, "hex57_mesh.py"), mesh, "--out", out_dir,
                "--units", p.get("units", "in"),
-               "--edge", str(float(p["edge"])), "--pent-ratio", str(float(p["pent_ratio"])),
-               "--coverage", str(float(p["coverage"]) / 100), "--hole-rim", str(float(p["hole_rim"])),
+               "--edge", str(float(p["edge"])), "--extend-rows", str(float(p["extend_rows"])),
+               "--hole-diameter", str(float(p["hole_diameter"])), "--hole-rim", str(float(p["hole_rim"])),
+               "--coverage", str(float(p["coverage"]) / 100),
+               "--cutout-rim", str(float(p["cutout_rim"])), "--corner-rim", str(float(p["corner_rim"])),
                "--seed", str(int(p["seed"]))]
         if p.get("flip"):
             cmd.append("--flip")
-        label = (f"{base}: edge {p['edge']} in, pentagon x{p['pent_ratio']}, {p['coverage']} % target, "
-                 f"rim {p['hole_rim']} in, seed {p['seed']}")
-        meta = dict(id=f"{run_id}_{base}", label=label, when=time.strftime("%H:%M"), params=p)
-        job.update(id=meta["id"], log=[], state="running", label=label, started=time.time())
-        env = dict(os.environ, PYTHONIOENCODING="utf-8")
-        job["proc"] = subprocess.Popen(cmd, cwd=HERE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                       text=True, env=env)
-    threading.Thread(target=watch_job, args=(job["proc"], out_dir, meta), daemon=True).start()
-    return dict(ok=True, id=meta["id"])
+        label = (f"{base}: hexagon {p['edge']} in, hole {p['hole_diameter']} in + {p['hole_rim']} in rim, "
+                 f"{p['coverage']} % pentagons, seed {p['seed']}")
+        meta = dict(id=job_id, label=label, when=time.strftime("%H:%M"), params=p)
+        proc = subprocess.Popen(cmd, cwd=HERE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+        jobs[job_id] = dict(proc=proc, log=[], state="running", label=label, started=time.time())
+    threading.Thread(target=watch_job, args=(job_id, out_dir, meta), daemon=True).start()
+    return dict(ok=True, id=job_id)
 
 
-def watch_job(proc, out_dir, meta):
-    for line in proc.stdout:
+def watch_job(job_id, out_dir, meta):
+    job = jobs[job_id]
+    for line in job["proc"].stdout:
         job["log"].append(line.rstrip())
-    code = proc.wait()
+    code = job["proc"].wait()
     with lock:
         if job["state"] == "stopping":
             job["state"] = "stopped"
@@ -107,9 +113,10 @@ def watch_job(proc, out_dir, meta):
             job["log"].append(f"The run stopped with an error (code {code}). The lines above say why.")
 
 
-def stop_job():
+def stop_job(job_id):
     with lock:
-        if job["state"] == "running" and job["proc"]:
+        job = jobs.get(job_id)
+        if job and job["state"] == "running":
             job["state"] = "stopping"
             job["proc"].terminate()
 
@@ -119,6 +126,8 @@ def friendly_progress(log):
     text = "\n".join(log)
     if "Wrote layout.json" in text:
         return "Done"
+    if "extended" in text and "start:" not in text:
+        return "Extending the surface past its edges"
     if "  target " in text:
         return "Measuring the layouts (last step)"
     if "adapted:" in text:
@@ -151,10 +160,15 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/":
             return self.send(PAGE, "text/html; charset=utf-8")
         if path == "/api/state":
+            want = parse_qs(urlparse(self.path).query).get("job", [""])[0]
             with lock:
-                st = dict(state=job["state"], id=job["id"], label=job["label"], log=job["log"][-200:],
-                          progress=friendly_progress(job["log"]) if job["state"] != "idle" else "",
-                          seconds=round(time.time() - job["started"]) if job["state"] == "running" else 0)
+                job = jobs.get(want)
+                st = dict(state="idle", id=None, label="", log=[], progress="", seconds=0)
+                if job:
+                    st = dict(state=job["state"], id=want, label=job["label"], log=job["log"][-200:],
+                              progress=friendly_progress(job["log"]),
+                              seconds=round(time.time() - job["started"]) if job["state"] == "running" else 0)
+                st["running"] = sum(1 for j in jobs.values() if j["state"] == "running")
             st["meshes"], st["runs"] = mesh_files(), list_runs()
             return self.send(st)
         if path.startswith("/runs/"):
@@ -171,7 +185,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/run":
             return self.send(start_job(json.loads(self.rfile.read(n) or b"{}")))
         if path == "/api/stop":
-            stop_job()
+            stop_job(json.loads(self.rfile.read(n) or b"{}").get("id"))
             return self.send(dict(ok=True))
         if path == "/api/upload":
             name = re.sub(r"[^A-Za-z0-9_.-]", "_", os.path.basename(self.headers.get("X-Filename", "shape.stl")))
@@ -196,37 +210,43 @@ PAGE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skin tool</title>
 <style>
-  :root { --bg:#f6f4ef; --panel:#fff; --ink:#23211d; --mute:#6b665d; --line:#ddd8cc; --accent:#2a78d6; --bad:#b3261e; --ok:#2e7d4f; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#17161a; --panel:#211f24; --ink:#ece9e2; --mute:#9d978c; --line:#37343b; --accent:#6aa8f5; --bad:#f2928b; --ok:#7bc79a; } }
+  :root { --bg:#f6f4ef; --panel:#fff; --ink:#23211d; --mute:#6b665d; --line:#ddd8cc; --accent:#2a78d6; --bad:#b3261e; --ok:#2e7d4f; --warn:#a45a00; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17161a; --panel:#211f24; --ink:#ece9e2; --mute:#9d978c; --line:#37343b; --accent:#6aa8f5; --bad:#f2928b; --ok:#7bc79a; --warn:#e8b062; } }
   * { box-sizing: border-box; }
   [hidden] { display:none !important; }
   body { margin:0; font:15px/1.45 -apple-system, system-ui, sans-serif; background:var(--bg); color:var(--ink); }
-  header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; }
+  header { padding:12px 20px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; }
   header h1 { font-size:18px; margin:0; } header span { color:var(--mute); font-size:13px; }
-  main { display:grid; grid-template-columns: 340px 1fr; gap:0; height:calc(100vh - 54px); }
-  aside { overflow-y:auto; padding:16px 18px; border-right:1px solid var(--line); background:var(--panel); }
+  header button { margin-left:auto; padding:5px 12px; font-size:13px; }
+  main { display:grid; grid-template-columns: 350px 1fr; height:calc(100vh - 51px); }
+  aside { overflow-y:auto; padding:16px 18px 24px; border-right:1px solid var(--line); background:var(--panel); }
   section.view { display:flex; flex-direction:column; min-width:0; }
-  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--mute); margin:18px 0 8px; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--mute); margin:20px 0 6px; }
   h2:first-child { margin-top:0; }
   label { display:block; font-size:14px; margin-top:10px; }
+  label b { font-weight:600; float:right; font-variant-numeric:tabular-nums; }
   .row { display:flex; align-items:center; gap:8px; }
-  input[type=range] { flex:1; accent-color:var(--accent); }
+  input[type=range] { flex:1; width:100%; accent-color:var(--accent); margin:2px 0 0; }
   input[type=number], select { width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); font:inherit; }
-  .row input[type=number] { width:72px; }
   .hint { color:var(--mute); font-size:12.5px; margin:2px 0 0; }
+  .calc { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:13px; margin-top:10px; }
+  .calc.warn { border-color:var(--warn); } .calc .w { color:var(--warn); }
   button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink); cursor:pointer; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; width:100%; padding:11px; margin-top:16px; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; width:100%; padding:11px; margin-top:18px; }
   button:disabled { opacity:.5; cursor:default; }
-  #status { padding:10px 20px; border-bottom:1px solid var(--line); background:var(--panel); min-height:44px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  #status { padding:10px 20px; border-bottom:1px solid var(--line); background:var(--panel); min-height:46px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
   #status .state { font-weight:600; } .ok { color:var(--ok); } .bad { color:var(--bad); }
   #log { display:none; margin:0; padding:10px 20px; max-height:150px; overflow:auto; background:var(--bg); border-bottom:1px solid var(--line); font:12px/1.4 ui-monospace, Menlo, monospace; white-space:pre-wrap; }
   iframe { flex:1; border:0; width:100%; background:var(--bg); }
   #empty { flex:1; display:flex; align-items:center; justify-content:center; color:var(--mute); text-align:center; padding:30px; }
-  .runs button { display:block; width:100%; text-align:left; margin-top:6px; font-size:13px; }
-  .runs button.cur { border-color:var(--accent); }
+  .runs .item { display:flex; gap:6px; margin-top:6px; }
+  .runs .item button { text-align:left; font-size:13px; padding:6px 10px; }
+  .runs .item button.show { flex:1; min-width:0; }
+  .runs .item button.cur { border-color:var(--accent); }
   @media (max-width:800px) { main { grid-template-columns:1fr; height:auto; } iframe { height:70vh; } }
 </style></head><body>
-<header><h1>Skin tool</h1><span>Lay a hexagon / pentagon / heptagon skin on any shape</span></header>
+<header><h1>Skin tool</h1><span>Lay a hexagon / pentagon / heptagon skin on any shape</span>
+  <button id="newtab" title="Open another copy of this page with the same settings, to try something different side by side">New tab</button></header>
 <main>
 <aside>
   <h2>Shape</h2>
@@ -236,34 +256,44 @@ PAGE = r"""<!doctype html>
     <select id="units"><option value="in">inches</option><option value="mm">millimetres</option><option value="cm">centimetres</option><option value="ft">feet</option><option value="m">metres</option></select></label>
   <p class="hint">Wrong units give panels the wrong size. Fusion exports often use mm or cm.</p>
   <label class="row"><input type="checkbox" id="flip"> Turn the skin inside-out (if it came out on the wrong side)</label>
+  <label>Rows to carry on past your surface's edge <b id="extend_rows_v"></b></label>
+  <input type="range" id="extend_rows" min="0" max="3" step="1" value="2">
+  <p class="hint">The pattern continues past the edge you modelled (greyed in the result) so the shapes along your edge are whole. 0 cuts it off at the edge.</p>
 
-  <h2>Polygon size</h2>
-  <label>Hexagon side length <span id="edge_v"></span></label>
-  <div class="row"><input type="range" id="edge" min="1.5" max="6" step="0.25" value="3"></div>
+  <h2>Hexagons</h2>
+  <label>Side length <b id="edge_v"></b></label>
+  <input type="range" id="edge" min="1.5" max="6" step="0.25" value="3">
   <p class="hint">Bigger panels mean fewer of them, but they bow more on a curved surface.</p>
 
-  <h2>Pentagons</h2>
-  <label>Pentagon size vs hexagon <span id="pent_ratio_v"></span></label>
-  <div class="row"><input type="range" id="pent_ratio" min="1" max="1.4" step="0.05" value="1.15"></div>
-  <p class="hint">Bigger pentagons fit a bigger polyp hole but squeeze their neighbours.</p>
-  <label>Share of area that is pentagons <span id="coverage_v"></span></label>
-  <div class="row"><input type="range" id="coverage" min="10" max="30" step="5" value="25"></div>
-  <p class="hint">It stops when there is no room for more without touching.</p>
-  <label>Plastic left around the hole, inches <span id="hole_rim_v"></span></label>
-  <div class="row"><input type="range" id="hole_rim" min="0.25" max="1" step="0.05" value="0.5"></div>
+  <h2>Pentagons and the polyp hole</h2>
+  <label>Round hole diameter <b id="hole_diameter_v"></b></label>
+  <input type="range" id="hole_diameter" min="2" max="6" step="0.25" value="3.75">
+  <label>Plastic left between hole and edge <b id="hole_rim_v"></b></label>
+  <input type="range" id="hole_rim" min="0.25" max="1.5" step="0.05" value="0.5">
+  <div class="calc" id="pent_calc"></div>
+  <label>Share of area that is pentagons <b id="coverage_v"></b></label>
+  <input type="range" id="coverage" min="10" max="30" step="5" value="25">
+  <p class="hint">It stops when there is no room for more without pentagons touching.</p>
+
+  <h2>Cutouts in the other panels</h2>
+  <label>Plastic at the middle of each side <b id="cutout_rim_v"></b></label>
+  <input type="range" id="cutout_rim" min="0.25" max="1.5" step="0.05" value="0.5">
+  <label>Plastic at the corners <b id="corner_rim_v"></b></label>
+  <input type="range" id="corner_rim" min="0.5" max="2" step="0.05" value="1">
+  <p class="hint">The cutout follows each panel's outline, thinning toward the middle of each side.</p>
 
   <h2>Randomness</h2>
   <label>Seed (a different number gives a different arrangement)</label>
   <input type="number" id="seed" value="7" min="0" step="1">
 
   <button class="primary" id="run">Run</button>
-  <button id="stop" style="width:100%;margin-top:8px;display:none">Stop</button>
+  <button id="stop" style="width:100%;margin-top:8px" hidden>Stop this run</button>
 
-  <h2>Earlier runs</h2>
+  <h2>Earlier runs (all tabs)</h2>
   <div class="runs" id="runs"><p class="hint">None yet.</p></div>
 </aside>
 <section class="view">
-  <div id="status"><span class="hint">Pick a shape, move the sliders and press Run. A run takes about a minute.</span></div>
+  <div id="status"><span class="hint">Pick a shape, move the sliders and press Run. A run takes about a minute. Use "New tab" to try different settings side by side.</span></div>
   <pre id="log"></pre>
   <div id="empty">The 3D result will show here.</div>
   <iframe id="frame" hidden></iframe>
@@ -271,19 +301,42 @@ PAGE = r"""<!doctype html>
 </main>
 <script>
 const $ = id => document.getElementById(id);
-const fields = ["edge", "pent_ratio", "coverage", "hole_rim"];
-const unit = { edge: " in", pent_ratio: "×", coverage: " %", hole_rim: " in" };
-let shown = null, last = {}, showLog = false;
-function labels() { fields.forEach(f => $(f + "_v").textContent = "· " + $(f).value + unit[f]); }
-fields.forEach(f => $(f).addEventListener("input", labels)); labels();
+const sliders = { extend_rows: [v => v + (v == 1 ? " row" : " rows")], edge: [v => v + " in"], hole_diameter: [v => v + " in"],
+  hole_rim: [v => v + " in"], coverage: [v => v + " %"], cutout_rim: [v => v + " in"], corner_rim: [v => v + " in"] };
+const numeric = [...Object.keys(sliders), "seed"];
+let shown = null, last = {}, showLog = false, jobId = null;
+try {   // a tab opened with "New tab" starts with no run of its own, even if the browser copied the parent's memory
+  if (location.hash.length > 1) sessionStorage.removeItem("skin-job");
+  jobId = sessionStorage.getItem("skin-job");
+} catch (e) {}
 
-try { const s = JSON.parse(localStorage.getItem("skin-settings") || "{}");
-  [...fields, "seed", "units"].forEach(k => { if (s[k] !== undefined) $(k).value = s[k]; }); $("flip").checked = !!s.flip; labels(); } catch (e) {}
+function derived() {
+  const D = +$("hole_diameter").value, rim = +$("hole_rim").value, edge = +$("edge").value;
+  const apothem = D / 2 + rim, side = 2 * apothem * Math.tan(Math.PI / 5), across = side * 1.4803, ratio = side / edge;
+  const big = ratio > 1.35;
+  $("pent_calc").className = "calc" + (big ? " warn" : "");
+  $("pent_calc").innerHTML = `Pentagon: sides ${side.toFixed(2)} in, about ${across.toFixed(1)} in across (${ratio.toFixed(2)}× a hexagon side).` +
+    (big ? `<br><span class="w">That is big next to the hexagons and will squeeze their neighbours. A hexagon side of about ${(side / 1.2).toFixed(1)} in would sit better.</span>` : "");
+}
+function labels() { Object.keys(sliders).forEach(k => $(k + "_v").textContent = sliders[k][0]($(k).value)); derived(); }
+Object.keys(sliders).forEach(k => $(k).addEventListener("input", labels));
 
 function settings() {
   const p = { mesh: $("mesh").value, units: $("units").value, flip: $("flip").checked, seed: $("seed").value };
-  fields.forEach(f => p[f] = $(f).value); return p;
+  Object.keys(sliders).forEach(k => p[k] = $(k).value); return p;
 }
+function applySettings(s) {
+  numeric.forEach(k => { if (s[k] !== undefined) $(k).value = s[k]; });
+  if (s.units) $("units").value = s.units; $("flip").checked = !!s.flip;
+  if (s.mesh) pendingMesh = s.mesh; labels();
+}
+let pendingMesh = null;
+try {   // a new tab gets the settings of the tab it was opened from (in the address); otherwise the last run's
+  const h = location.hash.length > 1 ? JSON.parse(decodeURIComponent(location.hash.slice(1))) : JSON.parse(localStorage.getItem("skin-settings") || "{}");
+  applySettings(h);
+} catch (e) { labels(); }
+
+$("newtab").onclick = () => window.open(location.pathname + "#" + encodeURIComponent(JSON.stringify(settings())), "_blank");
 $("pick").onclick = () => $("file").click();
 $("file").onchange = async () => {
   const f = $("file").files[0]; if (!f) return;
@@ -291,46 +344,54 @@ $("file").onchange = async () => {
   const r = await fetch("/api/upload", { method: "POST", headers: { "X-Filename": f.name }, body: f });
   const j = await r.json();
   if (j.error) { $("status").innerHTML = `<span class="bad">${j.error}</span>`; return; }
-  await refresh(); $("mesh").value = j.path;
+  pendingMesh = j.path; await refresh();
   $("status").innerHTML = `<span class="hint">${f.name} added. Check the units, then press Run.</span>`;
 };
 $("run").onclick = async () => {
   const p = settings();
   try { localStorage.setItem("skin-settings", JSON.stringify(p)); } catch (e) {}
   const j = await (await fetch("/api/run", { method: "POST", body: JSON.stringify(p) })).json();
-  if (j.error) $("status").innerHTML = `<span class="bad">${j.error}</span>`;
-  refresh();
+  if (j.error) { $("status").innerHTML = `<span class="bad">${j.error}</span>`; return; }
+  jobId = j.id; try { sessionStorage.setItem("skin-job", jobId); } catch (e) {}
+  showLog = false; refresh();
 };
-$("stop").onclick = () => fetch("/api/stop", { method: "POST" });
+$("stop").onclick = () => fetch("/api/stop", { method: "POST", body: JSON.stringify({ id: jobId }) });
 
 function showRun(id) { shown = id; $("frame").src = `/runs/${id}/viewer.html`; $("frame").hidden = false; $("empty").hidden = true; renderRuns(); }
 function renderRuns() {
   const r = last.runs || [];
   $("runs").innerHTML = r.length ? "" : '<p class="hint">None yet.</p>';
-  r.forEach(x => { const b = document.createElement("button"); b.textContent = `${x.when}  ${x.label}`;
-    if (x.id === shown) b.className = "cur"; b.onclick = () => showRun(x.id); $("runs").appendChild(b); });
+  r.forEach(x => {
+    const d = document.createElement("div"); d.className = "item";
+    const b = document.createElement("button"); b.className = "show" + (x.id === shown ? " cur" : ""); b.textContent = `${x.when}  ${x.label}`; b.title = "Show this result";
+    b.onclick = () => showRun(x.id);
+    const u = document.createElement("button"); u.textContent = "↺"; u.title = "Put this run's settings back in the sliders";
+    u.onclick = () => applySettings(x.params);
+    d.append(b, u); $("runs").appendChild(d); });
 }
 async function refresh() {
-  const s = await (await fetch("/api/state")).json();
+  const s = await (await fetch("/api/state?job=" + encodeURIComponent(jobId || ""))).json();
   const prev = last; last = s;
-  const sel = $("mesh"), cur = sel.value;
+  const sel = $("mesh");
   if (JSON.stringify(s.meshes) !== JSON.stringify(prev.meshes)) {
-    sel.innerHTML = ""; ["example", "yours"].forEach(k => { const g = s.meshes.filter(m => m.kind === k); if (!g.length) return;
+    const cur = sel.value; sel.innerHTML = "";
+    ["example", "yours"].forEach(k => { const g = s.meshes.filter(m => m.kind === k); if (!g.length) return;
       const og = document.createElement("optgroup"); og.label = k === "example" ? "Examples" : "Your files";
       g.forEach(m => { const o = document.createElement("option"); o.value = m.path; o.textContent = m.name; og.appendChild(o); }); sel.appendChild(og); });
-    try { const sv = JSON.parse(localStorage.getItem("skin-settings") || "{}").mesh; if (!cur && sv) sel.value = sv; } catch (e) {}
-    if (cur) sel.value = cur; if (!sel.value && sel.options.length) sel.selectedIndex = 0;
+    if (cur) sel.value = cur;
   }
+  if (pendingMesh) { sel.value = pendingMesh; if (sel.value === pendingMesh) pendingMesh = null; }
+  if (!sel.value && sel.options.length) sel.selectedIndex = 0;
   const running = s.state === "running" || s.state === "stopping";
-  $("run").disabled = running; $("stop").style.display = running ? "block" : "none";
+  $("run").disabled = running; $("stop").hidden = !running;
   const lg = $("log");
-  const wantLog = s.state === "running" || s.state === "stopping" || s.state === "failed" || (showLog && s.state !== "idle");
+  const wantLog = running || s.state === "failed" || (showLog && s.state !== "idle");
   if (wantLog) { lg.style.display = "block"; const atEnd = lg.scrollTop + lg.clientHeight >= lg.scrollHeight - 5;
     lg.textContent = s.log.join("\n"); if (atEnd) lg.scrollTop = lg.scrollHeight; } else lg.style.display = "none";
   if (running) $("status").innerHTML = `<span class="state">Running · ${s.progress}</span><span class="hint">${s.seconds} s · ${s.label}</span>`;
   else if (s.state === "done") { $("status").innerHTML = `<span class="state ok">Done</span><span class="hint">${s.label}</span><button id="details" style="padding:3px 10px;font-size:13px">${showLog ? "Hide" : "Show"} details</button>`;
     $("details").onclick = () => { showLog = !showLog; refresh(); };
-    if (prev.state === "running" || prev.state === "stopping" || shown === null) showRun(s.id); }
+    if (shown !== s.id && (prev.state === "running" || prev.state === "stopping" || shown === null)) showRun(s.id); }
   else if (s.state === "failed") $("status").innerHTML = `<span class="state bad">That run failed</span><span class="hint">${(s.log.filter(l => l.trim() && !l.startsWith("The run stopped")).slice(-1)[0] || "")}</span>`;
   else if (s.state === "stopped") $("status").innerHTML = `<span class="state">Stopped</span>`;
   renderRuns();
@@ -375,7 +436,8 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        stop_job()
+        for job_id in list(jobs):
+            stop_job(job_id)
 
 
 if __name__ == "__main__":

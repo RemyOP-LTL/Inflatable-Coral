@@ -167,6 +167,83 @@ def boundary_loops(F):
     return loops
 
 
+def rotate(v, axis, angle):
+    """Turn vectors v about unit vectors `axis` by `angle` (Rodrigues; all arrays, row by row)."""
+    c, s = np.cos(angle)[:, None], np.sin(angle)[:, None]
+    return v * c + np.cross(axis, v) * s + axis * (axis * v).sum(1)[:, None] * (1 - c)
+
+
+def extend_boundary(V, F, loops, width, step, max_turn=math.radians(50)):
+    """Grow the surface outward past each open edge by about `width` inches, so the pattern can
+    carry on past the edge you drew (shapes there are drawn greyed and not counted).
+
+    Each ring of new corners is the last ring pushed outward, with the surface's own turning at the
+    edge carried on (a tube keeps its bend, a dome keeps curving). Returns new corners, new
+    triangles (all of them, original first) and a flag per triangle that is True for the new ones."""
+    N = vertex_normals(V, F)
+    nbrs = defaultdict(set)
+    for f in F:
+        for k in range(3):
+            nbrs[int(f[k])].update((int(f[(k + 1) % 3]), int(f[(k + 2) % 3])))
+    n_steps = max(1, int(round(width / step)))
+    step = width / n_steps
+    newV, newF = [], []
+    base = len(V)
+    for loop in loops:
+        idx = np.array(loop)
+        m = len(idx)
+        P, Nn = V[idx].copy(), N[idx].copy()
+        T = np.roll(P, -1, 0) - np.roll(P, 1, 0)
+        T /= np.linalg.norm(T, axis=1)[:, None]
+        D = np.cross(T, Nn)
+        D /= np.linalg.norm(D, axis=1)[:, None]
+        # How fast the surface is turning at the edge, from the last strip of triangles: the angle between
+        # the normal one step inside and the normal on the edge, about the edge's direction, per inch.
+        on_loop = set(loop)
+        rate = np.zeros(m)
+        side = 0.0
+        for i, v in enumerate(idx):
+            inner = [w for w in nbrs[int(v)] if w not in on_loop]
+            if not inner:
+                continue
+            w_pos = V[inner].mean(0)
+            side += float(D[i] @ (P[i] - w_pos))
+            Nw = N[inner].mean(0)
+            Nw /= np.linalg.norm(Nw)
+            ang = math.atan2(float(np.cross(Nw, Nn[i]) @ T[i]), float(Nw @ Nn[i]))
+            rate[i] = ang / max(np.linalg.norm(P[i] - w_pos), 1e-6)
+        if side < 0:                                   # ('outward' came out pointing into the surface)
+            D = -D
+            rate = -rate
+        # Smooth the turning along the edge over about one extension width, so bumps in the surface
+        # (which would otherwise be exaggerated over the whole extension) can't send single points flying.
+        spacing = np.linalg.norm(np.roll(P, -1, 0) - P, axis=1).mean()
+        k = max(3, min(m // 2 - 1, int(round(width / spacing))))
+        rate = np.convolve(np.concatenate([rate[-k:], rate, rate[:k]]), np.ones(2 * k + 1) / (2 * k + 1), mode="valid")
+        rate = np.clip(rate, -max_turn / width, max_turn / width)
+        prev = list(idx)
+        for _ in range(n_steps):
+            ang = rate * step
+            Dm = rotate(D, T, ang / 2)
+            P = P + step * Dm
+            Nn = rotate(Nn, T, ang)
+            T = np.roll(P, -1, 0) - np.roll(P, 1, 0)
+            T /= np.linalg.norm(T, axis=1)[:, None]
+            D = np.cross(T, Nn)
+            D /= np.linalg.norm(D, axis=1)[:, None]
+            ring = list(range(base + len(newV), base + len(newV) + m))
+            newV.extend(P)
+            for i in range(m):
+                a, b = prev[i], prev[(i + 1) % m]
+                a2, b2 = ring[i], ring[(i + 1) % m]
+                newF += [[b, a, a2], [b, a2, b2]]
+            prev = ring
+    V2 = np.vstack([V, np.array(newV)]) if newV else V
+    F2 = np.vstack([F, np.array(newF)]) if newF else F
+    extra = np.concatenate([np.zeros(len(F), bool), np.ones(len(newF), bool)])
+    return V2, F2, extra
+
+
 def resample_loop(P, step):
     """A closed loop of points -> a dense polyline (about `step` apart) used to snap shapes to the rim."""
     Q = np.vstack([P, P[:1]])
@@ -176,9 +253,10 @@ def resample_loop(P, step):
     return np.stack([np.interp(t, s, Q[:, k]) for k in range(3)], 1)
 
 
-def dense_sample(V, F, N, rng, max_points=300_000, density=40.0):
+def dense_sample(V, F, N, rng, extra=None, max_points=300_000, density=40.0):
     """Random points over the triangles, each with an outward direction. The rest of the code only
-    uses this cloud of points (it never looks at the triangles again)."""
+    uses this cloud of points (it never looks at the triangles again).
+    Also returns, for each point, whether it lies on the extension, and the area of the real surface."""
     P = V[F]
     area = 0.5 * np.linalg.norm(np.cross(P[:, 1] - P[:, 0], P[:, 2] - P[:, 0]), axis=1)
     density = min(density, max_points / area.sum())
@@ -192,18 +270,20 @@ def dense_sample(V, F, N, rng, max_points=300_000, density=40.0):
     pts = (P[face] * w[..., None]).sum(1)
     nrm = (N[F[face]] * w[..., None]).sum(1)
     nrm /= np.linalg.norm(nrm, axis=1)[:, None]
-    return pts, nrm, float(area.sum())
+    extra = np.zeros(len(F), bool) if extra is None else extra
+    return pts, nrm, float(area.sum()), extra[face], float(area[~extra].sum())
 
 
-class WholeSurface:
-    """Stands in for hex57_layout.Region: every point of the mesh counts (the tube's 'extra length past
-    the 8 ft' has no meaning here; shapes at an open edge are cut off and left out anyway)."""
+class MeshRegion:
+    """Stands in for hex57_layout.Region: which points lie on the surface you gave (not on the
+    extension we added past its open edges). `area` is the area of your surface."""
 
-    def __init__(self, area):
-        self.area = area
+    def __init__(self, surf, point_is_extra, area):
+        self.surf, self.extra, self.area = surf, point_is_extra, area
 
     def inside(self, X):
-        return np.ones(len(np.atleast_2d(X)), bool)
+        _, i = self.surf.tree.query(np.atleast_2d(X))
+        return ~self.extra[i]
 
 
 # ============================================================================
@@ -215,7 +295,14 @@ def main():
     ap.add_argument("--units", choices=sorted(UNITS), default="in", help="units the file is in (default in)")
     ap.add_argument("--edge", type=float, help="hexagon side length in inches (default 3.0)")
     ap.add_argument("--flip", action="store_true", help="turn triangles the other way if 'outward' came out wrong")
-    ap.add_argument("--pent-ratio", type=float, help="pentagon side as a multiple of --edge (default 1.15)")
+    ap.add_argument("--hole-diameter", type=float, help="diameter of the round polyp hole in every pentagon, inches "
+                    "(sets the pentagon size together with --hole-rim)")
+    ap.add_argument("--pent-ratio", type=float, help="pentagon side as a multiple of --edge (default 1.15); "
+                    "ignored if --hole-diameter is given")
+    ap.add_argument("--cutout-rim", type=float, help="plastic left at the middle of each side of the other panels (default 0.5)")
+    ap.add_argument("--corner-rim", type=float, help="plastic left at the corners of the other panels (default 1.0)")
+    ap.add_argument("--extend-rows", type=float, default=2,
+                    help="rows of shapes to carry on past each open edge of your surface (default 2; 0 = cut at the edge)")
     ap.add_argument("--coverage", type=float, help="target share of area covered by pentagons, 0.10 to 0.30 (default 0.25)")
     ap.add_argument("--hole-rim", type=float, help="plastic left around the polyp hole, inches (default 0.5)")
     ap.add_argument("--seed", type=int, help="random seed (default 7)")
@@ -223,7 +310,9 @@ def main():
     args = ap.parse_args()
     # These settings are read when hex57_layout is imported, so set them first.
     for var, val in (("HEX57_EDGE", args.edge), ("HEX57_PENT_RATIO", args.pent_ratio), ("HEX57_COVERAGE", args.coverage),
-                     ("HEX57_HOLE_RIM", args.hole_rim), ("HEX57_SEED", args.seed)):
+                     ("HEX57_HOLE_RIM", args.hole_rim), ("HEX57_SEED", args.seed),
+                     ("HEX57_HOLE_DIAMETER", args.hole_diameter), ("HEX57_CUTOUT_RIM", args.cutout_rim),
+                     ("HEX57_CORNER_RIM", args.corner_rim)):
         if val is not None:
             os.environ[var] = str(val)
     import hex57_layout as H                             # noqa: E402  (after the environment is set)
@@ -247,9 +336,19 @@ def main():
     print(f"  {len(V)} corners, {len(F)} triangles, size {hi[0] - lo[0]:.1f} x {hi[1] - lo[1]:.1f} x "
           f"{hi[2] - lo[2]:.1f} in, {len(loops)} open edge(s)")
 
-    pts, nrm, area = dense_sample(V, F, N, rng)
+    # Carry the surface on past each open edge so the shapes along your edge are whole shapes.
+    extra = None
+    if args.extend_rows > 0 and loops:
+        width = (args.extend_rows + 0.5) * math.sqrt(3) * H.EDGE
+        V, F, extra = extend_boundary(V, F, loops, width, 0.5 * H.EDGE)
+        loops = boundary_loops(F)
+        print(f"  extended {len(loops)} open edge(s) outward by {width:.1f} in "
+              f"({args.extend_rows:g} rows of shapes, drawn greyed and not counted)")
+    N = vertex_normals(V, F)
+
+    pts, nrm, area_all, point_extra, area = dense_sample(V, F, N, rng, extra)
     surf = H.Surface(pts, nrm, [resample_loop(V[l], 0.1) for l in loops])
-    size = H.SizeField(surf, area, rng)
+    size = H.SizeField(surf, area_all, rng)
 
     rim = -np.ones(len(V), int)
     for k, l in enumerate(loops):
@@ -259,7 +358,7 @@ def main():
     if bad:
         print(f"  warning: {len(bad)} triangles fold sharply against the surface direction; "
               "if the layout looks wrong try --flip or a smoother mesh")
-    mesh.region = WholeSurface(area)
+    mesh.region = MeshRegion(surf, point_extra, area)
 
     # The input triangles are not the size we want. Bring them close first so the main loop starts sane.
     for _ in range(30):
@@ -274,7 +373,8 @@ def main():
         render_views(H, C, polys, info, m, name, out_dir)
         return None
 
-    params = dict(SURFACE=f"{name} ({len(loops)} open edge(s), {area:.0f} sq in)", MESH_FILE=os.path.basename(args.mesh))
+    params = dict(SURFACE=f"{name} ({len(loops)} open edge(s), {area:.0f} sq in)", MESH_FILE=os.path.basename(args.mesh),
+                  EXTEND_ROWS=args.extend_rows if loops else 0)
     H.run_layout(mesh, surf, size, rng, out_dir, render_fn, params)
 
 

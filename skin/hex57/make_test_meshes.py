@@ -54,8 +54,9 @@ def dome(radius, n_around, n_rings, lumps=0.0):
         phi = 0.5 * np.pi * j / n_rings                       # angle above the horizontal
         for i in range(n_around):
             th = 2 * np.pi * i / n_around
-            r = radius * (1 + lumps * np.sin(5 * th + 1.3) * np.sin(3 * phi * 2) * np.cos(phi)
-                          + 0.5 * lumps * np.sin(3 * th) * np.sin(7 * phi))
+            flat_base = np.sin(phi) ** 2                          # bumps fade out at the base, so it meets the ground upright
+            r = radius * (1 + flat_base * lumps * (np.sin(5 * th + 1.3) * np.sin(6 * phi) * np.cos(phi)
+                                                   + 0.5 * np.sin(3 * th) * np.sin(7 * phi)))
             V.append([r * np.cos(phi) * np.cos(th), r * np.cos(phi) * np.sin(th), r * np.sin(phi)])
     V.append([0, 0, radius])
     V = np.array(V)
@@ -71,6 +72,7 @@ def tube():
     t = H.TestTube()
     nu, nt = 96, 130
     u, tt = np.meshgrid(np.arange(nu) / nu, np.linspace(0, 1, nt))
+    tt = H.TUBE_EXTRA / H.TUBE_TOTAL + tt * H.TUBE_LENGTH / H.TUBE_TOTAL      # just the 8 ft, not the test tube's extra length
     V = t.point(u, tt).reshape(-1, 3)
     return V, grid_faces(nu, nt)
 
