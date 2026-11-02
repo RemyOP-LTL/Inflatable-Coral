@@ -50,6 +50,9 @@
   th { font-weight: 500; color: var(--muted); font-size: 12.5px; }
   ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 68ch; }
   code { font-family: var(--font-mono); font-size: 13px; }
+  pre { font-family: var(--font-mono); font-size: 12.5px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  button { font: inherit; font-size: 13px; font-weight: 500; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .note { border-left: 3px solid var(--accent); padding-left: 12px; }
 </style>
 
@@ -97,13 +100,28 @@
   </section>
 
   <section>
-    <h2>Run the tool on your Mac</h2>
-    <p class="muted">The tool lets you change cuff diameter, cuff length, finger length and more, and runs the simulations. It needs no typing in a terminal.</p>
+    <h2>Run the simulator on your Mac</h2>
+    <p class="muted">Set it up once. After that the simulator is always one link away, and it pulls my latest changes with one button.</p>
     <ol>
-      <li><a href="https://github.com/remyop-ltl/inflatable-coral/archive/refs/heads/claude/polyp-string-fingers.zip" target="_blank">Download the project as a zip</a> (GitHub asks you to sign in) and open the zip from Downloads.</li>
-      <li>Open the folders <code>polyps</code>, then <code>fabric-pattern</code>.</li>
-      <li>Right-click <code>Run Polyp Tool.command</code>, choose Open, then Open again. You only need the right-click the first time.</li>
-      <li>Wait while it sets itself up (a few minutes, once). Your browser opens with the tool.</li>
+      <li>Open the Terminal app and paste this line, then press Return. It takes a few minutes the first time.
+        <pre id="setup-cmd">git clone https://github.com/RemyOP-LTL/Inflatable-Coral.git ~/coral-simulator &amp;&amp; cd ~/coral-simulator &amp;&amp; git checkout claude/polyp-string-fingers &amp;&amp; bash polyps/fabric-pattern/install-mac.sh</pre>
+        <button type="button" id="copy-setup">Copy the line</button> <span class="muted" id="copy-state"></span>
+        <div class="muted">If macOS asks to install developer tools, accept, wait, and paste the line again.</div></li>
+      <li>Open <a href="http://127.0.0.1:8765/" target="_blank">the simulator</a> and bookmark it. It only loads after step 1.</li>
+      <li>When I say I've pushed changes, open the simulator, pick the branch I name in the Version box, and press <b>Get latest changes</b>.</li>
     </ol>
   </section>
 </div>
+
+<script>
+  document.getElementById('copy-setup').addEventListener('click', function () {
+    var text = document.getElementById('setup-cmd').textContent, state = document.getElementById('copy-state');
+    function fallback() {
+      var r = document.createRange(); r.selectNodeContents(document.getElementById('setup-cmd'));
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); state.textContent = 'Selected. Press Cmd+C to copy.';
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { state.textContent = 'Copied.'; }, fallback);
+    } else { fallback(); }
+  });
+</script>

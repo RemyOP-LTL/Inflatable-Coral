@@ -62,4 +62,10 @@ Remy said real fingers collapse into themselves rather than curl. The first mode
 ## Working rule (from Remy, 2026-10-30, updated 2026-10-31)
 After any change to the pattern or simulation, run it and show Remy a snapshot of the outputs (the piece picture, the 3D picture, the pull picture and the PDF) in the chat. Also republish the link page `snapshot.html` (as an Artifact, with the pictures and PDF from `designs/`) and give Remy the link, so he can open anything with one click. Update the date and numbers in `snapshot.html` first.
 
-Remy is not comfortable in the terminal. Never ask him to type commands. Give him a link or a double-click file instead (`Run Polyp Tool.command`). Remy is open to working in a local session (Claude desktop app pointed at his repo folder) so that things run on his own Mac.
+Remy is not comfortable in the terminal. The cloud + local workflow is in the repo root `CLAUDE.md` ("Cloud + local workflow"). In short: after every change run it, show the snapshot, republish `snapshot.html`, push, and tell him which branch to pick in the simulator at http://127.0.0.1:8765/ and to press Get latest changes. Remy is also open to a local session (Claude desktop app pointed at his repo folder) if that ever becomes easier.
+
+## Local runner (2026-11-02)
+- `install-mac.sh`: one-time setup on Remy's Mac. Makes `.venv`, installs `requirements.txt`, and registers a launchd agent (`com.coral.polyptool`) that keeps `polyp_tool.py` running at http://127.0.0.1:8765/. `bash install-mac.sh --remove` undoes it. Logs: `~/Library/Logs/polyptool.log`. Tested here with launchctl, open and xcode-select replaced by stubs; not yet run on a real Mac.
+- `polyp_tool.py` has a Version card: it shows the running branch and last change, lists branches on GitHub, and **Get latest changes** switches to the chosen branch, pulls, installs `requirements.txt`, and restarts itself. It refuses if a simulation is running, if local files were edited, if there are unpushed local commits, or if the branch has no simulator (`main` has none until the pull request is merged).
+- The repo is public, so no GitHub login is needed to clone or pull.
+- `Run Polyp Tool.command` still works as a double-click fallback (it doesn't update itself).

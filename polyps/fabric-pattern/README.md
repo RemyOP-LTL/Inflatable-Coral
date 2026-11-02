@@ -30,11 +30,21 @@ Every file is in `designs/`, and its name starts with the design name, so a patt
 
 Patterns longer than one page are split over 2 landscape pages. Trim the later page on its dashed tape line, lay it over the earlier page so the lines and diamonds match, and tape. Print at **100 % / "Actual size"** and check the 1 in test square.
 
+## Run it on your Mac (one-time setup, then just a link)
+
+Paste this one line into the Terminal app once. It copies the project to `~/coral-simulator`, sets up Python and the libraries (a few minutes), and makes the simulator start by itself whenever you log in:
+
+    git clone https://github.com/RemyOP-LTL/Inflatable-Coral.git ~/coral-simulator && cd ~/coral-simulator && git checkout claude/polyp-string-fingers && bash polyps/fabric-pattern/install-mac.sh
+
+(If macOS asks to install developer tools, accept, wait for it to finish, and paste the line again.)
+
+After that, the simulator is always at **http://127.0.0.1:8765/**. Bookmark it. When Claude says it has pushed changes, open it, pick the branch Claude names in the Version box, and press **Get latest changes**. It updates itself and restarts. To remove it: `bash ~/coral-simulator/polyps/fabric-pattern/install-mac.sh --remove`.
+
 ## The polyp tool (easiest way to try sizes)
 
 `polyp_tool.py` is a small page that opens in your web browser. You change numbers and see the result. You don't edit any code.
 
-**Easiest way (Mac):** double-click `Run Polyp Tool.command`. The first time, right-click it, choose Open, then Open again (macOS asks about files from the internet). It sets itself up in a private folder (`.venv`, a few minutes, once) and then opens the tool. Needs Python 3, which macOS offers to install if it is missing. Tested on Linux only, not yet on a Mac.
+**Without the setup above (Mac):** double-click `Run Polyp Tool.command`. The first time, right-click it, choose Open, then Open again (macOS asks about files from the internet). It sets itself up in a private folder (`.venv`, a few minutes, once) and then opens the tool. Needs Python 3, which macOS offers to install if it is missing. Tested on Linux only, not yet on a Mac.
 
 **By typing:** `python3 polyp_tool.py` (needs numpy, scipy, matplotlib and shapely installed).
 
