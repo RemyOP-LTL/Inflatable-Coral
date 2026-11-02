@@ -37,15 +37,18 @@ PATTERN_FIELDS = [
     ("TAPER_FULLNESS", "Finger fullness", "", 0, 1.5, 0.1, "0 = straight cone sides, higher = fuller before the point."),
     ("SPLAY", "Lean out", "deg", 0, 70, 5, "How far the fingers lean out just above the cuff."),
     ("TURN_LENGTH", "Turn length", "in", 0.5, 4, 0.25, "Distance over which they lean out."),
-    ("TUNNEL_WIDTH", "Tunnel width", "in", 0.125, 0.5, 0.0625, "String tunnel on the inner seam."),
+    ("TAB_LENGTH", "Tab length", "in", 0.25, 0.5, 0.0625, "Length of each string tab on the inner seam."),
+    ("TAB_COUNT", "Tabs per finger", "", 0, 8, 1, "0 = automatic: about one every 3 in, never fewer than 3."),
+    ("TUNNEL_WIDTH", "Tab pocket width", "in", 0.125, 0.5, 0.0625, "Room for the cord between the seam and the tab stitching."),
 ]
 PULL_FIELDS = [
     ("HITCH", "Hitch depth", "in", 0.25, 4, 0.25, "Where the five strings meet, this far below the polyp's centre point (into the cuff)."),
+    ("SOFT", "Fabric softness", "", 0.01, 1, 0.01, "1 = stiff fabric as in the first version, small = very floppy nylon."),
     ("PULL_MAX", "Pull up to", "in", 1, 14, 1, "Most the hitch is pulled down. It stops earlier if the fingers can't fold further."),
 ]
 DEFAULTS = {"CUFF_DIAMETER": (math.pi * 5.0 + 0.5) / math.pi, "EASE": 0.5, "CUFF_HEIGHT": 3.0,
             "FINGER_LENGTH": 8.5, "FINGERS": 5, "TAPER_FULLNESS": 0.6, "SPLAY": 45, "TURN_LENGTH": 1.5,
-            "TUNNEL_WIDTH": 0.25, "HITCH": 1.0, "PULL_MAX": 10}
+            "TUNNEL_WIDTH": 0.25, "TAB_LENGTH": 0.375, "TAB_COUNT": 0, "HITCH": 1.0, "SOFT": 0.05, "PULL_MAX": 10}
 
 JOBS = {}                         # job id -> dict(state, log, files)
 HEAVY = threading.Semaphore(1)    # only one simulation at a time; they use every processor core
@@ -61,6 +64,7 @@ def clean(params):
             raise ValueError(f"{label} must be between {lo:g} and {hi:g}")
         p[name] = v
     p["FINGERS"] = int(round(p["FINGERS"]))
+    p["TAB_COUNT"] = int(round(p["TAB_COUNT"]))
     return p
 
 
@@ -69,7 +73,7 @@ def polyp_env(p):
     tube = p["CUFF_DIAMETER"] - p["EASE"] / math.pi
     if tube < 0.5:
         raise ValueError("The cuff is too small for that much ease")
-    keys = ["CUFF_HEIGHT", "FINGER_LENGTH", "FINGERS", "TAPER_FULLNESS", "SPLAY", "TURN_LENGTH", "TUNNEL_WIDTH", "EASE"]
+    keys = ["CUFF_HEIGHT", "FINGER_LENGTH", "FINGERS", "TAPER_FULLNESS", "SPLAY", "TURN_LENGTH", "TUNNEL_WIDTH", "TAB_LENGTH", "TAB_COUNT", "EASE"]
     items = [f"TUBE_DIAMETER={tube!r}"] + [f"{k}={p[k]!r}" for k in keys]
     return dict(os.environ, POLYP=",".join(items))
 
@@ -89,7 +93,7 @@ def run_job(job_id, kind, p, folder):
             cmd = [sys.executable, "make_pattern.py", "--out", folder, "--name", "custom"]
         else:
             cmd = [sys.executable, "sim_pull.py", "--out", folder, "--name", "custom",
-                   "--hitch", str(p["HITCH"]), "--pull-max", str(p["PULL_MAX"]), "--steps", str(int(p["PULL_MAX"]))]
+                   "--hitch", str(p["HITCH"]), "--soft", str(p["SOFT"]), "--pull-max", str(p["PULL_MAX"]), "--steps", str(int(p["PULL_MAX"]))]
         proc = subprocess.Popen(cmd, cwd=HERE, env=polyp_env(p), stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True)
         for line in proc.stdout:
@@ -113,7 +117,7 @@ def run_job(job_id, kind, p, folder):
 def start(kind, params):
     p = clean(params)
     polyp_env(p)                                 # raises if the numbers don't make sense
-    relevant = {k: p[k] for k in sorted(p) if kind == "pull" or k not in ("HITCH", "PULL_MAX")}
+    relevant = {k: p[k] for k in sorted(p) if kind == "pull" or k not in ("HITCH", "PULL_MAX", "SOFT")}
     key = hashlib.sha1(json.dumps(relevant, sort_keys=True).encode()).hexdigest()[:12]
     job_id = f"{kind}-{key}"
     folder = os.path.join(OUT, key)
@@ -223,7 +227,7 @@ PAGE = r"""<!doctype html>
     <div class="card" id="card-inflate"><h2>Inflated <span class="tag">settings changed, run again</span></h2>
       <div id="out-inflate" style="color:var(--mute)">Press "Simulate inflated".</div><div class="status" id="log-inflate"></div></div>
     <div class="card" id="card-pull"><h2>String pull <span class="tag">settings changed, run again</span></h2>
-      <div id="out-pull" style="color:var(--mute)">Press "Simulate string pull". The five cords run from the fingertips along the inner seams to one hitch point inside the cuff. The hitch is pulled down in steps.</div>
+      <div id="out-pull" style="color:var(--mute)">Press "Simulate string pull". The five cords run from the fingertips through the tabs to one hitch point inside the cuff. The hitch is pulled down in steps.</div>
       <div class="status" id="log-pull"></div></div>
   </div>
 </main>
@@ -262,9 +266,9 @@ function derived() {
 let timer = null;
 function changed(n) {
   derived();
-  const heavy = !['HITCH', 'PULL_MAX'].includes(n) ? ['inflate', 'pull'] : ['pull'];
+  const heavy = !['HITCH', 'PULL_MAX', 'SOFT'].includes(n) ? ['inflate', 'pull'] : ['pull'];
   heavy.forEach(k => $('card-' + k).classList.add('stale'));
-  if (['HITCH', 'PULL_MAX'].includes(n)) return;           // these only affect the string pull
+  if (['HITCH', 'PULL_MAX', 'SOFT'].includes(n)) return;           // these only affect the string pull
   $('card-pattern').classList.add('stale');
   clearTimeout(timer); timer = setTimeout(() => run('pattern'), 350);
 }

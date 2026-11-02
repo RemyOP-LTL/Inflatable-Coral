@@ -4,7 +4,7 @@ A fabric coral polyp made of **five fingers** around a round "wrist" (cuff) that
 
 Each finger is two mirror-image halves, so the seam runs from the centre of the top, out over the fingertip, and down the cuff. There's one pattern piece, and you cut 10 of it (5 pairs). The fingers **lean outward just above the cuff, then curve back up to vertical** at the tips. By default each finger starts at full width and tapers to a sharp point.
 
-**Default design: `polyp-5-taper-string`** (since 2026-10-30). The `polyp-5-taper` shape, plus a string tunnel on each finger.
+**Default design: `polyp-5-taper-tabs`** (since 2026-11-02). The `polyp-5-taper` shape, plus short string tabs along each finger's inner seam.
 
 | Tapered point (`polyp-5-taper`, default) | Club tip (`polyp-5-club`) |
 |---|---|
@@ -20,8 +20,9 @@ Every file is in `designs/`, and its name starts with the design name, so a patt
 | Design | What it is | How to make it |
 |---|---|---|
 | `polyp-5-club` | 5 fingers, 7.5 in long. Each finger narrows to a skinnier middle, and the rounded end is as wide as `polyp-5-wide`'s. | `POLYP="TAPER=0,FINGER_LENGTH=7.5" python3 make_pattern.py --out designs --name polyp-5-club` |
-| `polyp-5-taper-string` | **Default.** `polyp-5-taper` with the string tunnel added (see "The string tunnel" below). Same shape, same 3D picture. Only the cut line and the markings differ. | `python3 make_pattern.py --out designs` |
-| `polyp-5-taper` | The same without the tunnel (the earlier default). | 5 fingers, 8.5 in long. Each finger starts at the full crotch width, like the earlier versions, and tapers all the way to a **sharp point**, like a horn. | `python3 make_pattern.py --out designs` `POLYP="TUNNEL=0" python3 make_pattern.py --out designs` |
+| `polyp-5-taper-tabs` | **Default.** `polyp-5-taper` with a few string tabs on each finger's inner seam (see "The string tabs" below). Same shape and same inflated 3D picture. Only the cut line and the markings differ. | `python3 make_pattern.py --out designs` |
+| `polyp-5-taper-string` | `polyp-5-taper` with one wider allowance along the whole inner seam, as a continuous tunnel (the first version of the string guide). | `POLYP="TUNNEL=2" python3 make_pattern.py --out designs` |
+| `polyp-5-taper` | 5 fingers, 8.5 in long. Each finger starts at the full crotch width, like the earlier versions, and tapers all the way to a **sharp point**, like a horn. No string guides. | `POLYP="TUNNEL=0" python3 make_pattern.py --out designs` |
 | `polyp-5-club-pointed` | Like the club, but 8.5 in long, with a rounded point on the end. | `POLYP="FINGER_LENGTH=8.5,TIP_LENGTH=2.8,TIP_POINT=1" ...` (made with an earlier version of the script) |
 | `polyp-5-wide` | 5 fingers at an even width, 6 in long. | earlier version of the script |
 | `polyp-6` | 6 fingers, 6 in long, lean out and curve back up. | earlier version of the script |
@@ -37,7 +38,7 @@ Patterns longer than one page are split over 2 landscape pages. Trim the later p
 
 **By typing:** `python3 polyp_tool.py` (needs numpy, scipy, matplotlib and shapely installed).
 
-- Fields: cuff diameter, cuff ease, cuff length, finger length, number of fingers, finger fullness, lean out, turn length, tunnel width.
+- Fields: cuff diameter, cuff ease, cuff length, finger length, number of fingers, finger fullness, lean out, turn length, tab length, tabs per finger and pocket width, plus hitch depth and fabric softness for the string pull.
 - The flat pattern redraws about a second after you change a number, with a link to the printable PDF.
 - **Simulate inflated** (about 30 s) shows the sewn polyp with air in it.
 - **Simulate string pull** (about 2 min) pulls the cords from one hitch point (see "What the string pull does" below).
@@ -52,7 +53,7 @@ Patterns longer than one page are split over 2 landscape pages. Trim the later p
   - `--no-sim` skips the 3D simulation.
   - To override settings without editing the file, put them in `POLYP`, for example `POLYP="FINGERS=6,FINGER_LENGTH=8"`.
 - **sim_polyp.py**: the cloth simulation behind the `-3d.png` pictures.
-- **sim_pull.py**: the string-pull simulation. `python3 sim_pull.py --out designs` makes `<design>-pull.png` and `<design>-pull.csv`. Options: `--hitch 1.0` (inches below the centre point), `--pull-max 10`, `--steps 10`.
+- **sim_pull.py**: the string-pull simulation. `python3 sim_pull.py --out designs` makes `<design>-pull.png` and `<design>-pull.csv`. Options: `--hitch 1.0` (inches below the centre point), `--pull-max 10`, `--steps 10`, `--soft 0.05` (fabric floppiness, 1 = stiff).
 - **polyp_tool.py**: the browser page above.
 - **snapshot.html**: a page showing the latest outputs of the default design. Open it in a browser here, or Claude publishes it as a link.
 
@@ -77,8 +78,11 @@ The scripts need `numpy`, `scipy`, `matplotlib` and `shapely` (`pip3 install num
 | `TURN_LENGTH` | 1.5 in | the distance over which they turn outward. Above that, they curve back to vertical. |
 | `SEAM` | 3/8 in | seam allowance, already added to every edge |
 | `HEM` | 1.0 in | extra at the bottom of the cuff for the hem |
-| `TUNNEL` | 1 | 1 = add the string tunnel. 0 = plain seams (the earlier `polyp-5-taper`). |
-| `TUNNEL_WIDTH` | 0.25 in | finished width of the tunnel. The cord is about 1 mm, so this is roomy. |
+| `TUNNEL` | 1 | string guides on the inner seam: 1 = a few short tabs (default), 2 = one wider allowance along the whole seam (`polyp-5-taper-string`), 0 = none (`polyp-5-taper`) |
+| `TAB_LENGTH` | 0.375 in | length of each tab along the seam (1/4 to 1/2 in) |
+| `TAB_COUNT` | 0 | tabs per finger. 0 = automatic: about one every `TAB_SPACING` (3 in), never fewer than 3 |
+| `TAB_MARGIN` | 1.0 in | nearest a tab centre gets to the fingertip and to the crotch |
+| `TUNNEL_WIDTH` | 0.25 in | room for the cord: from the seam to the tab stitching. The cord is about 1 mm, so this is roomy. |
 | `STRING_LOOP` | 1.0 in | cord left out of the centre point for the tied loop (shown in the printout, not drawn) |
 
 The cuff comes out 16.21 in around. At the crotch (where a finger starts), each piece is 3.24 in wide, because five fingers have to fill the cuff's circumference. With `TAPER = 1` (the default), the finger tapers from there to a point. The cut piece is about 5.0 × 13.2 in. With `TAPER = 0`, the finger narrows to `BODY_WIDTH` over the first 1.5 in and widens to `TIP_WIDTH` over the last 1.5 in before the rounded end.
@@ -97,36 +101,38 @@ Sew with the right (good) sides of the fabric facing each other, on the dashed l
 4. **Hem.** Fold the bottom edge up 1/4 in, then up 3/4 in, and stitch.
 5. **Turn it right side out** through the wrist and push the fingers out.
 
-## The string tunnel
+## The string tabs
 
-Decided 2026-10-30. One cord per finger pulls the finger in. The cord is **Dyneema cord like a shoe boa lace** (about 1 mm).
+Decided 2026-10-30, changed from a continuous tunnel to tabs on 2026-11-02 (Remy's call: less fabric where the finger should collapse easily). One cord per finger pulls the finger in. The cord is **Dyneema cord like a shoe boa lace** (about 1 mm).
 
-- **Where.** On the finger's inner edge (the side facing the centre), from the fingertip down to the triangle's point, which is the centre of the top. It is drawn in blue on the pattern. It is the same seam in both halves of the pair.
-- **Extra fabric, on this seam only.** The seam allowance here is `TUNNEL_WIDTH + SEAM` = 5/8 in instead of 3/8 in. Every other edge keeps 3/8 in. It is 11.25 in of tunnel on the flat piece, from the tip to the centre.
-- **How the tunnel is formed.** Sew the seam as normal. Don't press the allowances to one side. Leave them sticking out, lay them flat against each other, and sew them together along the blue line, 1/4 in out from the seam. The cord runs between the two allowances, in the flat pocket between the seam and the blue line. Leave the blue line open at the centre end so the cord can come out.
-- **Anchor at the tip.** Tie a knot in the cord and stitch over it at the fingertip, so it can't pull out. Everything else runs free.
-- **At the centre.** Each cord comes out of the centre point and ends in a tied loop. All five loops are hitched together by the one central string that winds onto the motor spool.
-- **Not simulated.** The 3D simulation ignores the tunnel, the cord and the extra bulk. The 3D picture is the same as the plain taper's.
+- **Where.** On the finger's inner edge (the side facing the centre), between the tip and the crotch. At least 3 tabs per finger, evenly spaced, the first and last about 1 in from the tip and the crotch. The default 8.5 in finger has 3 tabs, 0.375 in long, centred 1.0, 4.5 and 8.0 in from the tip. They are drawn in blue on the pattern. A longer finger gets more (about one every 3 in).
+- **Extra fabric, at the tabs only.** At each tab the seam allowance is `TUNNEL_WIDTH + SEAM` = 5/8 in instead of 3/8 in. Every other edge keeps 3/8 in.
+- **Sewing a tab.** Sew the seam as normal. Don't press the allowances to one side. At each tab, lay the two small flaps flat against each other and sew them together along the blue line, 1/4 in from the seam. That leaves a small pocket for the cord. Leave the ends open.
+- **The cord.** Tie a knot in the cord and stitch over it at the fingertip so it can't pull out. It runs through the three pockets and is free in between, then comes out of the centre point and ends in a tied loop. All five loops are hitched together by the one central string that winds onto the motor spool.
+- **Why tabs.** A cord running the full length of the seam acts like a stiff spine along one side, so a pulled finger curls. With the cord held only at a few tabs, it takes the straight path between them, and the finger folds in on itself.
 
 ## What the string pull does (sim_pull.py)
 
-The five cords run from the fingertips along the inner seams to the centre point, then straight down to one hitch point. The hitch starts 1 in below the centre point (inside the cuff). It is pulled down a little at a time, and the fabric settles into a new shape each time.
+The five cords run from the fingertips through the tabs to the centre point, then straight down to one hitch point. The hitch starts 1 in below the centre point (inside the cuff). It is pulled down a little at a time, and the fabric settles into a new shape each time.
 
-Assumptions: the cord can't stretch; it is just taut when the polyp is fully inflated; there is no friction in the tunnels; the air pressure stays constant (the blower keeps up); the tube is open, so the top can be pulled down into it. Not simulated: fingers pressing on each other (one finger is held between mirror planes), gravity, fabric thickness, and the cord drag.
+Assumptions: the cord can't stretch; it is held only at the tip, at each tab and at the centre point, and goes straight in between; it is just taut when the polyp is fully inflated; there is no friction at the tabs; the air pressure stays constant (the blower keeps up); the tube is open, so the top can be pulled down into it. The fabric is floppy (`--soft 0.05`). Not simulated: fingers pressing on each other (one finger is held between mirror planes), gravity, fabric thickness, and the cord drag.
 
 Forces are in pounds-force **per 1 psi of air pressure**. Multiply by the real pressure: at 0.25 psi (about 7 inches of water), the force is a quarter of the numbers shown.
 
-Results for the default design (1 in hitch):
+Results for the default design (1 in hitch, floppy fabric):
 
 | Hitch pulled down | Pull force (lbf per psi) | Fingertip height above the tube end |
 |---|---|---|
-| 0 in | 0 | 6.8 in |
-| 1 in | 2.6 | 6.7 in |
-| 3 in | 5.4 | 6.2 in |
-| 5 in | 8.7 | 5.3 in |
-| 6 in | 14.1 | 4.8 in |
+| 0 in | 0 | 6.7 in |
+| 2 in | 1.8 | 5.5 in |
+| 4 in | 2.8 | 4.0 in |
+| 6 in | 13.5 | 2.8 in |
+| 7 in | 14.2 | 2.0 in |
+| 8 in | 9.1 | 1.2 in |
 
-Past about 6 in the cord can't shorten any more without stretching the fabric, so the simulation stops there. The fingers curl inward and come down about 2 in, but they stay mostly standing. They don't fully collapse. Pulling a finger by a cord along one seam makes it bend into an arc. It doesn't crumple. The force rises steeply near the end.
+The fingers fold in on themselves and crumple toward the cuff. Past about 8.5 in the model jams (the fabric would have to stretch). The force stays low until about 5 in, then peaks near 14 lbf per psi at 6 to 7 in, as the fingers crumple into the cuff and the air has to be pushed out.
+
+How we got here: the first version had the cord following the whole seam (a continuous tunnel) and stiffer fabric. It only curled the fingers and jammed at 6 in. Remy knew real fingers collapse into themselves, which pointed at the cord model. Holding the cord only at the tabs made the difference. Making the fabric floppier changed the shape very little. The continuous-tunnel model is still available: `POLYP="TUNNEL=2" python3 sim_pull.py --soft 1`.
 
 ## How the pattern shapes the fingers
 
@@ -180,4 +186,5 @@ What it leaves out: gravity, fabric thickness, seam-allowance bulk, the inflatio
 - Then: 5 fingers, skinnier and longer (7.5 in), with the end kept the same size (`polyp-5-club`), plus a longer version with a rounded point (`polyp-5-club-pointed`).
 - Added `polyp-5-taper`, with fingers that taper to a real point. Files are now named by design.
 - `polyp-5-taper-string` adds the string tunnel along each finger's inner seam.
-- Now: `polyp_tool.py` (browser page for changing sizes) and `sim_pull.py` (string-pull simulation).
+- `polyp_tool.py` (browser page for changing sizes) and `sim_pull.py` (string-pull simulation).
+- Now: `polyp-5-taper-tabs`. The continuous tunnel became a few tabs per finger, and the string-pull simulation holds the cord only at the tabs.

@@ -42,9 +42,9 @@ def _opt(name, default):
     return float(sys.argv[sys.argv.index(name) + 1]) if name in sys.argv else default
 
 
-def string_state(m, X, H, length):
-    """Cord length (path along the seam + last stretch to the hitch) and its pull force."""
-    p, c = m["string_path"], m["centre"]
+def string_state(m, X, H, length, p):
+    """Cord length (along its guide points + last stretch to the hitch) and its pull force."""
+    c = m["centre"]
     seg = np.linalg.norm(np.diff(X[p], axis=0), axis=1).sum()
     ell = seg + np.linalg.norm(X[c] - H)
     tension = 2 * STRING_STIFFNESS * max(0.0, ell - length)
@@ -79,7 +79,7 @@ def run(hitch=1.0, pull_max=10.0, steps=10, iters=3000, soft=0.05):
         string = dict(path=p, centre=c, hitch=H, length=length, k=STRING_STIFFNESS)
         t0 = time.time()
         X = S.relax(m, iters=iters, x0=X, hollow=True, string=string, soft=soft)
-        ell, T = string_state(m, X, H, length)
+        ell, T = string_state(m, X, H, length, p)
         tip = X[m["tips"][0]]
         # air volume, from the same formula the solver uses
         a, b, cc = (X[m["F"][:, k]] - [0, 0, -P.CUFF_HEIGHT] for k in range(3))
@@ -142,7 +142,7 @@ def picture(m, frames, path, title, jammed_at=None):
 def main():
     out = sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else "."
     name = sys.argv[sys.argv.index("--name") + 1] if "--name" in sys.argv else \
-        f"polyp-{P.FINGERS}-taper" + ("-string" if P.TUNNEL else "") if P.TAPER else f"polyp-{P.FINGERS}-club"
+        f"polyp-{P.FINGERS}-taper" + {0: "", 1: "-tabs", 2: "-string"}[P.TUNNEL] if P.TAPER else f"polyp-{P.FINGERS}-club"
     os.makedirs(out, exist_ok=True)
     hitch, pull_max, steps = _opt("--hitch", 1.0), _opt("--pull-max", 10.0), int(_opt("--steps", 10))
     soft = _opt("--soft", 0.05)
