@@ -4,7 +4,7 @@
 # What it does:
 #   1. makes a private Python environment in this folder (.venv) and installs the libraries
 #   2. registers the simulator to start by itself whenever you log in, and keep running
-#   3. opens http://127.0.0.1:8765/ in your browser. Bookmark that link. It is the simulator.
+#   3. opens http://127.0.0.1:8800/ in your browser. Bookmark that link. It is the simulator.
 # After that you never need the terminal: the page has a "Get latest changes" button.
 # Safe to run again. To remove everything:  bash install-mac.sh --remove
 set -e
@@ -62,7 +62,7 @@ launchctl bootstrap "$DOMAIN" "$PLIST"
 
 echo "3/3  Opening the simulator..."
 sleep 4
-open "http://127.0.0.1:8765/" || true
+open "http://127.0.0.1:8800/" || true
 echo
-echo "Done. The simulator is at  http://127.0.0.1:8765/   (bookmark it)."
+echo "Done. The simulator is at  http://127.0.0.1:8800/   (bookmark it)."
 echo "If the page doesn't load, wait ten seconds and refresh. Problems? Look at ~/Library/Logs/polyptool.log"

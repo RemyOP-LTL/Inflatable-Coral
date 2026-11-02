@@ -27,7 +27,7 @@ from urllib.parse import urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "tool-output")
-PORT = int(os.environ.get("POLYP_TOOL_PORT", 8765))
+PORT = int(os.environ.get("POLYP_TOOL_PORT", 8800))   # the skin tool uses 8765 and up, so keep clear of it
 
 # Settings shown on the page: (name in make_pattern.py, label, unit, min, max, step, help)
 PATTERN_FIELDS = [
@@ -438,7 +438,12 @@ setAll(META.defaults); derived(); run('pattern'); loadVersion();
 
 def main():
     os.makedirs(OUT, exist_ok=True)
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    except OSError:
+        print(f"Port {PORT} is already in use, probably by another copy of this tool. "
+              "Close it and try again.")
+        sys.exit(1)
     url = f"http://127.0.0.1:{PORT}/"
     print(f"Polyp tool running at {url}\nPress Ctrl+C here to stop it.")
     if "--no-browser" not in sys.argv:

@@ -34,11 +34,11 @@ Patterns longer than one page are split over 2 landscape pages. Trim the later p
 
 Paste this one line into the Terminal app once. It copies the project to `~/coral-simulator`, sets up Python and the libraries (a few minutes), and makes the simulator start by itself whenever you log in:
 
-    git clone https://github.com/RemyOP-LTL/Inflatable-Coral.git ~/coral-simulator && cd ~/coral-simulator && git checkout claude/polyp-string-fingers && bash polyps/fabric-pattern/install-mac.sh
+    ([ -d ~/coral-simulator ] || git clone https://github.com/RemyOP-LTL/Inflatable-Coral.git ~/coral-simulator) && cd ~/coral-simulator && git fetch origin && git checkout claude/polyp-string-fingers && git pull && bash polyps/fabric-pattern/install-mac.sh
 
 (If macOS asks to install developer tools, accept, wait for it to finish, and paste the line again.)
 
-After that, the simulator is always at **http://127.0.0.1:8765/**. Bookmark it. When Claude says it has pushed changes, open it, pick the branch Claude names in the Version box, and press **Get latest changes**. It updates itself and restarts. To remove it: `bash ~/coral-simulator/polyps/fabric-pattern/install-mac.sh --remove`.
+After that, the simulator is always at **http://127.0.0.1:8800/**. Bookmark it. When Claude says it has pushed changes, open it, pick the branch Claude names in the Version box, and press **Get latest changes**. It updates itself and restarts. To remove it: `bash ~/coral-simulator/polyps/fabric-pattern/install-mac.sh --remove`.
 
 ## The polyp tool (easiest way to try sizes)
 
