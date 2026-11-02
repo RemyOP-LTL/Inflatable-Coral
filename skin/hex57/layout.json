@@ -1,6 +1,6 @@
 {
  "units": "inch",
- "description": "Layout B (hex57): hexagons with scattered pentagon/heptagon pairs on a test tube. Polygons list corner indices anticlockwise as seen from outside the tube. Every corner is shared exactly by the shapes that meet there.",
+ "description": "Layout B (hex57): hexagons with scattered pentagon/heptagon pairs on a surface. Polygons list corner indices anticlockwise as seen from outside the surface. Every corner is shared exactly by the shapes that meet there.",
  "params": {
   "SEED": 7,
   "SIZE_MIN": 5.2926599471274995,
@@ -14,6 +14,8 @@
   "HOLE_RIM": 0.5,
   "FLATTEN_ROUNDS": 0,
   "FLATTEN_MAX_OFFSET": 0.4,
+  "EDGE": 3.0,
+  "PENT_SIDE_RATIO": 1.15,
   "TUBE_LENGTH": 96.0,
   "TUBE_EXTRA": 15.0,
   "TUBE_RADIUS": 8.0,

@@ -161,3 +161,38 @@ Remy asked for roundness first: every corner of a shape about the same distance 
   - Flat: corners may lift up to `FLATTEN_MAX_OFFSET` (0.4 in) off the tube. Cells are about 0.27 in out of flat on average and 0.6 in at worst. Smaller cells (lower `EDGE`) are flatter.
   - Coverage: pentagons can't touch, and the shapes around them must stay round, so this tube reaches about 24 % pentagons. More means bigger pentagons (`PENT_SIDE_RATIO`) and less round neighbours (1.3 gets about 26 %).
   - Holes: the biggest round hole that leaves 0.5 in of plastic in a pentagon this size is 3.75 in (`HOLE_DIAMETER`). A 5 in hole needs pentagons 6.45 in across.
+
+
+## Update: any surface from a mesh file (`hex57_mesh.py`)
+
+The layout now runs on any surface you can give it as a mesh (an OBJ or STL file, such as an export from Fusion 360), not only the test tube.
+
+```
+python3 hex57_mesh.py meshes/lumpy_dome.obj
+python3 hex57_mesh.py my_branch.stl --units mm --edge 3 --out my_branch_layout
+```
+
+| Option | What it does |
+|---|---|
+| `--units in/mm/cm/m/ft` | Units the file is in (default `in`). Check this first: a wrong unit gives shapes the wrong size. |
+| `--edge 3.0` | Hexagon side length in inches (the `EDGE` setting). |
+| `--flip` | Turn triangles the other way if "outward" was guessed wrong. |
+| `--seed 7`, `--out DIR` | Random seed; output folder (default `layouts/<mesh name>/`). |
+
+It writes `layout.json`, `coverage/layout_*.json`, `viewer.html` and `preview_3d.png` into the output folder, in the same format as the tube.
+
+What it does with the file: welds duplicate corners, keeps the biggest connected piece, makes all triangles face the same way and then outward, finds the open edges (rim of a dome, ends of a tube) and uses the mesh's own triangles as the starting seeds. From there it runs the same code as the tube (`run_layout` in `hex57_layout.py`). Shapes touching an open edge are cut off, drawn green and left out of the counts. A mesh has no "extra length past the ends" like the test tube, so if you want clean skin right up to a real boundary, give the mesh extra surface past it.
+
+It stops with a plain message if the mesh has edges shared by more than two triangles, a pinched open edge, or can't be given one consistent facing.
+
+`make_test_meshes.py` makes three test files in `meshes/`: `tube.obj` (the bent test tube), `dome.stl` (a 48 in half sphere, binary STL) and `lumpy_dome.obj` (the same dome with bumps, a stand-in for brain coral). Results are in `layouts/`.
+
+| Surface | Pentagons | Out of flat (avg / max) | Notes |
+|---|---|---|---|
+| Tube as a mesh | 76 (24 % of area) | 0.29 / 0.64 in | Same character as the built-in tube |
+| Dome, 48 in across | 44 (25 %) | 0.04 / 0.15 in | The pole came out clean |
+| Lumpy dome | 47 (25 %) | 0.22 / 0.62 in | Bumps cost flatness, not roundness |
+
+Checked on the dome: every interior corner is shared by exactly 3 shapes, no edge is shared by more than 2, no two pentagons touch, and corners stay within the 0.4 in lift limit of the surface.
+
+Limits so far: the surface should be one smooth-ish sheet (sharp creases fold the seed triangles and trigger a warning); very large surfaces are sampled more coarsely (at most 300,000 points); a closed tube tip with a narrow neck and Y-shaped forks are untested (the dome's closed pole worked).

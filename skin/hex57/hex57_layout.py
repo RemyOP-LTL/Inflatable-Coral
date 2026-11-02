@@ -59,7 +59,7 @@ SEED = 7                    # change for a different random layout
 # corner of a shape is the same distance from its centre, and neighbours agree on shared edges.
 # (A bit over 1 on the ratio lets pentagons cover more of the skin, at the cost of a little
 # roundness in the shapes next to them.)
-EDGE = 3.0
+EDGE = float(os.environ.get("HEX57_EDGE", 3.0))   # hex57_mesh.py --edge sets this
 PENT_SIDE_RATIO = 1.15
 
 
@@ -621,7 +621,7 @@ def settle(mesh, size, rounds, step=0.3):
         new = V + move
         free = rim < 0
         new[free], nn = mesh.surf.project(new[free])
-        for r in (0, 1):
+        for r in range(len(mesh.surf.rims)):
             on = rim == r
             if on.any():
                 new[on] = mesh.surf.project_rim(new[on], r)
@@ -1031,7 +1031,7 @@ def measure(C, polys, is_end, surf):
              across_min=float(across.min()), across_mean=float(across.mean()), across_max=float(across.max()),
              flatness_max=float(flat.max()), flatness_mean=float(flat.mean()),
              min_edge=float(min(d["min_edge"] for d in inner)),
-             min_edge_end_shapes=float(min(d["min_edge"] for d in info if d["end"])),
+             min_edge_end_shapes=float(min([d["min_edge"] for d in info if d["end"]], default=0.0)),
              non_convex=sum(1 for d in inner if not d["convex"]),
              pentagons_touching=touching,
              corner_off_surface_max=float(off.max()))
@@ -1052,7 +1052,7 @@ def legend_handles(metrics):
     h = [Patch(facecolor=COLOURS[5], edgecolor="#333", label=f"pentagon ({s.get(5, 0)})"),
          Patch(facecolor=COLOURS[6], edgecolor="#333", label=f"hexagon ({s.get(6, 0)})"),
          Patch(facecolor=COLOURS[7], edgecolor="#333", label=f"heptagon ({s.get(7, 0)})"),
-         Patch(facecolor=COLOURS["end"], edgecolor="#333", label=f"cut at tube end ({metrics['end_shapes']})")]
+         Patch(facecolor=COLOURS["end"], edgecolor="#333", label=f"cut at an open edge ({metrics['end_shapes']})")]
     other = sum(v for k, v in s.items() if k not in (5, 6, 7))
     if other:
         h.append(Patch(facecolor=COLOURS["other"], edgecolor="#333", label=f"other ({other})"))
@@ -1192,22 +1192,22 @@ def finish(mesh, surf, size):
     return C, fixed, polys, info, m
 
 
-def to_layout(C, fixed, polys, info, m, unrolled, coverage_target):
+def to_layout(C, fixed, polys, info, m, unrolled, coverage_target, surface_params):
     corner_cells = defaultdict(list)
     for fi, poly in enumerate(polys):
         for c in poly:
             corner_cells[c].append(fi)
     return dict(
         units="inch",
-        description="Layout B (hex57): hexagons with scattered pentagon/heptagon pairs on a test tube. "
-                    "Polygons list corner indices anticlockwise as seen from outside the tube. "
+        description="Layout B (hex57): hexagons with scattered pentagon/heptagon pairs on a surface. "
+                    "Polygons list corner indices anticlockwise as seen from outside the surface. "
                     "Every corner is shared exactly by the shapes that meet there.",
         params=dict(SEED=SEED, SIZE_MIN=SIZE_MIN, SIZE_MAX=SIZE_MAX, SIZE_MEAN=SIZE_MEAN,
                     SIZE_PATCH=SIZE_PATCH, SIZE_FOLLOWS_RADIUS=SIZE_FOLLOWS_RADIUS,
                     PENTAGON_COVERAGE=coverage_target, PENT_ACROSS=PENT_ACROSS,
                     HOLE_DIAMETER=HOLE_DIAMETER, HOLE_RIM=HOLE_RIM,
                     FLATTEN_ROUNDS=FLATTEN_ROUNDS, FLATTEN_MAX_OFFSET=FLATTEN_MAX_OFFSET,
-                    TUBE_LENGTH=TUBE_LENGTH, TUBE_EXTRA=TUBE_EXTRA, TUBE_RADIUS=TUBE_RADIUS, BEND_RADIUS=BEND_RADIUS),
+                    EDGE=EDGE, PENT_SIDE_RATIO=PENT_SIDE_RATIO, **surface_params),
         vertices=np.round(C, 4).tolist(),
         vertex_on_rim=[bool(f) for f in fixed],
         vertex_unrolled=None if unrolled is None else np.round(unrolled, 4).tolist(),
@@ -1229,17 +1229,17 @@ def add_coverage(info, m):
     m["total_area"] = float(area.sum())
 
 
-def main():
-    rng = np.random.default_rng(SEED)
-    tube = TestTube()
-    P, N, uv = tube.dense_sample()
-    surf = Surface(P, N, [tube.rim(0), tube.rim(1)])
-    area = float(np.mean(2 * np.pi * tube.radius(np.linspace(0, 1, 500))) * TUBE_TOTAL)
-    size = SizeField(surf, area, rng)
+TUBE_PARAMS = dict(TUBE_LENGTH=TUBE_LENGTH, TUBE_EXTRA=TUBE_EXTRA, TUBE_RADIUS=TUBE_RADIUS,
+                   BEND_RADIUS=BEND_RADIUS)
 
-    mesh = start_honeycomb(tube, surf, size)
-    mesh.region = Region(surf, uv, tube)
-    print(f"start: {len(mesh.V)} seeds in a plain honeycomb")
+
+def run_layout(mesh, surf, size, rng, out_dir, render_fn, surface_params):
+    """Everything after the first seed mesh exists: adapt it to the size map, add pentagons, make
+    the shapes, measure, write layout.json / coverage/*.json / viewer.html into out_dir.
+
+    render_fn(C, polys, info, metrics) draws the previews and returns the unrolled corner positions
+    (or None when the surface has no unrolled view)."""
+    print(f"start: {len(mesh.V)} seeds")
     for r in range(REMESH_ROUNDS):
         split_long(mesh, size)
         collapse_short(mesh, size)
@@ -1256,7 +1256,7 @@ def main():
     targets = sorted(set(COVERAGE_STEPS) | {PENTAGON_COVERAGE})
     snaps = add_pentagons(mesh, size, targets, rng)
 
-    os.makedirs(os.path.join(HERE, "coverage"), exist_ok=True)
+    os.makedirs(os.path.join(out_dir, "coverage"), exist_ok=True)
     main_result = None
     written = set()
     for t in targets:
@@ -1274,21 +1274,21 @@ def main():
             main_result = (C, fixed, polys, info, m)
         if t in COVERAGE_STEPS and m["sides"].get(5, 0) not in written:
             written.add(m["sides"].get(5, 0))
-            with open(os.path.join(HERE, "coverage", f"layout_{round(100 * t)}.json"), "w") as f:
-                json.dump(to_layout(C, fixed, polys, info, m, None, t), f, separators=(",", ":"))
+            with open(os.path.join(out_dir, "coverage", f"layout_{round(100 * t)}.json"), "w") as f:
+                json.dump(to_layout(C, fixed, polys, info, m, None, t, surface_params), f, separators=(",", ":"))
 
     C, fixed, polys, info, m = main_result
-    u, along, circ = render(C, polys, info, m, tube, surf, uv, HERE)
-    layout = to_layout(C, fixed, polys, info, m, np.stack([(u - 0.5) * circ, along], 1), PENTAGON_COVERAGE)
-    with open(os.path.join(HERE, "layout.json"), "w") as f:
+    unrolled = render_fn(C, polys, info, m)
+    layout = to_layout(C, fixed, polys, info, m, unrolled, PENTAGON_COVERAGE, surface_params)
+    with open(os.path.join(out_dir, "layout.json"), "w") as f:
         json.dump(layout, f, indent=1)
-    make_viewer(HERE)
+    make_viewer(out_dir)
 
     s = m["sides"]
     print()
     print(f"Main layout ({100 * PENTAGON_COVERAGE:.0f} % target):")
     print(f"Pentagon coverage:  {100 * m['pentagon_coverage']:.1f} % of {m['total_area']:.0f} sq in")
-    print("Shapes (not counting the ones cut by the tube ends):")
+    print("Shapes (not counting the ones cut by an open edge):")
     for k in sorted(s):
         name = {4: "4 sides", 5: "pentagons", 6: "hexagons", 7: "heptagons", 8: "8 sides"}.get(k, f"{k} sides")
         print(f"  {name:10s} {s[k]:4d}")
@@ -1299,7 +1299,25 @@ def main():
     print(f"Corners lifted off the surface by up to {m['corner_off_surface_max']:.3f} in")
     print(f"Shortest edge: {m['min_edge']:.2f} in (cut end shapes: {m['min_edge_end_shapes']:.2f} in)   non-convex shapes: {m['non_convex']}"
           f"   pentagons touching: {m['pentagons_touching']}")
-    print(f"Wrote layout.json, coverage/*.json, viewer.html and preview_*.png to {HERE}")
+    print(f"Wrote layout.json, coverage/*.json, viewer.html and preview_*.png to {out_dir}")
+
+
+def main():
+    rng = np.random.default_rng(SEED)
+    tube = TestTube()
+    P, N, uv = tube.dense_sample()
+    surf = Surface(P, N, [tube.rim(0), tube.rim(1)])
+    area = float(np.mean(2 * np.pi * tube.radius(np.linspace(0, 1, 500))) * TUBE_TOTAL)
+    size = SizeField(surf, area, rng)
+
+    mesh = start_honeycomb(tube, surf, size)
+    mesh.region = Region(surf, uv, tube)
+
+    def render_fn(C, polys, info, m):
+        u, along, circ = render(C, polys, info, m, tube, surf, uv, HERE)
+        return np.stack([(u - 0.5) * circ, along], 1)
+
+    run_layout(mesh, surf, size, rng, HERE, render_fn, TUBE_PARAMS)
 
 
 if __name__ == "__main__":

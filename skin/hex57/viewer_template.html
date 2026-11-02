@@ -209,11 +209,12 @@ function build(layout) {
 
   // text
   const P = L.params;
-  $("subtitle").textContent =
-    `${2 * P.TUBE_RADIUS} in × ${P.TUBE_LENGTH / 12} ft tube, bent on a ${P.BEND_RADIUS / 12} ft radius · seed ${P.SEED}`;
+  $("subtitle").textContent = P.TUBE_RADIUS === undefined
+    ? `${P.SURFACE} · seed ${P.SEED}`
+    : `${2 * P.TUBE_RADIUS} in × ${P.TUBE_LENGTH / 12} ft tube, bent on a ${P.BEND_RADIUS / 12} ft radius · seed ${P.SEED}`;
   const counts = { pent: 0, hex: 0, hept: 0, end: 0, other: 0 };
   L.polygon_info.forEach(p => counts[kind(p)]++);
-  $("legend-type").innerHTML = [["pent", "Pentagons"], ["hex", "Hexagons"], ["hept", "Heptagons"], ["end", "Extra length past the 8 ft"]]
+  $("legend-type").innerHTML = [["pent", "Pentagons"], ["hex", "Hexagons"], ["hept", "Heptagons"], ["end", P.TUBE_RADIUS === undefined ? "Cut by an open edge" : "Extra length past the 8 ft"]]
     .map(([k, t]) => `<span class="sw" style="background:var(--${k})"></span><span>${t}</span><span class="num">${counts[k]}</span>`).join("");
   const stats = [
     ["Pentagon coverage", (100 * m.pentagon_coverage).toFixed(1) + " %"],
@@ -231,7 +232,7 @@ function build(layout) {
   $("cov-val").textContent = pct(m.pentagon_coverage);
   const note = $("cov-note");
   if (m.pentagon_coverage < target - 0.02) {
-    note.textContent = `Asked for ${pct(target)}, but there is no room for more on this tube.`;
+    note.textContent = `Asked for ${pct(target)}, but there is no room for more on this surface.`;
     note.className = "note warn";
   } else {
     note.textContent = "Pentagons never touch each other.";
