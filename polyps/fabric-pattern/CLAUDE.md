@@ -26,7 +26,7 @@ Re-run on 2026-10-30 to check it: `python3 make_pattern.py --out <folder>` (abou
 - Checked: `TUNNEL=2` and `TUNNEL=0` give piece pictures byte-identical to the earlier files.
 
 ## Tools
-- `polyp_tool.py` (and the double-click `Run Polyp Tool.command`): a page that opens in the browser, with fields for cuff diameter, cuff ease, cuff length, finger length, finger count, fullness, lean out, turn length, tab length, tabs per finger, pocket width, hitch depth and fabric softness. The flat pattern redraws as you type. Buttons run the inflated and string-pull simulations. Tested in a headless browser on Linux, not yet on a Mac. Output goes to `tool-output/` (git-ignored). Cuff diameter is the input; the tube size is derived (diameter minus ease/pi).
+- `polyp_tool.py` (and the double-click `Run Polyp Tool.command`): a page that opens in the browser, with a Scale field and a **Fit on one 8.5 x 11 in page** box, and fields for cuff diameter, cuff ease, cuff length, finger length, finger count, fullness, lean out, turn length, tab length, tabs per finger, pocket width, hitch depth and fabric softness. The flat pattern redraws as you type. Buttons run the inflated and string-pull simulations. Tested in a headless browser on Linux, not yet on a Mac. Output goes to `tool-output/` (git-ignored). Cuff diameter is the input; the tube size is derived (diameter minus ease/pi).
 - `sim_pull.py`: string-pull simulation. Five cords, each anchored at its fingertip, held at the tabs, run to the centre point and down to one hitch (1 in below the centre point, as Remy asked). The hitch is pulled down in 1 in steps and the fabric re-settles each time. Cord can't stretch, is just taut when inflated, no friction, constant air pressure, open tube, floppy fabric (`--soft 0.05`). Stops when the fabric would stretch over 5 % (the fingers can't fold further).
 - `sim_polyp.py`: `relax()` takes an optional string, an open-tube mode and a fabric softness; the 3D drawing is a reusable `draw_polyp()`. The inflated 3D picture still uses stiff fabric (soft 1), so frame 0 of the pull picture (soft 0.05) leans out a bit more than the inflated picture.
 - `snapshot.html` is the page published as the link for Remy.
@@ -39,6 +39,12 @@ Remy said real fingers collapse into themselves rather than curl. The first mode
 - Force per 1 psi of air: 0.7 lbf at 1 in, 1.8 at 2 in, 2.8 at 4 in, 5.5 at 5 in, 13.5 at 6 in, 14.2 at 7 in, 9.1 at 8 in. At 0.25 psi, a quarter of that (about 3.5 lbf at the peak). The peak is where the fingers crumple into the cuff and air has to be pushed out.
 - The central string and spool need about 8 in of travel. Hand this to `../motor/`.
 - Caveats: forces are per psi (scale by the real pressure); fingers pressing on each other are not simulated, so a real collapse will be less free than shown near the end; no friction at the tabs.
+
+## Paper prototype size (2026-11-07)
+- Remy wants a scaled-down version that prints on one 8.5 x 11 sheet for quick prototyping. Done as `SCALE` (every length is multiplied) and `FIT_LETTER=1` (picks the scale so the cut piece fits one landscape letter page: piece length at most 8.4 in and width at most 6.6 in, which leaves room for the labels). Default design: scale 0.635, tube 3.17 in, 5.4 in fingers, cut piece 3.27 x 8.40 in.
+- Decisions: the seam allowance, hem, tabs and cord loop scale with everything (a true scale model); angles don't. Output names get `-letter` or `-x<scale>`. In `sim_pull.py`, `--hitch` and `--pull-max` are full-size inches and scale with the model. Notes on the page move under the piece when the scale is below 0.85, because the narrow finger can't hold them.
+- Checked: the default design's piece and 3D pictures are byte-identical to before. The 3D and pull simulations run at 0.635 and give the same shapes (tips 4.2 in out and up where the full size has 6.7 in).
+- Not done: a sheet with mirrored pieces so one print gives a matched pair (the pattern is one half-finger, cut 10 as 5 mirrored pairs). Ask Remy if he wants it.
 
 ## Not in the design yet
 - Where the air goes in, and how the cuff seals to the tube.

@@ -35,6 +35,7 @@ PATTERN_FIELDS = [
     ("EASE", "Cuff ease", "in", -1, 1.5, 0.125, "Extra room around the tube. About 0.5 for woven fabric."),
     ("CUFF_HEIGHT", "Cuff length", "in", 1, 8, 0.25, "Finished height of the wrist part."),
     ("FINGER_LENGTH", "Finger length", "in", 3, 14, 0.25, "On the flat piece, from crotch to tip."),
+    ("SCALE", "Scale", "x", 0.2, 1.5, 0.05, "1 = full size. A smaller number makes a scale model of everything (cuff, fingers, seams, tabs)."),
     ("FINGERS", "Number of fingers", "", 3, 8, 1, "Around the cuff."),
     ("TAPER_FULLNESS", "Finger fullness", "", 0, 1.5, 0.1, "0 = straight cone sides, higher = fuller before the point."),
     ("SPLAY", "Lean out", "deg", 0, 70, 5, "How far the fingers lean out just above the cuff."),
@@ -50,7 +51,7 @@ PULL_FIELDS = [
 ]
 DEFAULTS = {"CUFF_DIAMETER": (math.pi * 5.0 + 0.5) / math.pi, "EASE": 0.5, "CUFF_HEIGHT": 3.0,
             "FINGER_LENGTH": 8.5, "FINGERS": 5, "TAPER_FULLNESS": 0.6, "SPLAY": 45, "TURN_LENGTH": 1.5,
-            "TUNNEL_WIDTH": 0.25, "TAB_LENGTH": 0.375, "TAB_COUNT": 0, "HITCH": 1.0, "SOFT": 0.05, "PULL_MAX": 10}
+            "TUNNEL_WIDTH": 0.25, "SCALE": 1.0, "TAB_LENGTH": 0.375, "TAB_COUNT": 0, "HITCH": 1.0, "SOFT": 0.05, "PULL_MAX": 10}
 
 JOBS = {}                         # job id -> dict(state, log, files)
 HEAVY = threading.Semaphore(1)    # only one simulation at a time; they use every processor core
@@ -142,6 +143,7 @@ def clean(params):
         p[name] = v
     p["FINGERS"] = int(round(p["FINGERS"]))
     p["TAB_COUNT"] = int(round(p["TAB_COUNT"]))
+    p["FIT_LETTER"] = 1 if params.get("FIT_LETTER") else 0
     return p
 
 
@@ -150,7 +152,7 @@ def polyp_env(p):
     tube = p["CUFF_DIAMETER"] - p["EASE"] / math.pi
     if tube < 0.5:
         raise ValueError("The cuff is too small for that much ease")
-    keys = ["CUFF_HEIGHT", "FINGER_LENGTH", "FINGERS", "TAPER_FULLNESS", "SPLAY", "TURN_LENGTH", "TUNNEL_WIDTH", "TAB_LENGTH", "TAB_COUNT", "EASE"]
+    keys = ["CUFF_HEIGHT", "FINGER_LENGTH", "FINGERS", "TAPER_FULLNESS", "SPLAY", "TURN_LENGTH", "TUNNEL_WIDTH", "TAB_LENGTH", "TAB_COUNT", "EASE", "SCALE", "FIT_LETTER"]
     items = [f"TUBE_DIAMETER={tube!r}"] + [f"{k}={p[k]!r}" for k in keys]
     return dict(os.environ, POLYP=",".join(items))
 
@@ -306,6 +308,8 @@ PAGE = r"""<!doctype html>
       <button id="update-btn" class="secondary">Get latest changes</button>
       <div class="status" id="update-log"></div></div>
     <div class="card"><h2>Polyp size</h2><div id="pattern-fields"></div>
+      <label class="field" style="display:flex;gap:8px;align-items:center;font-weight:600;font-size:13px"><input type="checkbox" id="fit-letter"> Fit on one 8.5 x 11 in page</label>
+      <small class="muted" style="display:block;color:var(--mute)">Picks the scale for you, so the printed pattern fits one sheet. Handy for paper prototypes.</small>
       <div class="derived" id="derived"></div>
       <button class="reset" id="reset">Reset to the default design</button></div>
     <div class="card" style="margin-top:16px"><h2>String pull</h2><div id="pull-fields"></div>
@@ -349,11 +353,18 @@ names.forEach(n => {
 });
 $('reset').onclick = () => { setAll(META.defaults); changed('CUFF_DIAMETER'); };
 function derived() {
-  const c = state.CUFF_DIAMETER * Math.PI, tube = state.CUFF_DIAMETER - state.EASE / Math.PI;
+  const k = state.FIT_LETTER ? (state.fitScale || 1) : state.SCALE;
+  const c = state.CUFF_DIAMETER * Math.PI * k, tube = (state.CUFF_DIAMETER - state.EASE / Math.PI) * k;
   const w = c / state.FINGERS;
-  $('derived').innerHTML = `Cuff goes round <b>${c.toFixed(2)} in</b>, fits a <b>${tube.toFixed(2)} in</b> tube.<br>` +
+  $('derived').innerHTML = (k !== 1 ? `<b>Scale model, ${Math.round(k * 100)} % of full size.</b><br>` : '') +
+    `Cuff goes round <b>${c.toFixed(2)} in</b>, fits a <b>${tube.toFixed(2)} in</b> tube.<br>` +
     `Each piece is <b>${w.toFixed(2)} in</b> wide at the crotch.`;
 }
+$('fit-letter').addEventListener('change', e => {
+  state.FIT_LETTER = e.target.checked ? 1 : 0;
+  $('n-SCALE').disabled = $('r-SCALE').disabled = e.target.checked;
+  changed('SCALE');
+});
 let timer = null;
 function changed(n) {
   derived();
@@ -390,7 +401,8 @@ function finish(kind, key, j) {
   if (kind === 'pattern') {
     html = `<img src="${base}custom-piece.png?${t}" alt="flat piece">
       <a href="${base}custom-pattern.pdf" target="_blank">Open the printable pattern (PDF, print at 100 %)</a>`;
-    $('log-pattern').textContent = j.log.split('\n').filter(l => l.startsWith('cut size') || l.startsWith('string tunnel')).join('\n');
+    const m = /^scale ([0-9.]+)/m.exec(j.log); state.fitScale = m ? parseFloat(m[1]) : 1; derived();
+    $('log-pattern').textContent = j.log.split('\n').filter(l => l.startsWith('cut size') || l.startsWith('string seam') || l.startsWith('scale')).join('\n');
   } else if (kind === 'inflate') {
     html = `<img src="${base}custom-3d.png?${t}" alt="inflated polyp">`;
     $('log-inflate').textContent = '';

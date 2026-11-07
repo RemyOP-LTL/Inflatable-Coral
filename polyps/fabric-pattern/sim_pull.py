@@ -8,6 +8,7 @@ Options: --hitch 1.0      where the five strings meet, this far below the centre
          --soft 0.05      how floppy the fabric is (1 = stiff as in the first version, 0.01 = very floppy)
          --steps 10       how many pulls between 0 and --pull-max
          --name design    start of the file names (default: the design's name)
+--hitch and --pull-max are full-size inches: with a scale model (SCALE or FIT_LETTER) they shrink with it.
 The pattern settings are the same as make_pattern.py (use POLYP="FINGER_LENGTH=7,..." to change them).
 
 How it works. It starts from the inflated polyp (sim_polyp.py). Each finger has a cord, anchored
@@ -92,7 +93,7 @@ def run(hitch=1.0, pull_max=10.0, steps=10, iters=3000, soft=0.05):
             frames.pop()
             jammed_at = d
             print(f"pull {d:4.1f} in: jammed (fabric would stretch {100 * (f['stretch'] - 1):.0f} %). "
-                  f"The most the hitch can be pulled is between {frames[-1]['pull']:g} and {d:g} in.", flush=True)
+                  f"The most the hitch can be pulled is between {frames[-1]['pull']:.3g} and {d:.3g} in.", flush=True)
             break
         print(f"pull {d:4.1f} in: force {f['force']:6.2f} lbf/psi, tip height {f['tip_z']:5.2f}, "
               f"tip out {f['tip_r']:4.2f}, fabric stretch max {f['stretch']:.3f}  ({time.time() - t0:.0f} s)", flush=True)
@@ -128,8 +129,8 @@ def picture(m, frames, path, title, jammed_at=None):
     ax2.set_ylabel("fingertip height above tube end (in)")
     ax.set_title("force and fingertip height", fontsize=10)
     if jammed_at is not None:
-        ax.axvline(frames[-1]["pull"] + 0.5, color="0.5", ls=":")
-        ax.text(0.97, 0.5, f"jams near {frames[-1]['pull'] + 0.5:g} in:\nthe fingers can't fold\nany further",
+        ax.axvline(frames[-1]["pull"] + 0.5 * P.SCALE, color="0.5", ls=":")
+        ax.text(0.97, 0.5, f"jams near {frames[-1]['pull'] + 0.5 * P.SCALE:.3g} in:\nthe fingers can't fold\nany further",
                 transform=ax.transAxes, ha="right", fontsize=8, color="0.3")
     fig.suptitle(title, fontsize=12)
     fig.text(0.5, 0.005, "Blue = cords (tip, along the seam, down to the hitch). Constant air pressure. "
@@ -143,12 +144,17 @@ def main():
     out = sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else "."
     name = sys.argv[sys.argv.index("--name") + 1] if "--name" in sys.argv else \
         f"polyp-{P.FINGERS}-taper" + {0: "", 1: "-tabs", 2: "-string"}[P.TUNNEL] if P.TAPER else f"polyp-{P.FINGERS}-club"
+    if "--name" not in sys.argv and int(P.FIT_LETTER):
+        name += "-letter"
+    elif "--name" not in sys.argv and abs(P.SCALE - 1) > 1e-9:
+        name += f"-x{P.SCALE:.2f}".rstrip("0").rstrip(".")
     os.makedirs(out, exist_ok=True)
-    hitch, pull_max, steps = _opt("--hitch", 1.0), _opt("--pull-max", 10.0), int(_opt("--steps", 10))
+    # --hitch and --pull-max are full-size inches; they shrink with a scale model (SCALE)
+    hitch, pull_max, steps = _opt("--hitch", 1.0) * P.SCALE, _opt("--pull-max", 10.0) * P.SCALE, int(_opt("--steps", 10))
     soft = _opt("--soft", 0.05)
     m, frames, jammed_at = run(hitch, pull_max, steps, soft=soft)
     picture(m, frames, os.path.join(out, f"{name}-pull.png"),
-            f"{name}: pulling the string (hitch {hitch:g} in below the centre point, fabric softness {soft:g})", jammed_at)
+            f"{name}: pulling the string (hitch {hitch:.3g} in below the centre point, fabric softness {soft:g})", jammed_at)
     with open(os.path.join(out, f"{name}-pull.csv"), "w") as f:
         f.write("pull_in,force_lbf_per_psi,tip_height_in,tip_out_in,centre_height_in,air_volume_cu_in\n")
         for fr in frames:

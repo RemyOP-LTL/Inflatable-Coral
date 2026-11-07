@@ -92,6 +92,8 @@ The scripts need `numpy`, `scipy`, `matplotlib` and `shapely` (`pip3 install num
 | `TAB_LENGTH` | 0.375 in | length of each tab along the seam (1/4 to 1/2 in) |
 | `TAB_COUNT` | 0 | tabs per finger. 0 = automatic: about one every `TAB_SPACING` (3 in), never fewer than 3 |
 | `TAB_MARGIN` | 1.0 in | nearest a tab centre gets to the fingertip and to the crotch |
+| `SCALE` | 1.0 | scale model: every length above (cuff, fingers, seams, tabs, hem) is multiplied by this. 0.64 gives a polyp 64 % as big. |
+| `FIT_LETTER` | 0 | 1 = pick `SCALE` automatically so the cut piece fits on **one 8.5 x 11 in page**. The sizes above are then the full-size ones. |
 | `TUNNEL_WIDTH` | 0.25 in | room for the cord: from the seam to the tab stitching. The cord is about 1 mm, so this is roomy. |
 | `STRING_LOOP` | 1.0 in | cord left out of the centre point for the tied loop (shown in the printout, not drawn) |
 
@@ -110,6 +112,19 @@ Sew with the right (good) sides of the fabric facing each other, on the dashed l
 3. **Check the middle.** All 10 triangle points meet at the centre of the top. Hand-stitch any small hole closed.
 4. **Hem.** Fold the bottom edge up 1/4 in, then up 3/4 in, and stitch.
 5. **Turn it right side out** through the wrist and push the fingers out.
+
+## Paper prototype on one 8.5 x 11 sheet
+
+For quick prototyping, the whole pattern can be shrunk to a scale model that prints on a single sheet of letter paper (landscape). In the tool, tick **Fit on one 8.5 x 11 in page**. From the command line:
+
+    POLYP="FIT_LETTER=1" python3 make_pattern.py --out designs
+
+- It measures the full-size piece, then picks the scale that fits (room for the labels is included). The default design comes out at **64 %**: a 3.2 in tube, 5.4 in fingers, cut piece 3.3 x 8.4 in, seam allowance 0.24 in.
+- Everything scales together (cuff, fingers, seam allowance, hem, tabs, cord loop), so it is a true scale model. The angles and shapes stay the same. You can also set `SCALE` yourself, for example `POLYP="SCALE=0.5"`.
+- The files get `-letter` (or `-x0.5`) in their names, so they never overwrite the full-size design: `polyp-5-taper-tabs-letter-pattern.pdf`, `...-letter-piece.png`, `...-letter-3d.png`, `...-letter-pull.png`.
+- The 3D and string-pull simulations scale too. `--hitch` and `--pull-max` in `sim_pull.py` stay as full-size inches and shrink with the model. Forces are for the small model (they shrink roughly with the square of the scale).
+- Cut 10 copies as before (5 pairs). Print the page 5 times and also 5 mirrored (flip the paper, or flip the printout over), or fold the paper in two and cut 5.
+- Print at 100 % and check the 1 in square.
 
 ## The string tabs
 
@@ -197,4 +212,5 @@ What it leaves out: gravity, fabric thickness, seam-allowance bulk, the inflatio
 - Added `polyp-5-taper`, with fingers that taper to a real point. Files are now named by design.
 - `polyp-5-taper-string` adds the string tunnel along each finger's inner seam.
 - `polyp_tool.py` (browser page for changing sizes) and `sim_pull.py` (string-pull simulation).
-- Now: `polyp-5-taper-tabs`. The continuous tunnel became a few tabs per finger, and the string-pull simulation holds the cord only at the tabs.
+- Paper prototype: `SCALE` and `FIT_LETTER` shrink the whole pattern to one 8.5 x 11 sheet.
+- `polyp-5-taper-tabs`. The continuous tunnel became a few tabs per finger, and the string-pull simulation holds the cord only at the tabs.

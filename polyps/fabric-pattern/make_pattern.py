@@ -50,6 +50,9 @@ TAB_COUNT = 0           # tabs per finger. 0 = automatic: one about every TAB_SP
 TAB_SPACING = 3.0       # automatic spacing between tab centres along the finger
 TAB_MARGIN = 1.0        # nearest a tab centre gets to the fingertip and to the crotch
 STRING_LOOP = 1.0       # length of cord left sticking out of the centre point for the tied loop
+SCALE = 1.0             # scale model: every length above is multiplied by this (0.64 = a polyp 64 % as big)
+FIT_LETTER = 0          # 1 = pick SCALE automatically so the cut piece fits on ONE 8.5 x 11 in page
+                        # (for quick paper prototypes). All sizes above are then the full-size ones.
 # ------------------------------------------
 
 # Any setting can be overridden from the command line, e.g.
@@ -60,6 +63,27 @@ for _kv in filter(None, os.environ.get("POLYP", "").split(",")):
 FINGERS = int(FINGERS)
 TUNNEL = int(TUNNEL)
 
+LETTER_LENGTH, LETTER_WIDTH = 8.4, 6.6   # room for the cut piece on a landscape letter page, in inches,
+                                         # after margins and the labels at the fingertip and the centre point
+
+
+def _letter_scale():
+    """The scale that makes the cut piece fit on one landscape 8.5 x 11 in page. It measures the
+    full-size piece by running this script once with SCALE = 1 (a second or so)."""
+    import subprocess
+    env = dict(os.environ, POLYP=os.environ.get("POLYP", "") + ",SCALE=1,FIT_LETTER=0")
+    r = subprocess.run([sys.executable, os.path.abspath(__file__), "--measure"], env=env,
+                       capture_output=True, text=True, check=True)
+    width, length = map(float, r.stdout.split("measure")[-1].split())
+    return min(1.0, LETTER_LENGTH / length, LETTER_WIDTH / width)
+
+
+if int(FIT_LETTER):
+    SCALE = _letter_scale()
+for _n in ("TUBE_DIAMETER", "EASE", "CUFF_HEIGHT", "FINGER_LENGTH", "BODY_WIDTH", "TIP_WIDTH", "TIP_LENGTH",
+           "TURN_LENGTH", "SEAM", "HEM", "TUNNEL_WIDTH", "TAB_LENGTH", "TAB_SPACING", "TAB_MARGIN", "STRING_LOOP"):
+    globals()[_n] *= SCALE
+
 THUMBS = FINGERS
 THUMB_LENGTH = FINGER_LENGTH
 TUNNEL_SEAM = TUNNEL_WIDTH + SEAM                # seam allowance on the tabs / string seam only:
@@ -68,8 +92,8 @@ CIRC = math.pi * TUBE_DIAMETER + EASE        # finished cuff circumference
 W0 = CIRC / FINGERS                          # finished width of one piece at the crotch
 TRI_DEPTH = (W0 / 2) / math.tan(math.pi / FINGERS)   # crotch line to centre of the top
 BODY_H = FINGER_LENGTH - TIP_LENGTH          # where the rounded end starts
-NARROW = 1.5                                 # crotch width eases to BODY_WIDTH over this length
-WIDEN = 1.5                                  # body eases out to TIP_WIDTH over this length
+NARROW = 1.5 * SCALE                         # crotch width eases to BODY_WIDTH over this length
+WIDEN = 1.5 * SCALE                          # body eases out to TIP_WIDTH over this length
 
 
 def _ease(t):
@@ -255,7 +279,7 @@ def draw_tunnel(ax, lines, rotated=True, fontsize=6.5):
                 fontsize=fontsize, color="tab:blue", ha="left", va="top")
 
 
-def page(pdf, sew, cut, notches, title, lines, footer, grain_x, grain_y, text_xy, slash, tunnel=None):
+def page(pdf, sew, cut, notches, title, lines, footer, grain_x, grain_y, text_xy, slash, tunnel=None, text_below=False):
     """Landscape pages, true size. The piece is drawn turned so the finger points right.
     If it is too long for one page it is split over several, with tape lines to join them."""
     rc, rs = _rot(cut), _rot(sew)
@@ -292,8 +316,15 @@ def page(pdf, sew, cut, notches, title, lines, footer, grain_x, grain_y, text_xy
         for (x, y, mk) in notches:             # small triangles on the cut line = match points
             p = _rot([(x, y)])[0]
             ax.plot([p[0]], [p[1]], marker=marks[mk], ms=6, color="k")
-        t = _rot([text_xy])[0]
-        ax.text(t[0], t[1], "\n".join(lines), ha="center", va="center", fontsize=7.5)
+        if text_below:                         # small piece: put the notes in the empty space under it
+            paras = "\n".join(lines).split("\n\n")
+            half = (len(paras) + 1) // 2
+            ytop = rc[:, 1].min() - 0.45
+            for k, chunk in enumerate((paras[:half], paras[half:])):
+                ax.text(L + usable * (0.30 if k == 0 else 0.72), ytop, "\n\n".join(chunk), ha="center", va="top", fontsize=7)
+        else:
+            t = _rot([text_xy])[0]
+            ax.text(t[0], t[1], "\n".join(lines), ha="center", va="center", fontsize=7.5)
         top = cy + 4.25
         mid = (left + right) / 2
         label = title if n == 1 else f"{title}   (page {i + 1} of {n})"
@@ -329,12 +360,22 @@ def page(pdf, sew, cut, notches, title, lines, footer, grain_x, grain_y, text_xy
 
 
 def main():
+    if "--measure" in sys.argv:                    # used by FIT_LETTER: print the cut piece size and stop
+        c = cut_line(piece_b, True)
+        print(f"measure {np.ptp(c[:, 0]):.4f} {np.ptp(c[:, 1]):.4f}")
+        return
     out = sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else "."
     name = sys.argv[sys.argv.index("--name") + 1] if "--name" in sys.argv else f"polyp-{FINGERS}-taper" + {0: "", 1: "-tabs", 2: "-string"}[TUNNEL] if TAPER else f"polyp-{FINGERS}-club"
+    if "--name" not in sys.argv and int(FIT_LETTER):
+        name += "-letter"
+    elif "--name" not in sys.argv and abs(SCALE - 1) > 1e-9:
+        name += f"-x{SCALE:.2f}".rstrip("0").rstrip(".")
     os.makedirs(out, exist_ok=True)
-    sa = '3/8"' if abs(SEAM - 0.375) < 1e-6 else f'{SEAM}"'
+    sa = '3/8"' if abs(SEAM - 0.375) < 1e-6 else f'{SEAM:.3g}"'
     foot = (f'Solid line = cut.  Dashed line = sew.  Seam allowance {sa} included.  '
-            f'Cuff circumference {CIRC:.2f}" for a {TUBE_DIAMETER:g}" tube ({EASE:g}" ease).')
+            f'Cuff circumference {CIRC:.2f}" for a {TUBE_DIAMETER:.3g}" tube ({EASE:.3g}" ease).')
+    if abs(SCALE - 1) > 1e-9:
+        foot += f'  SCALE MODEL: {SCALE:.0%} of full size.'
     side_notches = [(-W0 / 2 - SEAM, 0, "<"), (W0 / 2 + SEAM, 0, ">")]
     b, b_cut = piece_b(), cut_line(piece_b, True)
     slash = v_slash(b_cut)
@@ -344,16 +385,16 @@ def main():
     tun = stitch_lines()
     if TUNNEL == 1:
         lines += ["", f"Blue = {len(tun)} string tabs on the inner edge.", "Sew the seam, then sew each pair of",
-                  f'tabs together {TUNNEL_WIDTH:g}" out, on the blue line.', "The cord runs through the pockets",
+                  f'tabs together {TUNNEL_WIDTH:.3g}" out, on the blue line.', "The cord runs through the pockets",
                   "and is free in between."]
     elif TUNNEL == 2:
         lines += ["", "Blue = string tunnel (inner edge,", "tip to centre). Sew the seam, then",
-                  f'sew the two allowances together {TUNNEL_WIDTH:g}"', "out on the blue line. Cord runs",
+                  f'sew the two allowances together {TUNNEL_WIDTH:.3g}"', "out on the blue line. Cord runs",
                   "between them. Wider allowance."]
     with PdfPages(os.path.join(out, f"{name}-pattern.pdf")) as pdf:
-        page(pdf, b, b_cut, side_notches, f"FINGER HALF  -  {name}", lines, foot, grain_x=-0.7,
-             grain_y=(-2.6, -0.3), text_xy=tuple(bend(np.array([[0.0, 0.4 * FINGER_LENGTH]]))[0]),
-             slash=slash, tunnel=tun)
+        page(pdf, b, b_cut, side_notches, f"FINGER HALF  -  {name}", lines, foot, grain_x=-0.7 * SCALE,
+             grain_y=(-2.6 * SCALE, -0.3 * SCALE), text_xy=tuple(bend(np.array([[0.0, 0.4 * FINGER_LENGTH]]))[0]),
+             slash=slash, tunnel=tun, text_below=SCALE < 0.85)
 
     fig, ax = plt.subplots(figsize=(5, 7))
     ax.plot(b_cut[:, 0], b_cut[:, 1], "k-", lw=1.4)
@@ -375,6 +416,8 @@ def main():
         from sim_polyp import make_preview
         make_preview(os.path.join(out, f"{name}-3d.png"), f"Simulated from the flat pattern, inflated (fingers turn out {SPLAY:g}\u00b0, then back up)")
 
+    if abs(SCALE - 1) > 1e-9:
+        print(f"scale {SCALE:.3f} " + ("(fits one 8.5 x 11 in page)" if int(FIT_LETTER) else "(scale model)"))
     print(f"cuff circumference {CIRC:.3f}  piece width at crotch {W0:.3f}")
     if TUNNEL:
         seg = np.diff(tunnel_path(), axis=0)

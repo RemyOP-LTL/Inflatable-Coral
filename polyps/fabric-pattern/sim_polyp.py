@@ -17,7 +17,7 @@ from shapely import contains_xy
 
 import make_pattern as P
 
-H_STEP = 0.13      # mesh spacing in inches
+H_STEP = 0.13 * P.SCALE   # mesh spacing in inches (scales with a scale model)
 
 
 def _resample(path, step):
@@ -324,7 +324,7 @@ def relax(m, iters=4000, pressure=1.0, stiff=60.0, log=False, tie=None, x0=None,
     return X
 
 
-def draw_polyp(ax, m, X, el, az, strings=None, lim=5.5):
+def draw_polyp(ax, m, X, el, az, strings=None, lim=None):
     """Draw the polyp and the tube on a 3D axes, seen from elevation `el` and azimuth `az`.
     strings: optional list of (N, 3) lines (the cords) drawn on top in blue."""
     from mpl_toolkits.mplot3d.art3d import Poly3DCollection
@@ -339,7 +339,7 @@ def draw_polyp(ax, m, X, el, az, strings=None, lim=5.5):
     # grey tube below the cuff
     tube_r = P.TUBE_DIAMETER / 2
     th = np.linspace(0, 2 * math.pi, 49)
-    z0, z1 = -P.CUFF_HEIGHT - 2.5, -P.CUFF_HEIGHT + 0.05
+    z0, z1 = -P.CUFF_HEIGHT - 2.5 * P.SCALE, -P.CUFF_HEIGHT + 0.05 * P.SCALE
     quads = []
     for i in range(48):
         a, b = th[i], th[i + 1]
@@ -362,8 +362,9 @@ def draw_polyp(ax, m, X, el, az, strings=None, lim=5.5):
     ax.add_collection3d(pc)
     for line in strings or []:
         ax.plot(line[:, 0], line[:, 1], line[:, 2], color="tab:blue", lw=1.6, zorder=10)
-    ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim); ax.set_zlim(-P.CUFF_HEIGHT - 2.5, P.FINGER_LENGTH + 1.0)
-    ax.set_box_aspect((2 * lim, 2 * lim, P.FINGER_LENGTH + 3.5 + P.CUFF_HEIGHT), zoom=1.25)
+    lim = lim or 5.5 * P.SCALE
+    ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim); ax.set_zlim(-P.CUFF_HEIGHT - 2.5 * P.SCALE, P.FINGER_LENGTH + 1.0 * P.SCALE)
+    ax.set_box_aspect((2 * lim, 2 * lim, P.FINGER_LENGTH + 3.5 * P.SCALE + P.CUFF_HEIGHT), zoom=1.25)
     ax.view_init(elev=el, azim=az)
     ax.set_axis_off()
 
