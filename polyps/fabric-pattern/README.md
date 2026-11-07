@@ -121,7 +121,7 @@ For quick prototyping, the whole pattern can be shrunk to a scale model that pri
 
 - It measures the full-size piece, then picks the scale that fits (room for the labels is included). The default design comes out at **64 %**: a 3.2 in tube, 5.4 in fingers, cut piece 3.3 x 8.4 in, seam allowance 0.24 in.
 - Everything scales together (cuff, fingers, seam allowance, hem, tabs, cord loop), so it is a true scale model. The angles and shapes stay the same. You can also set `SCALE` yourself, for example `POLYP="SCALE=0.5"`.
-- The files get `-letter` (or `-x0.5`) in their names, so they never overwrite the full-size design: `polyp-5-taper-tabs-letter-pattern.pdf`, `...-letter-piece.png`, `...-letter-3d.png`, `...-letter-pull.png`.
+- The files get `-letter` (or `-x0.5`) in their names, so they never overwrite the full-size design. The one made on 2026-11-07 is saved as its own iteration in `iterations/letter-prototype-2026-11-07/` (with its sizes and a README).
 - The 3D and string-pull simulations scale too. `--hitch` and `--pull-max` in `sim_pull.py` stay as full-size inches and shrink with the model. Forces are for the small model (they shrink roughly with the square of the scale).
 - Cut 10 copies as before (5 pairs). Print the page 5 times and also 5 mirrored (flip the paper, or flip the printout over), or fold the paper in two and cut 5.
 - Print at 100 % and check the 1 in square.

@@ -44,6 +44,7 @@ Remy said real fingers collapse into themselves rather than curl. The first mode
 - Remy wants a scaled-down version that prints on one 8.5 x 11 sheet for quick prototyping. Done as `SCALE` (every length is multiplied) and `FIT_LETTER=1` (picks the scale so the cut piece fits one landscape letter page: piece length at most 8.4 in and width at most 6.6 in, which leaves room for the labels). Default design: scale 0.635, tube 3.17 in, 5.4 in fingers, cut piece 3.27 x 8.40 in.
 - Decisions: the seam allowance, hem, tabs and cord loop scale with everything (a true scale model); angles don't. Output names get `-letter` or `-x<scale>`. In `sim_pull.py`, `--hitch` and `--pull-max` are full-size inches and scale with the model. Notes on the page move under the piece when the scale is below 0.85, because the narrow finger can't hold them.
 - Checked: the default design's piece and 3D pictures are byte-identical to before. The 3D and pull simulations run at 0.635 and give the same shapes (tips 4.2 in out and up where the full size has 6.7 in).
+- Remy said this is a one-off, so it is saved as its own iteration in `iterations/letter-prototype-2026-11-07/` (pattern, pictures, sizes, README), not as a main design, and he did not want the branch merged for it. Cuff diameter at this size: **3.275 in** (10.29 in round), tube 3.17 in. He prototypes it on 2026-11-07.
 - Not done: a sheet with mirrored pieces so one print gives a matched pair (the pattern is one half-finger, cut 10 as 5 mirrored pairs). Ask Remy if he wants it.
 
 ## Not in the design yet
