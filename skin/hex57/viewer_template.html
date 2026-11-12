@@ -44,6 +44,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 #pick { bottom: calc(12px + env(safe-area-inset-bottom, 0px)); left: max(12px, env(safe-area-inset-left, 0px)); font-size: 13px; min-width: 200px; }
 #help { bottom: calc(12px + env(safe-area-inset-bottom, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); font-size: 12px; color: var(--muted); padding: 8px 12px; }
 #toggle { display: none; }
+#scale { position: fixed; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); text-align: center;
+  font: 500 12.5px var(--body); color: var(--fg); pointer-events: none; text-shadow: 0 0 4px var(--stage-top), 0 0 4px var(--stage-top); }
+#scale .bar { height: 8px; margin: 3px auto 0; border: 2px solid var(--fg); border-top: 0; }
+#size { font-size: 12.5px; color: var(--muted); margin: 2px 0 0; line-height: 1.4; }
 .cov-top { display: flex; justify-content: space-between; align-items: baseline; }
 .cov-val { font-family: var(--display); font-weight: 600; font-size: 26px; line-height: 1; color: var(--pent); }
 input[type="range"] { width: 100%; accent-color: var(--pent); margin: 8px 0 2px; }
@@ -61,7 +65,7 @@ input[type="range"] { width: 100%; accent-color: var(--pent); margin: 8px 0 2px;
 
 <aside class="panel" id="info">
   <header style="display:flex;justify-content:space-between;gap:8px;align-items:start">
-    <div><h1>Layout B</h1><p class="sub" id="subtitle"></p></div>
+    <div><h1>Layout B</h1><p class="sub" id="subtitle"></p><p id="size"></p></div>
     <button class="btn" id="toggle" aria-expanded="true">Hide</button>
   </header>
   <div class="cov">
@@ -85,7 +89,7 @@ input[type="range"] { width: 100%; accent-color: var(--pent); margin: 8px 0 2px;
   </div>
   <div class="row">
     <label class="chk"><input type="checkbox" id="opt-seams" checked> Seams</label>
-    <label class="chk"><input type="checkbox" id="opt-holes" checked> Pentagon holes</label>
+    <label class="chk"><input type="checkbox" id="opt-holes" checked> Cut holes</label>
     <label class="chk"><input type="checkbox" id="opt-spin"> Auto-spin</label>
     <button class="btn" id="reset">Reset view</button>
   </div>
@@ -95,6 +99,7 @@ input[type="range"] { width: 100%; accent-color: var(--pent); margin: 8px 0 2px;
   </div>
 </aside>
 
+<div id="scale"><div id="scale-label"></div><div class="bar" id="scale-bar"></div></div>
 <div class="panel" id="pick" hidden></div>
 <div class="panel" id="help">Drag to spin · Right-drag to slide · Scroll to zoom · Click a panel for its numbers</div>
 
@@ -129,22 +134,26 @@ const hiGeo = new THREE.BufferGeometry();
 const hi = new THREE.LineLoop(hiGeo, hiMat);
 hi.renderOrder = 2; hi.visible = false; scene.add(hi);
 
-const holeMat = new THREE.LineBasicMaterial({ color: 0xffffff });
-let L, m, V, mesh, seams, holes, polyOf, centre, height;
+let L, m, V, mesh, seams, cutLines, polyOf, centre, height;
+const T = ([x, y, z]) => new THREE.Vector3(x, z, -y);   // file coordinates -> viewer (z up -> y up)
 
 // Tube runs along z in the file; turn it upright (z -> y).
 function build(layout) {
   L = layout; m = L.metrics;
-  if (mesh) { scene.remove(mesh, seams, holes); mesh.geometry.dispose(); seams.geometry.dispose(); holes.geometry.dispose(); }
-  V = L.vertices.map(([x, y, z]) => new THREE.Vector3(x, z, -y));
+  if (mesh) { scene.remove(mesh, seams, cutLines); mesh.geometry.dispose(); seams.geometry.dispose(); cutLines.geometry.dispose(); }
+  V = L.vertices.map(T);
   const box = new THREE.Box3().setFromPoints(V);
   centre = box.getCenter(new THREE.Vector3());
   height = box.max.y - box.min.y;
 
-  // One fan of triangles per panel, from its centre, so bowed panels still render.
   // Each panel is lit with its own average normal, so it reads as one piece of plastic.
+  // A solid panel is a fan of triangles from its centre (so bowed panels still render). A panel with a
+  // hole or cutout is a ring of triangles joining its outline to the cut, so you see straight through.
+  const showCuts = $("opt-holes").checked, cl = [];
   const pos = [], nrm = [];
   polyOf = [];
+  const tri = (pi, n, a, b, c) => { pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+    for (let j = 0; j < 3; j++) nrm.push(n.x, n.y, n.z); polyOf.push(pi); };
   L.polygons.forEach((poly, pi) => {
     const c = new THREE.Vector3(), n = new THREE.Vector3();
     poly.forEach(i => c.add(V[i])); c.divideScalar(poly.length);
@@ -153,12 +162,29 @@ function build(layout) {
       n.add(a.cross(b));
     });
     n.normalize();
-    for (let k = 0; k < poly.length; k++) {
-      const a = V[poly[k]], b = V[poly[(k + 1) % poly.length]];
-      pos.push(c.x, c.y, c.z, a.x, a.y, a.z, b.x, b.y, b.z);
-      for (let j = 0; j < 3; j++) nrm.push(n.x, n.y, n.z);
-      polyOf.push(pi);
+    const cut = showCuts && L.polygon_info[pi].cut;
+    if (!cut) {
+      for (let k = 0; k < poly.length; k++) tri(pi, n, c, V[poly[k]], V[poly[(k + 1) % poly.length]]);
+      return;
     }
+    const outer = poly.map(i => V[i]), inner = cut.loop.map(T);
+    const u = outer[0].clone().sub(c); u.addScaledVector(n, -u.dot(n)).normalize();
+    const w = n.clone().cross(u), TWO = 2 * Math.PI;
+    const ang = p => { const d = p.clone().sub(c); return Math.atan2(d.dot(w), d.dot(u)); };
+    const rel = (p, a0) => ((ang(p) - a0) % TWO + TWO) % TWO;
+    const a0 = ang(outer[0]);
+    const oa = outer.map(p => rel(p, a0)); oa.push(TWO);
+    let j0 = 0; inner.forEach((p, j) => { if (rel(p, a0) < rel(inner[j0], a0)) j0 = j; });
+    const ring = inner.map((_, j) => inner[(j0 + j) % inner.length]);
+    const ia = ring.map(p => rel(p, a0)); ia.push(ia[0] + TWO);
+    ring.push(ring[0]); outer.push(outer[0]);
+    let i = 0, j = 0;
+    while (i < outer.length - 1 || j < ring.length - 1) {
+      const advanceOuter = j >= ring.length - 1 || (i < outer.length - 1 && oa[i + 1] <= ia[j + 1]);
+      if (advanceOuter) { tri(pi, n, outer[i], outer[i + 1], ring[j]); i++; }
+      else { tri(pi, n, outer[i], ring[j + 1], ring[j]); j++; }
+    }
+    for (let k = 0; k < inner.length; k++) { const p = inner[k], q = inner[(k + 1) % inner.length]; cl.push(p.x, p.y, p.z, q.x, q.y, q.z); }
   });
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -177,50 +203,35 @@ function build(layout) {
   segGeo.setAttribute("position", new THREE.Float32BufferAttribute(seg, 3));
   seams = new THREE.LineSegments(segGeo, seamMat);
   seams.visible = $("opt-seams").checked;
-  // the hole in the middle of every pentagon: a 5 in circle in the pentagon's own flat plane,
-  // dropped onto the panel along its normal so it follows the bow of the plastic
-  const hr = (L.params.HOLE_DIAMETER || 5) / 2, hs = [];
-  const rc = new THREE.Raycaster();
-  L.polygons.forEach((poly, pi) => {
-    const p = L.polygon_info[pi];
-    if (p.sides !== 5 || p.end) return;
-    const c = new THREE.Vector3(), n = new THREE.Vector3();
-    poly.forEach(i => c.add(V[i])); c.divideScalar(poly.length);
-    poly.forEach((i, k) => n.add(V[i].clone().sub(c).cross(V[poly[(k + 1) % poly.length]].clone().sub(c))));
-    n.normalize();
-    const u = V[poly[0]].clone().sub(c); u.addScaledVector(n, -u.dot(n)).normalize();
-    const w = n.clone().cross(u);
-    const ring = [];
-    for (let k = 0; k < 48; k++) {
-      const a0 = 2 * Math.PI * k / 48;
-      const q = c.clone().addScaledVector(u, hr * Math.cos(a0)).addScaledVector(w, hr * Math.sin(a0));
-      rc.set(q.clone().addScaledVector(n, 3), n.clone().negate());
-      const hit = rc.intersectObject(mesh)[0];
-      ring.push(hit ? hit.point.addScaledVector(n, 0.05) : q);
-    }
-    ring.forEach((q0, k) => { const q1 = ring[(k + 1) % 48]; hs.push(q0.x, q0.y, q0.z, q1.x, q1.y, q1.z); });
-  });
-  const hGeo = new THREE.BufferGeometry();
-  hGeo.setAttribute("position", new THREE.Float32BufferAttribute(hs, 3));
-  holes = new THREE.LineSegments(hGeo, holeMat);
-  holes.renderOrder = 1; holes.visible = $("opt-holes").checked;
-  scene.add(mesh, seams, holes);
+  const cGeo = new THREE.BufferGeometry();
+  cGeo.setAttribute("position", new THREE.Float32BufferAttribute(cl, 3));
+  cutLines = new THREE.LineSegments(cGeo, seamMat);
+  cutLines.visible = $("opt-seams").checked;
+  scene.add(mesh, seams, cutLines);
   hi.visible = false; $("pick").hidden = true;
 
   // text
   const P = L.params;
-  $("subtitle").textContent =
-    `${2 * P.TUBE_RADIUS} in × ${P.TUBE_LENGTH / 12} ft tube, bent on a ${P.BEND_RADIUS / 12} ft radius · seed ${P.SEED}`;
+  $("subtitle").textContent = P.TUBE_RADIUS === undefined
+    ? `${P.SURFACE} · seed ${P.SEED}`
+    : `${2 * P.TUBE_RADIUS} in × ${P.TUBE_LENGTH / 12} ft tube, bent on a ${P.BEND_RADIUS / 12} ft radius · seed ${P.SEED}`;
+  const inner = new THREE.Box3();                       // size of the skin you asked for (not the extension)
+  L.polygons.forEach((poly, pi) => { if (!L.polygon_info[pi].end) poly.forEach(i => inner.expandByPoint(V[i])); });
+  const sz = inner.getSize(new THREE.Vector3()), f = x => x.toFixed(x < 100 ? 1 : 0);
+  $("size").textContent = `Skin size ${f(sz.x)} × ${f(sz.z)} × ${f(sz.y)} in (${f(sz.x / 12)} × ${f(sz.z / 12)} × ${f(sz.y / 12)} ft), width × depth × height`;
   const counts = { pent: 0, hex: 0, hept: 0, end: 0, other: 0 };
   L.polygon_info.forEach(p => counts[kind(p)]++);
-  $("legend-type").innerHTML = [["pent", "Pentagons"], ["hex", "Hexagons"], ["hept", "Heptagons"], ["end", "Extra length past the 8 ft"]]
+  $("legend-type").innerHTML = [["pent", "Pentagons"], ["hex", "Hexagons"], ["hept", "Heptagons"], ["end", P.TUBE_RADIUS !== undefined ? "Extra length past the 8 ft" : P.EXTEND_ROWS > 0 ? "Extension past your surface" : "Cut by an open edge"]]
     .map(([k, t]) => `<span class="sw" style="background:var(--${k})"></span><span>${t}</span><span class="num">${counts[k]}</span>`).join("");
   const stats = [
     ["Pentagon coverage", (100 * m.pentagon_coverage).toFixed(1) + " %"],
     ["Pentagons touching", m.pentagons_touching],
     ["Pentagon size across", `${m.pent_across_min.toFixed(2)}–${m.pent_across_max.toFixed(2)} in`],
     ["Pentagon longest ÷ shortest side", `${m.pent_edge_ratio_mean.toFixed(2)} avg, ${m.pent_edge_ratio_max.toFixed(2)} worst`],
-    ["Plastic around hole, closest", `${m.pent_rim_flat_min.toFixed(2)}–${m.pent_rim_flat_mean.toFixed(2)} in`],
+    ["Pentagon holes", m.holes === undefined ? "n/a" : `${m.holes} × ${P.HOLE_DIAMETER} in round`],
+    ["Thinnest plastic round a hole", m.hole_rim_min == null ? "n/a" : `${m.hole_rim_min.toFixed(2)} in (asked ${P.HOLE_RIM})`],
+    ["Other panels cut out", m.cutouts === undefined ? "n/a" : `${m.cutouts}` + (m.solid_panels ? `, ${m.solid_panels} too small` : "")],
+    ["Thinnest plastic round a cutout", m.cutout_rim_min == null ? "n/a" : `${m.cutout_rim_min.toFixed(2)} in (asked ${P.CUTOUT_RIM} mid-side)`],
     ["Other shapes, longest ÷ shortest side", `${m.other_edge_ratio_mean.toFixed(1)} avg, ${m.other_edge_ratio_max.toFixed(1)} worst`],
     ["Corners from centre, spread", `${m.spread_mean.toFixed(2)} avg, ${m.spread_max.toFixed(2)} worst`],
     ["Shortest edge", `${m.min_edge.toFixed(2)} in`],
@@ -231,7 +242,7 @@ function build(layout) {
   $("cov-val").textContent = pct(m.pentagon_coverage);
   const note = $("cov-note");
   if (m.pentagon_coverage < target - 0.02) {
-    note.textContent = `Asked for ${pct(target)}, but there is no room for more on this tube.`;
+    note.textContent = `Asked for ${pct(target)}, but there is no room for more on this surface.`;
     note.className = "note warn";
   } else {
     note.textContent = "Pentagons never touch each other.";
@@ -293,8 +304,8 @@ function resetView() {
   controls.update();
 }
 $("reset").onclick = resetView;
-$("opt-seams").onchange = e => seams.visible = e.target.checked;
-$("opt-holes").onchange = e => holes.visible = e.target.checked;
+$("opt-seams").onchange = e => { seams.visible = e.target.checked; cutLines.visible = e.target.checked; };
+$("opt-holes").onchange = () => build(L);
 const spin = $("opt-spin");
 spin.onchange = () => controls.autoRotate = spin.checked;
 controls.autoRotateSpeed = 1.5;
@@ -315,7 +326,7 @@ renderer.domElement.addEventListener("pointerup", e => {
   hiGeo.setFromPoints(L.polygons[pi].map(i => V[i])); hi.visible = true;
   pick.hidden = false;
   pick.innerHTML = `<div class="label">Panel ${pi + 1}</div><div class="stats">
-    <span>Shape</span><span class="num">${NAMES[p.sides] || p.sides + " sides"}${p.end ? ", cut" : ""}</span>
+    <span>Shape</span><span class="num">${NAMES[p.sides] || p.sides + " sides"}${p.end ? ", extension" : ""}</span>
     <span>Size across</span><span class="num">${p.across.toFixed(2)} in</span>
     <span>Area</span><span class="num">${p.area.toFixed(1)} sq in</span>
     <span>Out of flat</span><span class="num">${p.flatness.toFixed(2)} in</span></div>`;
@@ -335,5 +346,15 @@ function resize() {
   renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
 }
 addEventListener("resize", resize); resize(); resetView();
-renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+// Scale bar: the longest round length (in or ft) that fits in about 200 px at the distance of the shape's middle.
+const NICE = [1, 2, 3, 6, 12, 24, 36, 60, 120, 240, 480, 960];
+function updateScale() {
+  const dist = camera.position.distanceTo(controls.target);
+  const pxPerIn = (renderer.domElement.clientHeight / 2) / (dist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+  let len = NICE[0];
+  NICE.forEach(n => { if (n * pxPerIn <= 200) len = n; });
+  $("scale-bar").style.width = Math.max(len * pxPerIn, 4) + "px";
+  $("scale-label").textContent = len >= 12 ? `${len / 12} ft` : `${len} in`;
+}
+renderer.setAnimationLoop(() => { controls.update(); updateScale(); renderer.render(scene, camera); });
 </script>
