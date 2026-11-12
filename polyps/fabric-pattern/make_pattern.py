@@ -374,22 +374,28 @@ def cut_with_slit(cut, slash):
 DXF_GAP = 0.125         # smallest space between pieces on the laser sheet, inches (leave room for the laser)
 
 
-def write_dxf(path, cut, slash, placements=None):
-    """DXF for a laser cutter, in inches, with ONE layer, CUT (red): each piece is a single closed outline that
+def write_dxf(path, cut, slash, placements=None, units="mm"):
+    """DXF for a laser cutter, with ONE layer, CUT (red): each piece is a single closed outline that
     includes its slash to the dot (see cut_with_slit). Nothing else is drawn (no sewing line, marks or notches).
     placements = None writes one piece with its lower left corner at the origin. Otherwise it is a list of
-    (sx, sy, dx, dy): each piece is flipped by the signs (-1 mirrors, or turns it 180 degrees together) and shifted."""
+    (sx, sy, dx, dy): each piece is flipped by the signs (-1 mirrors, or turns it 180 degrees together) and shifted
+    (dx, dy in inches, like everything in this script).
+    units = "mm" (default) writes the coordinates in millimetres, which is what laser software expects: many programs
+    read the numbers as millimetres whatever the file's units flag says, so inches came in 25.4 times too small.
+    units = "in" writes inches."""
     import ezdxf
+    k = 25.4 if units == "mm" else 1.0
     doc = ezdxf.new("R2010", setup=True)
-    doc.units = ezdxf.units.IN
-    doc.header["$MEASUREMENT"] = 0
+    doc.units = ezdxf.units.MM if units == "mm" else ezdxf.units.IN
+    doc.header["$MEASUREMENT"] = 1 if units == "mm" else 0
     doc.layers.add("CUT", color=1)
     msp = doc.modelspace()
     ring = cut_with_slit(cut, slash)
     if placements is None:
         placements = [(1, 1, -ring[:, 0].min(), -ring[:, 1].min())]
     for sx, sy, dx, dy in placements:
-        msp.add_lwpolyline([(x * sx + dx, y * sy + dy) for x, y in ring], close=True, dxfattribs={"layer": "CUT"})
+        msp.add_lwpolyline([((x * sx + dx) * k, (y * sy + dy) * k) for x, y in ring], close=True,
+                           dxfattribs={"layer": "CUT"})
     doc.saveas(path)
 
 
@@ -431,11 +437,15 @@ def make_dxf_files(out, name, b_cut, slash):
     except ImportError:
         print("DXF skipped: the ezdxf library isn't installed (pip3 install ezdxf)")
         return
-    write_dxf(os.path.join(out, f"{name}-piece.dxf"), b_cut, slash)
+    units = sys.argv[sys.argv.index("--dxf-units") + 1] if "--dxf-units" in sys.argv else "mm"
+    u = 25.4 if units == "mm" else 1.0
+    write_dxf(os.path.join(out, f"{name}-piece.dxf"), b_cut, slash, units=units)
     ring = np.asarray(b_cut, float)
     save_piece_preview(os.path.join(out, f"{name}-piece-cut.png"), b_cut, slash,
                        f"One piece, {np.ptp(ring[:, 0]):.2f} x {np.ptp(ring[:, 1]):.2f} in. Red = cut, with the slit to the dot.")
-    print(f"DXF: {name}-piece.dxf (one piece, {np.ptp(ring[:, 0]):.2f} x {np.ptp(ring[:, 1]):.2f} in, slit included in the outline)")
+    print(f"DXF: {name}-piece.dxf (one piece, {np.ptp(ring[:, 0]) * u:.{1 if units == 'mm' else 2}f} x {np.ptp(ring[:, 1]) * u:.{1 if units == 'mm' else 2}f} {units}"
+          f"{' = ' + format(np.ptp(ring[:, 0]), '.2f') + ' x ' + format(np.ptp(ring[:, 1]), '.2f') + ' in' if units == 'mm' else ''}, "
+          f"slit included in the outline, file units {units})")
     if "--no-sheet" in sys.argv:
         return
     import nest
@@ -444,11 +454,12 @@ def make_dxf_files(out, name, b_cut, slash):
         i = sys.argv.index("--bed")
         bed = (float(sys.argv[i + 1]), float(sys.argv[i + 2]))
     r = nest.nest_pieces(b_cut, FINGERS, gap=DXF_GAP, bed=bed)
-    write_dxf(os.path.join(out, f"{name}-sheet.dxf"), b_cut, slash, r["placements"])
+    write_dxf(os.path.join(out, f"{name}-sheet.dxf"), b_cut, slash, r["placements"], units=units)
     w, h = r["size"]
     save_sheet_preview(os.path.join(out, f"{name}-sheet.png"), b_cut, slash, r["placements"], r["size"],
                        f"{2 * FINGERS} pieces, {w:.1f} x {h:.1f} in ({100 * r['fill']:.0f} % fabric). Grain runs up the page.")
-    print(f"DXF: {name}-sheet.dxf (all {2 * FINGERS} pieces nested, {w:.1f} x {h:.1f} in, {100 * r['fill']:.0f} % fabric, "
+    print(f"DXF: {name}-sheet.dxf (all {2 * FINGERS} pieces nested, {w:.1f} x {h:.1f} in"
+          f"{' = ' + format(w * u, '.0f') + ' x ' + format(h * u, '.0f') + ' mm' if units == 'mm' else ''}, {100 * r['fill']:.0f} % fabric, "
           f"pieces at least {r['min_gap']:.2f} in apart; grain runs along the {h:.1f} in side)")
 
 

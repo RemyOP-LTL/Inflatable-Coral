@@ -45,7 +45,7 @@ PATTERN_FIELDS = [
     ("TUNNEL_WIDTH", "Tab pocket width", "in", 0.125, 0.5, 0.0625, "Room for the cord between the seam and the tab stitching."),
 ]
 LASER_FIELDS = [
-    ("BED_W", "Bed width", "in", 0, 60, 1, "Width of your laser bed. 0 = no limit (the smallest layout)."),
+    ("BED_W", "Bed width", "in", 0, 60, 1, "Width of your laser bed, in inches. 0 = no limit (the smallest layout)."),
     ("BED_L", "Bed length (along the grain)", "in", 0, 120, 1, "Length of the bed in the direction the fabric grain runs. 0 = no limit."),
 ]
 PULL_ENABLED = os.environ.get("POLYP_TOOL_PULL") == "1"   # the motion simulation is paused for now
@@ -149,6 +149,7 @@ def clean(params):
     p["FINGERS"] = int(round(p["FINGERS"]))
     p["TAB_COUNT"] = int(round(p["TAB_COUNT"]))
     p["FIT_LETTER"] = 1 if params.get("FIT_LETTER") else 0
+    p["DXF_IN"] = 1 if params.get("DXF_IN") else 0
     return p
 
 
@@ -179,6 +180,8 @@ def run_job(job_id, kind, p, folder):
             cmd = [sys.executable, "make_pattern.py", "--out", folder, "--name", "custom", "--dxf-only"]
             if p["BED_W"] and p["BED_L"]:
                 cmd += ["--bed", str(p["BED_W"]), str(p["BED_L"])]
+            if p["DXF_IN"]:
+                cmd += ["--dxf-units", "in"]
         else:
             cmd = [sys.executable, "sim_pull.py", "--out", folder, "--name", "custom",
                    "--hitch", str(p["HITCH"]), "--soft", str(p["SOFT"]), "--pull-max", str(p["PULL_MAX"]), "--steps", str(int(p["PULL_MAX"]))]
@@ -206,7 +209,7 @@ def start(kind, params):
     p = clean(params)
     polyp_env(p)                                 # raises if the numbers don't make sense
     relevant = {k: p[k] for k in sorted(p) if (kind == "pull" or k not in ("HITCH", "PULL_MAX", "SOFT"))
-                and (kind == "dxf" or k not in ("BED_W", "BED_L"))}
+                and (kind == "dxf" or k not in ("BED_W", "BED_L", "DXF_IN"))}
     key = hashlib.sha1(json.dumps(relevant, sort_keys=True).encode()).hexdigest()[:12]
     job_id = f"{kind}-{key}"
     folder = os.path.join(OUT, key)
@@ -327,6 +330,7 @@ PAGE = r"""<!doctype html>
     <div class="card" id="card-laser-settings" style="margin-top:16px"><h2>Laser cutter (DXF)</h2>
       <div class="muted" style="font-size:13px;color:var(--mute)">Lays out all the pieces on one sheet, cut lines only. Set your bed size, or leave it at 0.</div>
       <div id="laser-fields"></div>
+      <label class="field" style="display:flex;gap:8px;align-items:center;font-size:13px"><input type="checkbox" id="dxf-in"> Write the DXF in inches (default: millimetres)</label>
       <button id="run-dxf">Make laser files (about 30 s)</button></div>
     <div class="card" id="card-pull-settings" style="margin-top:16px"><h2>String pull</h2><div id="pull-fields"></div>
       <button id="run-pull">Simulate string pull (about 2 min)</button></div>
@@ -442,6 +446,7 @@ function finish(kind, key, j) {
 ['pattern', 'inflate', 'pull', 'dxf'].forEach(k => state['seq-' + k] = 0);
 $('run-inflate').onclick = () => run('inflate');
 $('run-dxf').onclick = () => run('dxf');
+$('dxf-in').addEventListener('change', e => { state.DXF_IN = e.target.checked ? 1 : 0; changed('BED_W'); });
 $('run-pull').onclick = () => run('pull');
 async function loadVersion(keep) {
   let v;
