@@ -359,64 +359,73 @@ def page(pdf, sew, cut, notches, title, lines, footer, grain_x, grain_y, text_xy
         plt.close(fig)
 
 
-DXF_GAP = 0.25          # space between pieces on the all-pieces DXF sheet, inches
+DXF_GAP = 0.125         # smallest space between pieces on the laser sheet, inches (leave room for the laser)
 
 
-def write_dxf(path, sew, cut, slash, stitch, notches, grain, copies=1):
-    """DXF for a laser cutter, in inches, finger pointing up. Layers:
-      CUT    (red)   the outline and the slash to the dot: cut these
-      SEW    (blue)  the sewing line, dashed: score it or switch it off
-      MARKS  (green) the crotch dot, match-point triangles, string tab stitch lines, grain arrow
-    copies = 1 writes one half-finger piece. copies = 2 writes the whole set: FINGERS pieces in one
-    row and FINGERS mirror-image pieces in a second row (cut 2 x FINGERS)."""
+def write_dxf(path, cut, slash, placements=None):
+    """DXF for a laser cutter, in inches, with ONE layer, CUT (red): each piece's outline and its slash to the
+    dot. Nothing else is drawn (no sewing line, marks or notches).
+    placements = None writes one piece with its lower left corner at the origin. Otherwise it is a list of
+    (sx, sy, dx, dy): each piece is flipped by the signs (-1 mirrors, or turns it 180 degrees together) and shifted."""
     import ezdxf
     doc = ezdxf.new("R2010", setup=True)
     doc.units = ezdxf.units.IN
     doc.header["$MEASUREMENT"] = 0
-    for name, colour, ltype in (("CUT", 1, "CONTINUOUS"), ("SEW", 5, "DASHED"), ("MARKS", 3, "CONTINUOUS")):
-        doc.layers.add(name, color=colour, linetype=ltype)
+    doc.layers.add("CUT", color=1)
     msp = doc.modelspace()
     ring = np.asarray(cut, float)
     if np.allclose(ring[0], ring[-1]):
         ring = ring[:-1]
-    xmin, ymin = ring.min(axis=0)
-    xmax, ymax = ring.max(axis=0)
-    w, h = xmax - xmin, ymax - ymin
-
-    def place(mirror, col, row):
-        dx = col * (w + DXF_GAP) + (xmax if mirror else -xmin)
-        dy = row * (h + DXF_GAP) - ymin
-        return lambda p: [((-x if mirror else x) + dx, y + dy) for x, y in np.asarray(p, float)[:, :2]]
-
-    def poly(f, pts, layer, close=False, **extra):
-        msp.add_lwpolyline(f(pts), close=close, dxfattribs=dict(layer=layer, **extra))
-
-    def one(mirror, col, row):
-        f = place(mirror, col, row)
-        poly(f, ring, "CUT", close=True)
-        sw = np.asarray(sew, float)
-        poly(f, sw[:-1] if np.allclose(sw[0], sw[-1]) else sw, "SEW", close=True, ltscale=0.2)
-        poly(f, slash, "CUT")
-        msp.add_circle(f([(0, 0)])[0], 0.04, dxfattribs={"layer": "MARKS"})
-        for line in stitch:
-            poly(f, line, "MARKS")
-        for (x, y, mk) in notches:                       # small triangle pointing into the piece
-            d = 0.12 if x < 0 else -0.12
-            poly(f, [(x, y + 0.06), (x, y - 0.06), (x + d, y)], "MARKS", close=True)
-        gx, (y0, y1) = grain
-        poly(f, [(gx, y0), (gx, y1)], "MARKS")           # double-headed grain arrow
-        for tip, sign in ((y0, 1), (y1, -1)):
-            poly(f, [(gx - 0.07, tip + sign * 0.15), (gx, tip), (gx + 0.07, tip + sign * 0.15)], "MARKS")
-
-    if copies == 1:
-        one(False, 0, 0)
-    else:
-        n = FINGERS
-        for k in range(n):
-            one(False, k, 0)
-            one(True, k, 1)
+    if placements is None:
+        placements = [(1, 1, -ring[:, 0].min(), -ring[:, 1].min())]
+    for sx, sy, dx, dy in placements:
+        move = lambda p: [(x * sx + dx, y * sy + dy) for x, y in np.asarray(p, float)[:, :2]]
+        msp.add_lwpolyline(move(ring), close=True, dxfattribs={"layer": "CUT"})
+        msp.add_lwpolyline(move(slash), dxfattribs={"layer": "CUT"})
     doc.saveas(path)
-    return w, h
+
+
+def save_sheet_preview(path, cut, placements, size, title):
+    """A picture of the laser sheet (what write_dxf draws)."""
+    ring = np.asarray(cut, float)
+    fig, ax = plt.subplots(figsize=(6.4, 6.4 * max(0.45, min(1.6, size[1] / size[0])) + 0.7))
+    for sx, sy, dx, dy in placements:
+        p = ring * [sx, sy] + [dx, dy]
+        ax.fill(p[:, 0], p[:, 1], facecolor="#fbe3df", edgecolor="red", lw=1.0)
+    ax.set_aspect("equal")
+    ax.set_xlim(-0.5, size[0] + 0.5)
+    ax.set_ylim(-0.5, size[1] + 0.5)
+    ax.set_xlabel("inches")
+    ax.grid(alpha=0.25)
+    ax.set_title(title, fontsize=10)
+    fig.savefig(path, dpi=110, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+
+
+def make_dxf_files(out, name, b_cut, slash):
+    """Write <name>-piece.dxf (one piece), <name>-sheet.dxf (all 2 x FINGERS pieces, nested) and a preview."""
+    try:
+        import ezdxf  # noqa: F401
+    except ImportError:
+        print("DXF skipped: the ezdxf library isn't installed (pip3 install ezdxf)")
+        return
+    write_dxf(os.path.join(out, f"{name}-piece.dxf"), b_cut, slash)
+    ring = np.asarray(b_cut, float)
+    print(f"DXF: {name}-piece.dxf (one piece, {np.ptp(ring[:, 0]):.2f} x {np.ptp(ring[:, 1]):.2f} in)")
+    if "--no-sheet" in sys.argv:
+        return
+    import nest
+    bed = None
+    if "--bed" in sys.argv:
+        i = sys.argv.index("--bed")
+        bed = (float(sys.argv[i + 1]), float(sys.argv[i + 2]))
+    r = nest.nest_pieces(b_cut, FINGERS, gap=DXF_GAP, bed=bed)
+    write_dxf(os.path.join(out, f"{name}-sheet.dxf"), b_cut, slash, r["placements"])
+    w, h = r["size"]
+    save_sheet_preview(os.path.join(out, f"{name}-sheet.png"), b_cut, r["placements"], r["size"],
+                       f"{2 * FINGERS} pieces, {w:.1f} x {h:.1f} in ({100 * r['fill']:.0f} % fabric). Grain runs up the page.")
+    print(f"DXF: {name}-sheet.dxf (all {2 * FINGERS} pieces nested, {w:.1f} x {h:.1f} in, {100 * r['fill']:.0f} % fabric, "
+          f"pieces at least {r['min_gap']:.2f} in apart; grain runs along the {h:.1f} in side)")
 
 
 def main():
@@ -451,22 +460,13 @@ def main():
         lines += ["", "Blue = string tunnel (inner edge,", "tip to centre). Sew the seam, then",
                   f'sew the two allowances together {TUNNEL_WIDTH:.3g}"', "out on the blue line. Cord runs",
                   "between them. Wider allowance."]
+    if "--dxf-only" in sys.argv:                   # laser files only (the tool's "Make laser files" button)
+        make_dxf_files(out, name, b_cut, slash)
+        return
     with PdfPages(os.path.join(out, f"{name}-pattern.pdf")) as pdf:
         page(pdf, b, b_cut, side_notches, f"FINGER HALF  -  {name}", lines, foot, grain_x=-0.7 * SCALE,
              grain_y=(-2.6 * SCALE, -0.3 * SCALE), text_xy=tuple(bend(np.array([[0.0, 0.4 * FINGER_LENGTH]]))[0]),
              slash=slash, tunnel=tun, text_below=SCALE < 0.85)
-
-    if "--no-dxf" not in sys.argv:
-        try:
-            import ezdxf  # noqa: F401
-        except ImportError:
-            print("DXF skipped: the ezdxf library isn't installed (pip3 install ezdxf)")
-        else:
-            grain = (-0.7 * SCALE, (-2.6 * SCALE, -0.3 * SCALE))
-            w, h = write_dxf(os.path.join(out, f"{name}-piece.dxf"), b, b_cut, slash, tun, side_notches, grain)
-            write_dxf(os.path.join(out, f"{name}-sheet.dxf"), b, b_cut, slash, tun, side_notches, grain, copies=2)
-            print(f"DXF: {name}-piece.dxf (one piece, {w:.2f} x {h:.2f} in) and {name}-sheet.dxf "
-                  f"(all {2 * FINGERS} pieces, {FINGERS * (w + DXF_GAP) - DXF_GAP:.1f} x {2 * h + DXF_GAP:.1f} in)")
 
     fig, ax = plt.subplots(figsize=(5, 7))
     ax.plot(b_cut[:, 0], b_cut[:, 1], "k-", lw=1.4)
@@ -490,6 +490,8 @@ def main():
 
     if abs(SCALE - 1) > 1e-9:
         print(f"scale {SCALE:.3f} " + ("(fits one 8.5 x 11 in page)" if int(FIT_LETTER) else "(scale model)"))
+    if "--no-dxf" not in sys.argv:
+        make_dxf_files(out, name, b_cut, slash)
     print(f"cuff circumference {CIRC:.3f}  piece width at crotch {W0:.3f}")
     if TUNNEL:
         seg = np.diff(tunnel_path(), axis=0)

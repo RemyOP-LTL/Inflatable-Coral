@@ -23,7 +23,7 @@ Fingers (5), the 45 degree lean, the shapes and all angles are the same as the f
 ## Files
 - `polyp-5-taper-tabs-letter-pattern.pdf`: the pattern. **Print at 100 % / Actual size, landscape**, and check the 1 in test square measures 1 in. One page.
 - `polyp-5-taper-tabs-letter-piece.png`: quick picture of the flat piece.
-- `polyp-5-taper-tabs-letter-piece.dxf` and `...-letter-sheet.dxf`: laser-cutter files at this size (one piece, and all 10 pieces in two rows, 17.4 x 17.0 in). Layers CUT, SEW and MARKS.
+- `polyp-5-taper-tabs-letter-piece.dxf` and `...-letter-sheet.dxf` (with `...-letter-sheet.png`): laser-cutter files at this size, cut lines only (one layer, `CUT`). The sheet has all 10 pieces nested, 19.7 x 13.4 in.
 - `polyp-5-taper-tabs-letter-3d.png`: simulated inflated polyp at this size.
 - `polyp-5-taper-tabs-letter-pull.png` and `.csv`: string-pull simulation at this size. Forces are lbf per 1 psi and are for this small model.
 

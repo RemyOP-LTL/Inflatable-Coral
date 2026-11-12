@@ -44,6 +44,10 @@ PATTERN_FIELDS = [
     ("TAB_COUNT", "Tabs per finger", "", 0, 8, 1, "0 = automatic: about one every 3 in, never fewer than 3."),
     ("TUNNEL_WIDTH", "Tab pocket width", "in", 0.125, 0.5, 0.0625, "Room for the cord between the seam and the tab stitching."),
 ]
+LASER_FIELDS = [
+    ("BED_W", "Bed width", "in", 0, 60, 1, "Width of your laser bed. 0 = no limit (the smallest layout)."),
+    ("BED_L", "Bed length (along the grain)", "in", 0, 120, 1, "Length of the bed in the direction the fabric grain runs. 0 = no limit."),
+]
 PULL_ENABLED = os.environ.get("POLYP_TOOL_PULL") == "1"   # the motion simulation is paused for now
 PULL_FIELDS = [
     ("HITCH", "Hitch depth", "in", 0.25, 4, 0.25, "Where the five strings meet, this far below the polyp's centre point (into the cuff)."),
@@ -52,7 +56,7 @@ PULL_FIELDS = [
 ]
 DEFAULTS = {"CUFF_DIAMETER": (math.pi * 5.0 + 0.5) / math.pi, "EASE": 0.5, "CUFF_HEIGHT": 3.0,
             "FINGER_LENGTH": 8.5, "FINGERS": 5, "TAPER_FULLNESS": 0.6, "SPLAY": 45, "TURN_LENGTH": 1.5,
-            "TUNNEL_WIDTH": 0.25, "SCALE": 1.0, "TAB_LENGTH": 0.375, "TAB_COUNT": 0, "HITCH": 1.0, "SOFT": 0.05, "PULL_MAX": 10}
+            "TUNNEL_WIDTH": 0.25, "SCALE": 1.0, "TAB_LENGTH": 0.375, "TAB_COUNT": 0, "HITCH": 1.0, "SOFT": 0.05, "PULL_MAX": 10, "BED_W": 0, "BED_L": 0}
 
 JOBS = {}                         # job id -> dict(state, log, files)
 HEAVY = threading.Semaphore(1)    # only one simulation at a time; they use every processor core
@@ -137,7 +141,7 @@ def restart_soon():
 def clean(params):
     """Check the numbers from the page and turn them into make_pattern's settings."""
     p = {}
-    for name, label, unit, lo, hi, step, _ in PATTERN_FIELDS + PULL_FIELDS:
+    for name, label, unit, lo, hi, step, _ in PATTERN_FIELDS + PULL_FIELDS + LASER_FIELDS:
         v = float(params.get(name, DEFAULTS[name]))
         if not lo <= v <= hi:
             raise ValueError(f"{label} must be between {lo:g} and {hi:g}")
@@ -168,9 +172,13 @@ def run_job(job_id, kind, p, folder):
         job["state"] = "running"
         os.makedirs(folder, exist_ok=True)
         if kind == "pattern":
-            cmd = [sys.executable, "make_pattern.py", "--out", folder, "--name", "custom", "--no-sim"]
+            cmd = [sys.executable, "make_pattern.py", "--out", folder, "--name", "custom", "--no-sim", "--no-dxf"]
         elif kind == "inflate":
-            cmd = [sys.executable, "make_pattern.py", "--out", folder, "--name", "custom"]
+            cmd = [sys.executable, "make_pattern.py", "--out", folder, "--name", "custom", "--no-dxf"]
+        elif kind == "dxf":
+            cmd = [sys.executable, "make_pattern.py", "--out", folder, "--name", "custom", "--dxf-only"]
+            if p["BED_W"] and p["BED_L"]:
+                cmd += ["--bed", str(p["BED_W"]), str(p["BED_L"])]
         else:
             cmd = [sys.executable, "sim_pull.py", "--out", folder, "--name", "custom",
                    "--hitch", str(p["HITCH"]), "--soft", str(p["SOFT"]), "--pull-max", str(p["PULL_MAX"]), "--steps", str(int(p["PULL_MAX"]))]
@@ -197,7 +205,8 @@ def run_job(job_id, kind, p, folder):
 def start(kind, params):
     p = clean(params)
     polyp_env(p)                                 # raises if the numbers don't make sense
-    relevant = {k: p[k] for k in sorted(p) if kind == "pull" or k not in ("HITCH", "PULL_MAX", "SOFT")}
+    relevant = {k: p[k] for k in sorted(p) if (kind == "pull" or k not in ("HITCH", "PULL_MAX", "SOFT"))
+                and (kind == "dxf" or k not in ("BED_W", "BED_L"))}
     key = hashlib.sha1(json.dumps(relevant, sort_keys=True).encode()).hexdigest()[:12]
     job_id = f"{kind}-{key}"
     folder = os.path.join(OUT, key)
@@ -230,7 +239,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/":
-            meta = dict(pattern=PATTERN_FIELDS, pull=PULL_FIELDS if PULL_ENABLED else [], pull_enabled=PULL_ENABLED, defaults=DEFAULTS)
+            meta = dict(pattern=PATTERN_FIELDS, laser=LASER_FIELDS, pull=PULL_FIELDS if PULL_ENABLED else [], pull_enabled=PULL_ENABLED, defaults=DEFAULTS)
             self.send(200, PAGE.replace("__META__", json.dumps(meta)), "text/html; charset=utf-8")
         elif path == "/api/version":
             self.send(200, json.dumps(version_info()), "application/json")
@@ -241,7 +250,7 @@ class Handler(BaseHTTPRequestHandler):
             parts = path.split("/")[2:]
             f = os.path.join(OUT, *parts) if len(parts) == 2 and not any(x.startswith(".") for x in parts) else None
             if f and os.path.isfile(f):
-                ctype = {"png": "image/png", "pdf": "application/pdf", "csv": "text/csv"}.get(f.rsplit(".", 1)[-1], "application/octet-stream")
+                ctype = {"png": "image/png", "pdf": "application/pdf", "csv": "text/csv", "dxf": "application/dxf"}.get(f.rsplit(".", 1)[-1], "application/octet-stream")
                 self.send(200, open(f, "rb").read(), ctype)
             else:
                 self.send(404, "not found", "text/plain")
@@ -260,7 +269,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404, "not found", "text/plain")
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
-            if body["job"] not in ("pattern", "inflate") + (("pull",) if PULL_ENABLED else ()):
+            if body["job"] not in ("pattern", "inflate", "dxf") + (("pull",) if PULL_ENABLED else ()):
                 raise ValueError("unknown job")
             job_id, key = start(body["job"], body.get("params", {}))
             self.send(200, json.dumps({"id": job_id, "key": key}), "application/json")
@@ -315,6 +324,10 @@ PAGE = r"""<!doctype html>
       <button class="reset" id="reset">Reset to the default design</button></div>
     <div class="card" id="card-sim-buttons" style="margin-top:16px"><h2>Simulation</h2>
       <button id="run-inflate" class="secondary">Simulate inflated (about 30 s)</button></div>
+    <div class="card" id="card-laser-settings" style="margin-top:16px"><h2>Laser cutter (DXF)</h2>
+      <div class="muted" style="font-size:13px;color:var(--mute)">Lays out all the pieces on one sheet, cut lines only. Set your bed size, or leave it at 0.</div>
+      <div id="laser-fields"></div>
+      <button id="run-dxf">Make laser files (about 30 s)</button></div>
     <div class="card" id="card-pull-settings" style="margin-top:16px"><h2>String pull</h2><div id="pull-fields"></div>
       <button id="run-pull">Simulate string pull (about 2 min)</button></div>
   </div>
@@ -323,6 +336,9 @@ PAGE = r"""<!doctype html>
       <div id="out-pattern"></div><div class="status" id="log-pattern"></div></div>
     <div class="card" id="card-inflate"><h2>Inflated <span class="tag">settings changed, run again</span></h2>
       <div id="out-inflate" style="color:var(--mute)">Press "Simulate inflated".</div><div class="status" id="log-inflate"></div></div>
+    <div class="card" id="card-dxf"><h2>Laser sheet <span class="tag">settings changed, run again</span></h2>
+      <div id="out-dxf" style="color:var(--mute)">Press "Make laser files". You get a DXF with one piece and a DXF with all the pieces nested on one sheet. Only the red cut lines are drawn.</div>
+      <div class="status" id="log-dxf"></div></div>
     <div class="card" id="card-pull"><h2>String pull <span class="tag">settings changed, run again</span></h2>
       <div id="out-pull" style="color:var(--mute)">Press "Simulate string pull". The five cords run from the fingertips through the tabs to one hitch point inside the cuff. The hitch is pulled down in steps.</div>
       <div class="status" id="log-pull"></div></div>
@@ -341,9 +357,9 @@ function field(f) {
   return d;
 }
 function build(id, fields) { fields.forEach(f => $(id).appendChild(field(f))); }
-build('pattern-fields', META.pattern); build('pull-fields', META.pull);
+build('pattern-fields', META.pattern); build('pull-fields', META.pull); build('laser-fields', META.laser);
 if (!META.pull_enabled) { $('card-pull-settings').hidden = true; $('card-pull').hidden = true; }
-const names = [...META.pattern, ...META.pull].map(f => f[0]);
+const names = [...META.pattern, ...META.pull, ...META.laser].map(f => f[0]);
 function setAll(vals) { names.forEach(n => { state[n] = vals[n]; show(n); }); }
 function show(n) {
   const v = state[n], r = Math.round(v * 10000) / 10000;
@@ -371,9 +387,10 @@ $('fit-letter').addEventListener('change', e => {
 let timer = null;
 function changed(n) {
   derived();
-  const heavy = !['HITCH', 'PULL_MAX', 'SOFT'].includes(n) ? ['inflate', 'pull'] : ['pull'];
+  const pullOnly = ['HITCH', 'PULL_MAX', 'SOFT'].includes(n), laserOnly = ['BED_W', 'BED_L'].includes(n);
+  const heavy = pullOnly ? ['pull'] : laserOnly ? ['dxf'] : ['inflate', 'pull', 'dxf'];
   heavy.forEach(k => $('card-' + k).classList.add('stale'));
-  if (['HITCH', 'PULL_MAX', 'SOFT'].includes(n)) return;           // these only affect the string pull
+  if (pullOnly || laserOnly) return;                                // these don't change the flat pattern
   $('card-pattern').classList.add('stale');
   clearTimeout(timer); timer = setTimeout(() => run('pattern'), 350);
 }
@@ -403,10 +420,13 @@ function finish(kind, key, j) {
   let html = '';
   if (kind === 'pattern') {
     html = `<img src="${base}custom-piece.png?${t}" alt="flat piece">
-      <a href="${base}custom-pattern.pdf" target="_blank">Open the printable pattern (PDF, print at 100 %)</a>` +
-      (has('custom-piece.dxf') ? `<br><a href="${base}custom-piece.dxf" target="_blank">Laser cutter: one piece (DXF, inches)</a> &middot; <a href="${base}custom-sheet.dxf" target="_blank">all pieces (DXF)</a>` : '');
+      <a href="${base}custom-pattern.pdf" target="_blank">Open the printable pattern (PDF, print at 100 %)</a>`;
     const m = /^scale ([0-9.]+)/m.exec(j.log); state.fitScale = m ? parseFloat(m[1]) : 1; derived();
     $('log-pattern').textContent = j.log.split('\n').filter(l => l.startsWith('cut size') || l.startsWith('string seam') || l.startsWith('scale')).join('\n');
+  } else if (kind === 'dxf') {
+    html = `<img src="${base}custom-sheet.png?${t}" alt="laser sheet with all the pieces nested">` +
+      `<a href="${base}custom-sheet.dxf" target="_blank">Download all pieces (DXF, inches)</a> &middot; <a href="${base}custom-piece.dxf" target="_blank">one piece (DXF)</a>`;
+    $('log-dxf').textContent = j.log.split('\n').filter(l => l.startsWith('DXF')).join('\n');
   } else if (kind === 'inflate') {
     html = `<img src="${base}custom-3d.png?${t}" alt="inflated polyp">`;
     $('log-inflate').textContent = '';
@@ -418,8 +438,9 @@ function finish(kind, key, j) {
   $('out-' + kind).innerHTML = html; $('out-' + kind).style.color = '';
   $('card-' + kind).classList.remove('stale');
 }
-['pattern', 'inflate', 'pull'].forEach(k => state['seq-' + k] = 0);
+['pattern', 'inflate', 'pull', 'dxf'].forEach(k => state['seq-' + k] = 0);
 $('run-inflate').onclick = () => run('inflate');
+$('run-dxf').onclick = () => run('dxf');
 $('run-pull').onclick = () => run('pull');
 async function loadVersion(keep) {
   let v;

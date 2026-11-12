@@ -51,7 +51,7 @@ After that, the simulator is always at **http://127.0.0.1:8800/**. Bookmark it. 
 - Fields: cuff diameter, cuff ease, cuff length, finger length, scale, number of fingers, finger fullness, lean out, turn length, tab length, tabs per finger and pocket width.
 - The flat pattern redraws about a second after you change a number, with a link to the printable PDF.
 - **Simulate inflated** (about 30 s) shows the sewn polyp with air in it.
-- Links to the printable PDF and the two laser-cutter DXF files appear under the flat pattern.
+- A link to the printable PDF appears under the flat pattern. The **Make laser files** button (about 30 s) builds the laser-cutter DXF files and shows the nested sheet. You can set your bed size first.
 - The **string pull** simulation is paused (see below).
 - Results are saved in `tool-output/` (not kept in git). Press Ctrl+C in the terminal to stop it.
 - It only runs on your own computer. It runs `make_pattern.py` and `sim_pull.py` for you, so the results match them.
@@ -116,16 +116,16 @@ Sew with the right (good) sides of the fabric facing each other, on the dashed l
 
 ## Laser cutter files (DXF)
 
-`make_pattern.py` also writes two DXF files for a laser cutter, in inches, at the real size (or the scale model's size):
-- `<design>-piece.dxf`: one half-finger piece.
-- `<design>-sheet.dxf`: all 10 pieces (5 in a row, and 5 mirror images in a second row), 26.8 x 26.7 in for the default design. Rearrange them to suit your bed.
+`make_pattern.py` also writes two DXF files for a laser cutter, in inches, at the real size (or the scale model's size). They contain **only the red cut lines** (one layer, `CUT`): each piece's outline and its slash to the dot. There is no sewing line, no marks and no notches.
+- `<design>-piece.dxf`: one half-finger piece (5.15 x 13.23 in for the default design).
+- `<design>-sheet.dxf`: all 10 pieces (5 and their 5 mirror images) nested together. For the default design that is **19.8 x 31.1 in** (the old plain-rows layout was 26.8 x 26.7 in). `<design>-sheet.png` is a picture of it.
 
-Layers (the colours help laser software map them to settings):
-- `CUT` (red): the outline and the slash to the dot. Cut these.
-- `SEW` (blue, dashed): the sewing line. Score it, or turn the layer off.
-- `MARKS` (green): the crotch dot, the match-point triangles, the string tab stitch lines and the grain arrow. Engrave or turn off.
+How the nesting works (`nest.py`): each piece may only be turned 180 degrees or flipped sideways (for the mirror images), so the **grain always runs along the finger** and up the sheet. It tries the 2 positions of each piece on a fine grid, and puts each piece where it touches the most fabric and keeps the layout short, for several sheet widths and orders. The result is the same every time. Pieces are never closer than 0.18 in (the minimum is set by `DXF_GAP`, 0.125 in). About 60 % of the sheet is fabric. That is about the limit with the grain fixed: two pieces head to tail pack at 67 %, and the rest of the layout comes close to that.
 
-The tool shows download links for both files under the flat pattern. `--no-dxf` skips them. They need the `ezdxf` library (it is in `requirements.txt`, so **Get latest changes** installs it).
+- **Your laser bed:** if you give the bed size, the layout is made to fit it: `python3 make_pattern.py --out designs --dxf-only --bed 24 36` (width 24, length 36 along the grain). It says so if the pieces can't fit. The tool has Bed width and Bed length fields.
+- `--dxf-only` makes just the laser files (about 30 s). `--no-sheet` writes only the one-piece file. `--no-dxf` skips both.
+- They need the `ezdxf` library (it is in `requirements.txt`, so **Get latest changes** installs it).
+- In the tool, the **Make laser files** button builds both files and shows the sheet. It is a separate button because the nesting takes about 30 seconds.
 
 ## Paper prototype on one 8.5 x 11 sheet
 
