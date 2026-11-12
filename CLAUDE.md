@@ -57,6 +57,7 @@ Lessons carried over:
 
 ## How we work
 - **Branch names (Remy asked for this, 2026-11-12):** `<area>-<YYYY-MM-DD>-<idea>`, lowercase with hyphens. Area is one of `skin`, `polyp`, `air`, `lighting`, `electronics`, `motor`, `shared`, `planning`, `setup`. Example: `skin-2026-11-12-geodesic-frame`. A milestone worth coming back to gets a tag with the same name plus `-v1`, `-v2`. Use the same name for the output folder of that attempt, so code and results can be found together. Name every branch you create this way. If the app assigns a name (for example `claude/...`), say in your first message what the branch is for, and keep the status page up to date so he can match them.
+- **Status page:** https://claude.ai/artifact/CevRUaE5a4xw1HuW3jA9G3 lists every session, branch and merge in plain language. The planning session updates it; any session that creates a branch or merges one should tell the planning session or update the page (read it first, then republish to the same URL). The part-by-part results page is https://claude.ai/artifact/AnujZqJLVL5GoGQbLyfaFA.
 - **Merging:** work happens on a branch, and Remy forgets to merge. At the end of every session, and whenever a piece of work is finished, remind Remy and ask whether to open a pull request and merge the branch into main. Do not merge without a yes.
 - One task per session. Work only in the folder the task is about, unless the task says otherwise.
 - At the end of each task, update that folder's CLAUDE.md: what was done, decisions made, what's next.
