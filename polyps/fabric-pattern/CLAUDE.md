@@ -40,6 +40,12 @@ Remy said real fingers collapse into themselves rather than curl. The first mode
 - The central string and spool need about 8 in of travel. Hand this to `../motor/`.
 - Caveats: forces are per psi (scale by the real pressure); fingers pressing on each other are not simulated, so a real collapse will be less free than shown near the end; no friction at the tabs.
 
+## Laser cutter DXF, and the motion simulation paused (2026-11-12)
+- Remy: skip simulating the motion for now; just the flat pattern and the simulated inflated state. The tool hides the string-pull card (`POLYP_TOOL_PULL=1` turns it back on) and the link page no longer shows it. `sim_pull.py`, its settings and the earlier results stay in the repo, and the iteration folder keeps its pull picture. Don't spend time on it until Remy asks.
+- Added DXF output for the laser cutter: `<design>-piece.dxf` (one piece) and `<design>-sheet.dxf` (all 10 pieces, 5 + 5 mirrored, in two rows). Inches, real size, layers CUT (red), SEW (blue, dashed), MARKS (green). Made with `ezdxf` (in `requirements.txt`). The default design and the letter iteration both have them.
+- Checked by reading the files back: units inches, sizes 5.15 x 13.23 in (one piece) and 26.8 x 26.7 in (sheet), 0 audit errors, 10 pieces on the sheet, and a rendering of both. Not yet tried in real laser software.
+- Unknown, ask Remy: laser bed size (the sheet could be nested tighter or split), whether the sew line and marks should be scored or left off, kerf and which fabric, and whether match-point notches should be real cuts instead of marks. Cut file for the skin is a separate job.
+
 ## Paper prototype size (2026-11-07)
 - Remy wants a scaled-down version that prints on one 8.5 x 11 sheet for quick prototyping. Done as `SCALE` (every length is multiplied) and `FIT_LETTER=1` (picks the scale so the cut piece fits one landscape letter page: piece length at most 8.4 in and width at most 6.6 in, which leaves room for the labels). Default design: scale 0.635, tube 3.17 in, 5.4 in fingers, cut piece 3.27 x 8.40 in.
 - Decisions: the seam allowance, hem, tabs and cord loop scale with everything (a true scale model); angles don't. Output names get `-letter` or `-x<scale>`. In `sim_pull.py`, `--hitch` and `--pull-max` are full-size inches and scale with the model. Notes on the page move under the piece when the scale is below 0.85, because the narrow finger can't hold them.

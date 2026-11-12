@@ -359,6 +359,66 @@ def page(pdf, sew, cut, notches, title, lines, footer, grain_x, grain_y, text_xy
         plt.close(fig)
 
 
+DXF_GAP = 0.25          # space between pieces on the all-pieces DXF sheet, inches
+
+
+def write_dxf(path, sew, cut, slash, stitch, notches, grain, copies=1):
+    """DXF for a laser cutter, in inches, finger pointing up. Layers:
+      CUT    (red)   the outline and the slash to the dot: cut these
+      SEW    (blue)  the sewing line, dashed: score it or switch it off
+      MARKS  (green) the crotch dot, match-point triangles, string tab stitch lines, grain arrow
+    copies = 1 writes one half-finger piece. copies = 2 writes the whole set: FINGERS pieces in one
+    row and FINGERS mirror-image pieces in a second row (cut 2 x FINGERS)."""
+    import ezdxf
+    doc = ezdxf.new("R2010", setup=True)
+    doc.units = ezdxf.units.IN
+    doc.header["$MEASUREMENT"] = 0
+    for name, colour, ltype in (("CUT", 1, "CONTINUOUS"), ("SEW", 5, "DASHED"), ("MARKS", 3, "CONTINUOUS")):
+        doc.layers.add(name, color=colour, linetype=ltype)
+    msp = doc.modelspace()
+    ring = np.asarray(cut, float)
+    if np.allclose(ring[0], ring[-1]):
+        ring = ring[:-1]
+    xmin, ymin = ring.min(axis=0)
+    xmax, ymax = ring.max(axis=0)
+    w, h = xmax - xmin, ymax - ymin
+
+    def place(mirror, col, row):
+        dx = col * (w + DXF_GAP) + (xmax if mirror else -xmin)
+        dy = row * (h + DXF_GAP) - ymin
+        return lambda p: [((-x if mirror else x) + dx, y + dy) for x, y in np.asarray(p, float)[:, :2]]
+
+    def poly(f, pts, layer, close=False, **extra):
+        msp.add_lwpolyline(f(pts), close=close, dxfattribs=dict(layer=layer, **extra))
+
+    def one(mirror, col, row):
+        f = place(mirror, col, row)
+        poly(f, ring, "CUT", close=True)
+        sw = np.asarray(sew, float)
+        poly(f, sw[:-1] if np.allclose(sw[0], sw[-1]) else sw, "SEW", close=True, ltscale=0.2)
+        poly(f, slash, "CUT")
+        msp.add_circle(f([(0, 0)])[0], 0.04, dxfattribs={"layer": "MARKS"})
+        for line in stitch:
+            poly(f, line, "MARKS")
+        for (x, y, mk) in notches:                       # small triangle pointing into the piece
+            d = 0.12 if x < 0 else -0.12
+            poly(f, [(x, y + 0.06), (x, y - 0.06), (x + d, y)], "MARKS", close=True)
+        gx, (y0, y1) = grain
+        poly(f, [(gx, y0), (gx, y1)], "MARKS")           # double-headed grain arrow
+        for tip, sign in ((y0, 1), (y1, -1)):
+            poly(f, [(gx - 0.07, tip + sign * 0.15), (gx, tip), (gx + 0.07, tip + sign * 0.15)], "MARKS")
+
+    if copies == 1:
+        one(False, 0, 0)
+    else:
+        n = FINGERS
+        for k in range(n):
+            one(False, k, 0)
+            one(True, k, 1)
+    doc.saveas(path)
+    return w, h
+
+
 def main():
     if "--measure" in sys.argv:                    # used by FIT_LETTER: print the cut piece size and stop
         c = cut_line(piece_b, True)
@@ -395,6 +455,18 @@ def main():
         page(pdf, b, b_cut, side_notches, f"FINGER HALF  -  {name}", lines, foot, grain_x=-0.7 * SCALE,
              grain_y=(-2.6 * SCALE, -0.3 * SCALE), text_xy=tuple(bend(np.array([[0.0, 0.4 * FINGER_LENGTH]]))[0]),
              slash=slash, tunnel=tun, text_below=SCALE < 0.85)
+
+    if "--no-dxf" not in sys.argv:
+        try:
+            import ezdxf  # noqa: F401
+        except ImportError:
+            print("DXF skipped: the ezdxf library isn't installed (pip3 install ezdxf)")
+        else:
+            grain = (-0.7 * SCALE, (-2.6 * SCALE, -0.3 * SCALE))
+            w, h = write_dxf(os.path.join(out, f"{name}-piece.dxf"), b, b_cut, slash, tun, side_notches, grain)
+            write_dxf(os.path.join(out, f"{name}-sheet.dxf"), b, b_cut, slash, tun, side_notches, grain, copies=2)
+            print(f"DXF: {name}-piece.dxf (one piece, {w:.2f} x {h:.2f} in) and {name}-sheet.dxf "
+                  f"(all {2 * FINGERS} pieces, {FINGERS * (w + DXF_GAP) - DXF_GAP:.1f} x {2 * h + DXF_GAP:.1f} in)")
 
     fig, ax = plt.subplots(figsize=(5, 7))
     ax.plot(b_cut[:, 0], b_cut[:, 1], "k-", lw=1.4)

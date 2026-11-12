@@ -5,7 +5,7 @@ Run:  python3 polyp_tool.py        (it opens your web browser; press Ctrl+C here
 You get fields for the cuff size, cuff height, finger length and so on. The flat pattern redraws
 as you change them (about a second). Two buttons run the slower 3D simulations:
   - Inflated: what the sewn polyp looks like with air in it (about 30 seconds)
-  - String pull: the fingers' cords pulled from one hitch point (about 2 minutes)
+  - String pull (paused for now, switch on with POLYP_TOOL_PULL=1): the cords pulled from one hitch point
 Everything it makes is saved in the folder tool-output/ next to this script, so you can
 open the PDF and pictures later. Nothing outside that folder is changed.
 
@@ -44,6 +44,7 @@ PATTERN_FIELDS = [
     ("TAB_COUNT", "Tabs per finger", "", 0, 8, 1, "0 = automatic: about one every 3 in, never fewer than 3."),
     ("TUNNEL_WIDTH", "Tab pocket width", "in", 0.125, 0.5, 0.0625, "Room for the cord between the seam and the tab stitching."),
 ]
+PULL_ENABLED = os.environ.get("POLYP_TOOL_PULL") == "1"   # the motion simulation is paused for now
 PULL_FIELDS = [
     ("HITCH", "Hitch depth", "in", 0.25, 4, 0.25, "Where the five strings meet, this far below the polyp's centre point (into the cuff)."),
     ("SOFT", "Fabric softness", "", 0.01, 1, 0.01, "1 = stiff fabric as in the first version, small = very floppy nylon."),
@@ -229,7 +230,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/":
-            meta = dict(pattern=PATTERN_FIELDS, pull=PULL_FIELDS, defaults=DEFAULTS)
+            meta = dict(pattern=PATTERN_FIELDS, pull=PULL_FIELDS if PULL_ENABLED else [], pull_enabled=PULL_ENABLED, defaults=DEFAULTS)
             self.send(200, PAGE.replace("__META__", json.dumps(meta)), "text/html; charset=utf-8")
         elif path == "/api/version":
             self.send(200, json.dumps(version_info()), "application/json")
@@ -259,7 +260,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404, "not found", "text/plain")
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
-            if body["job"] not in ("pattern", "inflate", "pull"):
+            if body["job"] not in ("pattern", "inflate") + (("pull",) if PULL_ENABLED else ()):
                 raise ValueError("unknown job")
             job_id, key = start(body["job"], body.get("params", {}))
             self.send(200, json.dumps({"id": job_id, "key": key}), "application/json")
@@ -312,8 +313,9 @@ PAGE = r"""<!doctype html>
       <small class="muted" style="display:block;color:var(--mute)">Picks the scale for you, so the printed pattern fits one sheet. Handy for paper prototypes.</small>
       <div class="derived" id="derived"></div>
       <button class="reset" id="reset">Reset to the default design</button></div>
-    <div class="card" style="margin-top:16px"><h2>String pull</h2><div id="pull-fields"></div>
-      <button id="run-inflate" class="secondary">Simulate inflated (about 30 s)</button>
+    <div class="card" id="card-sim-buttons" style="margin-top:16px"><h2>Simulation</h2>
+      <button id="run-inflate" class="secondary">Simulate inflated (about 30 s)</button></div>
+    <div class="card" id="card-pull-settings" style="margin-top:16px"><h2>String pull</h2><div id="pull-fields"></div>
       <button id="run-pull">Simulate string pull (about 2 min)</button></div>
   </div>
   <div class="results">
@@ -340,6 +342,7 @@ function field(f) {
 }
 function build(id, fields) { fields.forEach(f => $(id).appendChild(field(f))); }
 build('pattern-fields', META.pattern); build('pull-fields', META.pull);
+if (!META.pull_enabled) { $('card-pull-settings').hidden = true; $('card-pull').hidden = true; }
 const names = [...META.pattern, ...META.pull].map(f => f[0]);
 function setAll(vals) { names.forEach(n => { state[n] = vals[n]; show(n); }); }
 function show(n) {
@@ -400,7 +403,8 @@ function finish(kind, key, j) {
   let html = '';
   if (kind === 'pattern') {
     html = `<img src="${base}custom-piece.png?${t}" alt="flat piece">
-      <a href="${base}custom-pattern.pdf" target="_blank">Open the printable pattern (PDF, print at 100 %)</a>`;
+      <a href="${base}custom-pattern.pdf" target="_blank">Open the printable pattern (PDF, print at 100 %)</a>` +
+      (has('custom-piece.dxf') ? `<br><a href="${base}custom-piece.dxf" target="_blank">Laser cutter: one piece (DXF, inches)</a> &middot; <a href="${base}custom-sheet.dxf" target="_blank">all pieces (DXF)</a>` : '');
     const m = /^scale ([0-9.]+)/m.exec(j.log); state.fitScale = m ? parseFloat(m[1]) : 1; derived();
     $('log-pattern').textContent = j.log.split('\n').filter(l => l.startsWith('cut size') || l.startsWith('string seam') || l.startsWith('scale')).join('\n');
   } else if (kind === 'inflate') {

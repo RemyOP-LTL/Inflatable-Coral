@@ -48,10 +48,11 @@ After that, the simulator is always at **http://127.0.0.1:8800/**. Bookmark it. 
 
 **By typing:** `python3 polyp_tool.py` (needs numpy, scipy, matplotlib and shapely installed).
 
-- Fields: cuff diameter, cuff ease, cuff length, finger length, number of fingers, finger fullness, lean out, turn length, tab length, tabs per finger and pocket width, plus hitch depth and fabric softness for the string pull.
+- Fields: cuff diameter, cuff ease, cuff length, finger length, scale, number of fingers, finger fullness, lean out, turn length, tab length, tabs per finger and pocket width.
 - The flat pattern redraws about a second after you change a number, with a link to the printable PDF.
 - **Simulate inflated** (about 30 s) shows the sewn polyp with air in it.
-- **Simulate string pull** (about 2 min) pulls the cords from one hitch point (see "What the string pull does" below).
+- Links to the printable PDF and the two laser-cutter DXF files appear under the flat pattern.
+- The **string pull** simulation is paused (see below).
 - Results are saved in `tool-output/` (not kept in git). Press Ctrl+C in the terminal to stop it.
 - It only runs on your own computer. It runs `make_pattern.py` and `sim_pull.py` for you, so the results match them.
 
@@ -113,6 +114,19 @@ Sew with the right (good) sides of the fabric facing each other, on the dashed l
 4. **Hem.** Fold the bottom edge up 1/4 in, then up 3/4 in, and stitch.
 5. **Turn it right side out** through the wrist and push the fingers out.
 
+## Laser cutter files (DXF)
+
+`make_pattern.py` also writes two DXF files for a laser cutter, in inches, at the real size (or the scale model's size):
+- `<design>-piece.dxf`: one half-finger piece.
+- `<design>-sheet.dxf`: all 10 pieces (5 in a row, and 5 mirror images in a second row), 26.8 x 26.7 in for the default design. Rearrange them to suit your bed.
+
+Layers (the colours help laser software map them to settings):
+- `CUT` (red): the outline and the slash to the dot. Cut these.
+- `SEW` (blue, dashed): the sewing line. Score it, or turn the layer off.
+- `MARKS` (green): the crotch dot, the match-point triangles, the string tab stitch lines and the grain arrow. Engrave or turn off.
+
+The tool shows download links for both files under the flat pattern. `--no-dxf` skips them. They need the `ezdxf` library (it is in `requirements.txt`, so **Get latest changes** installs it).
+
 ## Paper prototype on one 8.5 x 11 sheet
 
 For quick prototyping, the whole pattern can be shrunk to a scale model that prints on a single sheet of letter paper (landscape). In the tool, tick **Fit on one 8.5 x 11 in page**. From the command line:
@@ -136,7 +150,9 @@ Decided 2026-10-30, changed from a continuous tunnel to tabs on 2026-11-02 (Remy
 - **The cord.** Tie a knot in the cord and stitch over it at the fingertip so it can't pull out. It runs through the three pockets and is free in between, then comes out of the centre point and ends in a tied loop. All five loops are hitched together by the one central string that winds onto the motor spool.
 - **Why tabs.** A cord running the full length of the seam acts like a stiff spine along one side, so a pulled finger curls. With the cord held only at a few tabs, it takes the straight path between them, and the finger folds in on itself.
 
-## What the string pull does (sim_pull.py)
+## What the string pull does (sim_pull.py) (paused 2026-11-12)
+
+Remy said to skip simulating the motion for now. The script and these results stay in the repo, but the tool hides it. To switch the button back on, start the tool with `POLYP_TOOL_PULL=1`.
 
 The five cords run from the fingertips through the tabs to the centre point, then straight down to one hitch point. The hitch starts 1 in below the centre point (inside the cuff). It is pulled down a little at a time, and the fabric settles into a new shape each time.
 
