@@ -1,0 +1,134 @@
+<title>Polyp Outputs</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* Layout: one reading column. Each output is a captioned figure on a white plate, links beside it. */
+  :root {
+    --bg: #eef1f4;
+    --panel: #ffffff;
+    --fg: #1d2530;
+    --muted: #5b6673;
+    --line: #d3dae2;
+    --accent: #1f5fa8;
+    --plate: #ffffff;
+    --font-body: "IBM Plex Sans", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141a21; --panel: #1b232c; --fg: #e6ebf0; --muted: #9aa6b3; --line: #2c3743; --accent: #7db3f0;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141a21; --panel: #1b232c; --fg: #e6ebf0; --muted: #9aa6b3; --line: #2c3743; --accent: #7db3f0;
+    color-scheme: dark;
+  }
+  body {
+    background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+    padding-block: 28px 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .wrap { max-width: 980px; margin: 0 auto; display: grid; gap: 22px; }
+  h1 { font-size: 28px; font-weight: 600; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+  h2 { font-size: 17px; font-weight: 600; margin: 0; }
+  .meta { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); margin: 6px 0 0; overflow-wrap: anywhere; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; display: grid; gap: 12px; min-width: 0; }
+  p { margin: 0; max-width: 68ch; }
+  .muted { color: var(--muted); }
+  .plate { background: var(--plate); border-radius: 6px; padding: 8px; display: grid; justify-items: center; }
+  .plate img { display: block; max-width: 100%; height: auto; }
+  .plate.narrow img { max-height: 620px; width: auto; }
+  .links { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; }
+  a { color: var(--accent); font-weight: 500; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; font-size: 14px; min-width: 420px; }
+  th, td { text-align: right; padding: 5px 14px 5px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child { text-align: left; }
+  th { font-weight: 500; color: var(--muted); font-size: 12.5px; }
+  ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 68ch; }
+  code { font-family: var(--font-mono); font-size: 13px; }
+  pre { font-family: var(--font-mono); font-size: 12.5px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  button { font: inherit; font-size: 13px; font-weight: 500; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .note { border-left: 3px solid var(--accent); padding-left: 12px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Polyp outputs</h1>
+    <p class="meta">design polyp-5-taper-tabs · branch claude/polyp-string-fingers · updated 2026-11-02</p>
+  </header>
+
+  <section>
+    <h2>Flat pattern</h2>
+    <p class="muted">One finger half, cut 10. Solid line is the cut, dashed is the sew line, blue marks the 3 string tabs on the inner seam (5/8 in allowance at each tab, sewn closed 1/4 in out).</p>
+    <div class="plate narrow"><img src="designs/polyp-5-taper-tabs-piece.png" alt="Flat pattern piece with the three string tabs drawn in blue"></div>
+    <div class="links"><a href="designs/polyp-5-taper-tabs-pattern.pdf" target="_blank">Open the printable pattern (PDF, print at 100 %)</a></div>
+  </section>
+
+  <section>
+    <h2>Inflated</h2>
+    <p class="muted">Cloth simulation of the sewn polyp with air in it. The tunnel and cord are not drawn here.</p>
+    <div class="plate"><img src="designs/polyp-5-taper-tabs-3d.png" alt="Simulated inflated polyp, side and top views"></div>
+  </section>
+
+  <section>
+    <h2>String pull</h2>
+    <p class="muted">Five cords run from the fingertips, held only at the tabs, to one hitch point 1 in below the centre point. The hitch is pulled down in 1 in steps. Floppy fabric, constant air pressure, no friction at the tabs.</p>
+    <div class="plate"><img src="designs/polyp-5-taper-tabs-pull.png" alt="Snapshots of the polyp as the string is pulled, with force and fingertip height plotted"></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Hitch pulled down</th><th>Force (lbf per psi)</th><th>Fingertip height (in)</th><th>Centre point height (in)</th></tr></thead>
+        <tbody>
+          <tr><td>0 in</td><td>0.0</td><td>6.7</td><td>1.1</td></tr>
+          <tr><td>1 in</td><td>0.7</td><td>6.2</td><td>1.0</td></tr>
+          <tr><td>2 in</td><td>1.8</td><td>5.5</td><td>0.9</td></tr>
+          <tr><td>3 in</td><td>1.6</td><td>4.6</td><td>0.8</td></tr>
+          <tr><td>4 in</td><td>2.8</td><td>4.0</td><td>0.7</td></tr>
+          <tr><td>5 in</td><td>5.5</td><td>3.3</td><td>0.5</td></tr>
+          <tr><td>6 in</td><td>13.5</td><td>2.8</td><td>-0.5</td></tr>
+          <tr><td>7 in</td><td>14.2</td><td>2.0</td><td>-1.2</td></tr>
+          <tr><td>8 in</td><td>9.1</td><td>1.2</td><td>-1.5</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">The fingers fold in on themselves; the model jams between 8 and 9 in of pull. The force peaks at 6 to 7 in, where the fingers crumple into the cuff. Forces are for 1 psi of air: multiply by your real pressure (0.25 psi gives a quarter). Heights are above the end of the tube.</p>
+    <div class="links"><a href="designs/polyp-5-taper-tabs-pull.csv" target="_blank">Open the numbers (CSV)</a></div>
+  </section>
+
+  <section>
+    <h2>Paper prototype, one 8.5 x 11 sheet</h2>
+    <p class="muted">A one-off 64 % scale model of the same design: <b>cuff diameter 3.275 in</b> (fits a 3.17 in tube), 5.4 in fingers, cut piece 3.3 x 8.4 in. It prints on one landscape letter page. Print at 100 % and check the 1 in square, then cut 10 (5 mirrored pairs).</p>
+    <div class="plate"><img src="iterations/letter-prototype-2026-11-07/polyp-5-taper-tabs-letter-piece.png" alt="Flat pattern piece at 64 percent scale for one letter page" style="max-height: 520px; width: auto"></div>
+    <div class="links"><a href="iterations/letter-prototype-2026-11-07/polyp-5-taper-tabs-letter-pattern.pdf" target="_blank">Open the one-page pattern (PDF, print at 100 %)</a><a href="iterations/letter-prototype-2026-11-07/polyp-5-taper-tabs-letter-pull.png" target="_blank">Open the small-scale string pull</a></div>
+  </section>
+
+  <section>
+    <h2>Run the simulator on your Mac</h2>
+    <p class="muted">Set it up once. After that the simulator is always one link away, and it pulls my latest changes with one button.</p>
+    <ol>
+      <li>Open the Terminal app and paste this line, then press Return. It takes a few minutes the first time, and it is safe to paste again later.
+        <pre id="setup-cmd">([ -d ~/coral-simulator ] || git clone https://github.com/RemyOP-LTL/Inflatable-Coral.git ~/coral-simulator) &amp;&amp; cd ~/coral-simulator &amp;&amp; git fetch origin &amp;&amp; git checkout claude/polyp-string-fingers &amp;&amp; git pull &amp;&amp; bash polyps/fabric-pattern/install-mac.sh</pre>
+        <button type="button" id="copy-setup">Copy the line</button> <span class="muted" id="copy-state"></span>
+        <div class="muted">If macOS asks to install developer tools, accept, wait, and paste the line again.</div></li>
+      <li>Open <a href="http://127.0.0.1:8800/" target="_blank">the simulator</a> and bookmark it. It only loads after step 1. (This is a different address from your skin simulator.)</li>
+      <li>When I say I've pushed changes, open the simulator, pick the branch I name in the Version box, and press <b>Get latest changes</b>.</li>
+    </ol>
+  </section>
+</div>
+
+<script>
+  document.getElementById('copy-setup').addEventListener('click', function () {
+    var text = document.getElementById('setup-cmd').textContent, state = document.getElementById('copy-state');
+    function fallback() {
+      var r = document.createRange(); r.selectNodeContents(document.getElementById('setup-cmd'));
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); state.textContent = 'Selected. Press Cmd+C to copy.';
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { state.textContent = 'Copied.'; }, fallback);
+    } else { fallback(); }
+  });
+</script>

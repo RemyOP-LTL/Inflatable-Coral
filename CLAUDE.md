@@ -62,6 +62,17 @@ Lessons carried over:
 - Explain things in plain language. The lead is a mechanical engineer, new to coding. Say what a script does before asking Remy to run it, and give one recommended path.
 - Several people work on this repo. Don't change files outside the task's folder without saying so.
 
+## Cloud + local workflow (agreed with Remy, 2026-11-02)
+Remy works in the cloud with Claude and tests locally on his Mac. Keep it this way in every session:
+- **Claude works in the cloud and pushes to a branch.** Remy runs the simulators on his own Mac, from a copy of this repo in `~/coral-simulator`. It is set up once with `polyps/fabric-pattern/install-mac.sh`, and the simulator then runs all the time at **http://127.0.0.1:8800/** (bookmarked). The page has a branch box and a **Get latest changes** button that pulls whatever Claude pushed and restarts it. No terminal needed after setup.
+- **After every change**, in this order: run it and check it; show Remy a snapshot of the outputs in chat; update and republish the link page (`snapshot.html` in the part's folder, as an Artifact) and give him the link; commit and push; then tell him in one line: "Pushed to branch `<name>`. In the simulator, pick that branch and press Get latest changes." Say which branch every time, because each cloud session usually makes a new one.
+- **Remy never types commands**, except the one-time setup paste (the batch is in `polyps/fabric-pattern/README.md`, section "Run it on your Mac"). If a later change needs more setup, give him a new paste-able batch (small, one block at a time) and say what it does first. New Python libraries go in `requirements.txt`. The update button installs them on its own.
+- **Every part that gets a simulator or tool** (skin, polyps) should follow the same pattern: a script that opens a page on `127.0.0.1`, listed in this workflow, updatable from the same button. Don't invent a second way to run things.
+- **Ports (each tool has its own, so they never clash):** skin tool `skin/hex57/skin_app.py` uses 8765 (and moves up to 8784 if busy); polyp tool `polyps/fabric-pattern/polyp_tool.py` uses **8800**. A new tool takes the next block (8820, 8840, ...) and gets added here. Never reuse a port, and tell Remy the exact link for each tool.
+- **Keep the local copy updatable.** Never rely on Remy editing files locally. The update button refuses to overwrite local edits or unpushed commits.
+- After a pull request is merged to main, the branch box on his Mac can switch to `main`. The simulator must be on main before that works.
+- Remind Remy at the end of each session about merging (see "How we work").
+
 ## Team
 - Remy — lead
 - No one else yet. Remy will update this section when that changes.
