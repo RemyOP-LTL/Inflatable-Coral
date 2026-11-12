@@ -116,8 +116,8 @@ Sew with the right (good) sides of the fabric facing each other, on the dashed l
 
 ## Laser cutter files (DXF)
 
-`make_pattern.py` also writes two DXF files for a laser cutter, in inches, at the real size (or the scale model's size). They contain **only the red cut lines** (one layer, `CUT`): each piece's outline and its slash to the dot. There is no sewing line, no marks and no notches.
-- `<design>-piece.dxf`: one half-finger piece (5.15 x 13.23 in for the default design).
+`make_pattern.py` also writes two DXF files for a laser cutter, in inches, at the real size (or the scale model's size). They contain **only the red cut outline** (one layer, `CUT`). Each piece is **one closed path that includes the slit** from the bottom of the V up to the crotch dot: the path goes up the slit and straight back (the slit has no width, so the laser cuts that line twice). There is no sewing line, no marks and no notches.
+- `<design>-piece.dxf`: one half-finger piece (5.15 x 13.23 in for the default design). `<design>-piece-cut.png` is a picture of it.
 - `<design>-sheet.dxf`: all 10 pieces (5 and their 5 mirror images) nested together. For the default design that is **19.8 x 31.1 in** (the old plain-rows layout was 26.8 x 26.7 in). `<design>-sheet.png` is a picture of it.
 
 How the nesting works (`nest.py`): each piece may only be turned 180 degrees or flipped sideways (for the mirror images), so the **grain always runs along the finger** and up the sheet. It tries the 2 positions of each piece on a fine grid, and puts each piece where it touches the most fabric and keeps the layout short, for several sheet widths and orders. The result is the same every time. Pieces are never closer than 0.18 in (the minimum is set by `DXF_GAP`, 0.125 in). About 60 % of the sheet is fabric. That is about the limit with the grain fixed: two pieces head to tail pack at 67 %, and the rest of the layout comes close to that.

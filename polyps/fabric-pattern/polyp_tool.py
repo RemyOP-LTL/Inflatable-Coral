@@ -337,7 +337,7 @@ PAGE = r"""<!doctype html>
     <div class="card" id="card-inflate"><h2>Inflated <span class="tag">settings changed, run again</span></h2>
       <div id="out-inflate" style="color:var(--mute)">Press "Simulate inflated".</div><div class="status" id="log-inflate"></div></div>
     <div class="card" id="card-dxf"><h2>Laser sheet <span class="tag">settings changed, run again</span></h2>
-      <div id="out-dxf" style="color:var(--mute)">Press "Make laser files". You get a DXF with one piece and a DXF with all the pieces nested on one sheet. Only the red cut lines are drawn.</div>
+      <div id="out-dxf" style="color:var(--mute)">Press "Make laser files". You get a DXF with one piece and a DXF with all the pieces nested on one sheet. Only the red cut outline is drawn, with the slit to the dot included in it.</div>
       <div class="status" id="log-dxf"></div></div>
     <div class="card" id="card-pull"><h2>String pull <span class="tag">settings changed, run again</span></h2>
       <div id="out-pull" style="color:var(--mute)">Press "Simulate string pull". The five cords run from the fingertips through the tabs to one hitch point inside the cuff. The hitch is pulled down in steps.</div>
@@ -425,6 +425,7 @@ function finish(kind, key, j) {
     $('log-pattern').textContent = j.log.split('\n').filter(l => l.startsWith('cut size') || l.startsWith('string seam') || l.startsWith('scale')).join('\n');
   } else if (kind === 'dxf') {
     html = `<img src="${base}custom-sheet.png?${t}" alt="laser sheet with all the pieces nested">` +
+      `<img src="${base}custom-piece-cut.png?${t}" alt="one laser piece" style="max-height:520px;width:auto">` +
       `<a href="${base}custom-sheet.dxf" target="_blank">Download all pieces (DXF, inches)</a> &middot; <a href="${base}custom-piece.dxf" target="_blank">one piece (DXF)</a>`;
     $('log-dxf').textContent = j.log.split('\n').filter(l => l.startsWith('DXF')).join('\n');
   } else if (kind === 'inflate') {

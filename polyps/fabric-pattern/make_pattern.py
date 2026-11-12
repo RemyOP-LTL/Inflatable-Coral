@@ -359,12 +359,24 @@ def page(pdf, sew, cut, notches, title, lines, footer, grain_x, grain_y, text_xy
         plt.close(fig)
 
 
+def cut_with_slit(cut, slash):
+    """The cut outline as ONE closed path that includes the slash: where the outline reaches the bottom of
+    the V, the path goes up the slash to the crotch dot and comes straight back, then carries on.
+    (The slit has no width, so the laser cuts that line twice, which does no harm.)"""
+    ring = np.asarray(cut, float)
+    if np.allclose(ring[0], ring[-1]):
+        ring = ring[:-1]
+    tip, dot = np.asarray(slash, float)
+    i = int(np.argmin(np.hypot(*(ring - tip).T)))
+    return np.vstack([ring[:i + 1], dot, ring[i], ring[i + 1:]])
+
+
 DXF_GAP = 0.125         # smallest space between pieces on the laser sheet, inches (leave room for the laser)
 
 
 def write_dxf(path, cut, slash, placements=None):
-    """DXF for a laser cutter, in inches, with ONE layer, CUT (red): each piece's outline and its slash to the
-    dot. Nothing else is drawn (no sewing line, marks or notches).
+    """DXF for a laser cutter, in inches, with ONE layer, CUT (red): each piece is a single closed outline that
+    includes its slash to the dot (see cut_with_slit). Nothing else is drawn (no sewing line, marks or notches).
     placements = None writes one piece with its lower left corner at the origin. Otherwise it is a list of
     (sx, sy, dx, dy): each piece is flipped by the signs (-1 mirrors, or turns it 180 degrees together) and shifted."""
     import ezdxf
@@ -373,21 +385,17 @@ def write_dxf(path, cut, slash, placements=None):
     doc.header["$MEASUREMENT"] = 0
     doc.layers.add("CUT", color=1)
     msp = doc.modelspace()
-    ring = np.asarray(cut, float)
-    if np.allclose(ring[0], ring[-1]):
-        ring = ring[:-1]
+    ring = cut_with_slit(cut, slash)
     if placements is None:
         placements = [(1, 1, -ring[:, 0].min(), -ring[:, 1].min())]
     for sx, sy, dx, dy in placements:
-        move = lambda p: [(x * sx + dx, y * sy + dy) for x, y in np.asarray(p, float)[:, :2]]
-        msp.add_lwpolyline(move(ring), close=True, dxfattribs={"layer": "CUT"})
-        msp.add_lwpolyline(move(slash), dxfattribs={"layer": "CUT"})
+        msp.add_lwpolyline([(x * sx + dx, y * sy + dy) for x, y in ring], close=True, dxfattribs={"layer": "CUT"})
     doc.saveas(path)
 
 
-def save_sheet_preview(path, cut, placements, size, title):
-    """A picture of the laser sheet (what write_dxf draws)."""
-    ring = np.asarray(cut, float)
+def save_sheet_preview(path, cut, slash, placements, size, title):
+    """A picture of the laser sheet (what write_dxf draws): red outlines, slit included."""
+    ring = cut_with_slit(cut, slash)
     fig, ax = plt.subplots(figsize=(6.4, 6.4 * max(0.45, min(1.6, size[1] / size[0])) + 0.7))
     for sx, sy, dx, dy in placements:
         p = ring * [sx, sy] + [dx, dy]
@@ -402,6 +410,20 @@ def save_sheet_preview(path, cut, placements, size, title):
     plt.close(fig)
 
 
+def save_piece_preview(path, cut, slash, title):
+    """A picture of the single laser piece (what the one-piece DXF draws), with its slit."""
+    ring = cut_with_slit(cut, slash)
+    ring = ring - ring.min(axis=0)
+    fig, ax = plt.subplots(figsize=(5, 5 * ring[:, 1].max() / max(ring[:, 0].max(), 1e-9) * 0.9 + 0.8))
+    ax.fill(ring[:, 0], ring[:, 1], facecolor="#fbe3df", edgecolor="red", lw=1.2)
+    ax.set_aspect("equal")
+    ax.grid(alpha=0.25)
+    ax.set_xlabel("inches")
+    ax.set_title(title, fontsize=10)
+    fig.savefig(path, dpi=110, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+
+
 def make_dxf_files(out, name, b_cut, slash):
     """Write <name>-piece.dxf (one piece), <name>-sheet.dxf (all 2 x FINGERS pieces, nested) and a preview."""
     try:
@@ -411,7 +433,9 @@ def make_dxf_files(out, name, b_cut, slash):
         return
     write_dxf(os.path.join(out, f"{name}-piece.dxf"), b_cut, slash)
     ring = np.asarray(b_cut, float)
-    print(f"DXF: {name}-piece.dxf (one piece, {np.ptp(ring[:, 0]):.2f} x {np.ptp(ring[:, 1]):.2f} in)")
+    save_piece_preview(os.path.join(out, f"{name}-piece-cut.png"), b_cut, slash,
+                       f"One piece, {np.ptp(ring[:, 0]):.2f} x {np.ptp(ring[:, 1]):.2f} in. Red = cut, with the slit to the dot.")
+    print(f"DXF: {name}-piece.dxf (one piece, {np.ptp(ring[:, 0]):.2f} x {np.ptp(ring[:, 1]):.2f} in, slit included in the outline)")
     if "--no-sheet" in sys.argv:
         return
     import nest
@@ -422,7 +446,7 @@ def make_dxf_files(out, name, b_cut, slash):
     r = nest.nest_pieces(b_cut, FINGERS, gap=DXF_GAP, bed=bed)
     write_dxf(os.path.join(out, f"{name}-sheet.dxf"), b_cut, slash, r["placements"])
     w, h = r["size"]
-    save_sheet_preview(os.path.join(out, f"{name}-sheet.png"), b_cut, r["placements"], r["size"],
+    save_sheet_preview(os.path.join(out, f"{name}-sheet.png"), b_cut, slash, r["placements"], r["size"],
                        f"{2 * FINGERS} pieces, {w:.1f} x {h:.1f} in ({100 * r['fill']:.0f} % fabric). Grain runs up the page.")
     print(f"DXF: {name}-sheet.dxf (all {2 * FINGERS} pieces nested, {w:.1f} x {h:.1f} in, {100 * r['fill']:.0f} % fabric, "
           f"pieces at least {r['min_gap']:.2f} in apart; grain runs along the {h:.1f} in side)")
