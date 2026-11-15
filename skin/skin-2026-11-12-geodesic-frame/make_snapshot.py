@@ -6,12 +6,17 @@ import json, os, sys
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import frame as F
 
-data = {}
-for lid, label in (("tube-edge5", "Tube (16 in across), hub spacing 5 in"), ("dome-edge5", "Dome (48 in), hub spacing 5 in")):
+data, spines = {}, {}
+LAYOUTS = (("smile-tube", "Tube as a smile, with a 4 in spine"), ("dome-equal5", "Dome (secondary shape)"))
+for lid, label in LAYOUTS:
     fr = F.Frame(os.path.join(HERE, "layouts", lid, "layout.json"))
     for rings in (1, 2):
         data[f"{lid}|{rings}"] = [F.patch_data(fr, fr.flatten(q["id"], rings)) for q in fr.pentagons(rings) if q["ok"]]
-labels = {"tube-edge5": "Tube (16 in across)", "dome-edge5": "Dome (48 in)"}
+    if fr.spine:
+        sp = fr.spine
+        spines[lid] = dict(width=sp["width"], length=sp["length"], bump_radius=sp["bump_radius"], hole=sp["hole"],
+                           bumps=[b for b in sp["bumps"] if -1 <= b["sigma"] <= sp["length"] + 1])
+labels = dict(LAYOUTS)
 js = open(os.path.join(HERE, "patch_draw.js"), encoding="utf-8").read()
 
 PAGE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -31,61 +36,63 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{border-bottom:1px
 tr.cur td{font-weight:600}code{background:var(--bg);padding:1px 5px;border-radius:4px}
 </style></head><body><main>
 <h1>Geodesic-frame patch explorer</h1>
-<p class="note">Branch <code>skin-2026-11-12-geodesic-frame</code>. Hubs at the polygon corners, spokes between them, pentagon as a solid plate with the polyp hole. One pentagon patch laid flat, true size. Everything here runs in the page: nothing to install.</p>
+<p class="note">Branch <code>skin-2026-11-12-geodesic-frame</code>. Spokes have round ends; the pentagon is a solid plate with the polyp hole; the orange spokes are loose pieces riveted at both ends and sit inside the windows of the flat pattern. True size. Everything runs in the page: nothing to install. (The 3D view with the tube is in the local tool.)</p>
 <div class="grid"><div>
  <div class="card"><h2>Patch</h2>
   <label>Shape</label><select id="layout">__OPTS__</select>
-  <label>Rings of windows round the pentagon</label><select id="rings"><option value="1">1 (the five touching windows)</option><option value="2">2 (more rings)</option></select>
+  <label>Rings of windows round the pentagon</label><select id="rings"><option value="1">1 (the touching windows)</option><option value="2">2 (more rings)</option></select>
   <label>Pentagon</label><div class="row"><button id="prev">&larr;</button><select id="pent" style="flex:4"></select><button id="next">&rarr;</button></div>
  </div>
  <div class="card"><h2>Plastic</h2>
-  <label>Spoke width, in <span class="val" id="swV"></span></label><input type="range" id="sw" min="0.5" max="2.5" step="0.25" value="1.5">
-  <label>Hub circle diameter, in <span class="val" id="cdV"></span></label><input type="range" id="cd" min="0.5" max="2" step="0.25" value="1">
+  <label>Spoke width, in <span class="val" id="swV"></span></label><input type="range" id="sw" min="0.75" max="2.5" step="0.125" value="1.25">
+  <p class="note" style="margin:2px 0">Spoke length is measured between the centres of the two end half circles.</p>
   <label>Rivet hole, in <span class="val" id="rhV"></span></label><input type="range" id="rh" min="0.125" max="0.5" step="0.125" value="0.25">
   <label>Gap the router must cut between parts, in <span class="val" id="clV"></span></label><input type="range" id="cl" min="0.0625" max="0.5" step="0.0625" value="0.125">
-  <label><input type="checkbox" id="spread" checked> Swing free ends apart so they can be cut</label>
-  <p class="note">Your first settings were 1 in spokes, 1.5 in hubs. Try them: with the box unticked, every pinned pair overlaps.</p>
  </div>
- <div class="card note"><b>Reading it.</b> Orange spokes are cut: attached at one end, free circle at the other. Red dashed line and number = how far (in) to pull that circle to its hub, then rivet through the two small holes. A red ring = that end still touches something. Blue-ringed holes join the next patch.</div>
+ <div class="card note"><b>Reading it.</b> Green = body: plate plus the spokes attached to it. Orange = loose spokes: each is its own piece, numbered; the same number marks the two body ends it rivets to. Purple rings rivet to the spine; blue rings join the next patch.</div>
 </div><div>
- <div class="card"><h2>Laid flat (true size)</h2><div id="flat"></div><div class="stats" id="stats"></div><p class="note" id="fit"></p></div>
- <div class="card tbl"><h2>Size trade-off, all patches of this shape and ring count</h2><div id="tbl"></div>
-  <p class="note">Spreading the free ends apart makes the pull roughly the wider of spoke and hub, plus the router gap, plus whatever the surface already needs. A hub narrower than its spoke is hidden by the spoke, so only the spoke width matters then.</p></div>
+ <div class="card"><h2>One section laid flat (true size)</h2><div id="flat"></div><div class="stats" id="stats"></div><p class="note" id="fit"></p></div>
+ <div class="card" id="spineCard"><h2>The spine laid flat (true size)</h2><div id="spine"></div><p class="note" id="spineNote"></p></div>
+ <div class="card tbl"><h2>Does it fit? Loose spokes finding a window, all patches of this shape and ring count</h2><div id="tbl"></div></div>
 </div></div></main>
 <script>__JS__</script>
 <script>
-const DATA = __DATA__;
+const DATA = __DATA__, SPINES = __SPINES__;
 const $ = id => document.getElementById(id), fmt = (x, n = 2) => Number(x).toFixed(n);
-let cur = null, R = null;
-const opts = () => ({ spoke_width: +$('sw').value, circle_diameter: +$('cd').value, rivet_hole: +$('rh').value, clearance: +$('cl').value, spread: $('spread').checked });
+let R = null;
+const opts = () => ({ spoke_width: +$('sw').value, rivet_hole: +$('rh').value, clearance: +$('cl').value });
 const list = () => DATA[$('layout').value + '|' + $('rings').value];
 function fillPents() { $('pent').innerHTML = list().map((p, i) => `<option value="${i}">Pentagon ${p.pent}</option>`).join(''); $('pent').value = Math.floor(list().length / 2); }
 function table() {
-  const rows = [[1, 1.5], [1, 1], [1.5, 1], [1.5, 1.5], [1.25, 1], [2, 1], [0.75, 0.75]].map(([sw, cd]) => {
-    let cuts = 0, blocked = 0, sum = 0, mx = 0;
-    for (const P of list()) { const r = PatchDraw.prepare(P, { ...opts(), spoke_width: sw, circle_diameter: cd }); cuts += r.stats.cuts; blocked += r.stats.blocked; sum += r.stats.gapMean * r.stats.cuts; mx = Math.max(mx, r.stats.gapMax); }
-    const on = sw === +$('sw').value && cd === +$('cd').value;
-    return `<tr class="${on ? 'cur' : ''}"><td>${sw} in</td><td>${cd} in</td><td>${blocked} of ${cuts}</td><td>${fmt(sum / cuts)} in</td><td>${fmt(mx)} in</td></tr>`;
+  const rows = [1, 1.25, 1.5, 2].map(sw => {
+    let n = 0, fit = 0, onSheet = 0;
+    for (const P of list()) { const r = PatchDraw.prepare(P, { ...opts(), spoke_width: sw }); n += r.stats.loose; fit += r.stats.nested; onSheet += r.size.fits ? 1 : 0; }
+    return `<tr class="${sw === +$('sw').value ? 'cur' : ''}"><td>${sw} in</td><td>${fit} of ${n}</td><td>${onSheet} of ${list().length}</td></tr>`;
   }).join('');
-  $('tbl').innerHTML = `<table><tr><th>Spoke</th><th>Hub</th><th>Cannot be cut</th><th>Average pull</th><th>Worst pull</th></tr>${rows}</table>`;
+  $('tbl').innerHTML = `<table><tr><th>Spoke width</th><th>Loose spokes that sit in a window</th><th>Patches that fit a 4 x 8 ft sheet</th></tr>${rows}</table>`;
 }
 function render() {
   const P = list()[+$('pent').value]; if (!P) return;
   const o = opts(); R = PatchDraw.prepare(P, o); const st = R.stats, sz = R.size;
-  $('swV').textContent = o.spoke_width; $('cdV').textContent = o.circle_diameter; $('rhV').textContent = o.rivet_hole; $('clV').textContent = o.clearance;
+  $('swV').textContent = o.spoke_width; $('rhV').textContent = o.rivet_hole; $('clV').textContent = o.clearance;
   $('flat').innerHTML = PatchDraw.svg(R, o, false);
-  $('stats').innerHTML = [['Spokes cut', st.cuts], ['Cannot be cut yet', st.blocked], ['Longest pull', fmt(st.gapMax) + ' in'], ['Average pull', fmt(st.gapMean) + ' in'], ['Patch size', fmt(Math.max(sz.W, sz.H), 1) + ' x ' + fmt(Math.min(sz.W, sz.H), 1) + ' in']].map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
-  $('fit').innerHTML = (sz.fits ? 'Fits a 4 x 8 ft sheet.' : '<span class="bad">Does not fit a 4 x 8 ft sheet.</span>') +
-    (st.pentInPatch.length ? ` <span class="bad">Another pentagon (${st.pentInPatch.join(', ')}) is inside this patch and is treated as an ordinary window, so its plate is not rigid yet. Use 1 ring.</span>` : '');
+  $('stats').innerHTML = [['Loose spokes', st.loose], ['Not fitting a window', st.loose - st.nested], ['Loose length', fmt(st.lMin, 1) + ' to ' + fmt(st.lMax, 1) + ' in'], ['Patch size', fmt(Math.max(sz.W, sz.H), 1) + ' x ' + fmt(Math.min(sz.W, sz.H), 1) + ' in'], ['Nodes riveted to the spine', st.onSpine]].map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
+  $('fit').innerHTML = (sz.fits ? 'Fits a 4 x 8 ft sheet' : '<span class="bad">Does not fit a 4 x 8 ft sheet</span>') + ` (smallest box ${fmt(sz.W, 1)} x ${fmt(sz.H, 1)} in), loose spokes included.` +
+    (st.pentInPatch.length ? ` <span class="bad">Another pentagon (${st.pentInPatch.join(', ')}) is inside this patch and is treated as ordinary windows, so its plate is not rigid yet. Use 1 ring.</span>` : '');
   table();
 }
-$('layout').onchange = () => { fillPents(); render(); }; $('rings').onchange = () => { fillPents(); render(); }; $('pent').onchange = render;
+function spine() {
+  const B = SPINES[$('layout').value]; $('spineCard').style.display = B ? '' : 'none'; if (!B) return;
+  $('spine').innerHTML = PatchDraw.spineSvg(B, false);
+  $('spineNote').textContent = `${B.width} in wide, ${fmt(B.length, 1)} in long, ${B.bumps.length} bumps, each with a ${B.hole} in rivet hole where a spoke connects. Drawn flat; on the tube it follows the curve.`;
+}
+$('layout').onchange = () => { fillPents(); render(); spine(); }; $('rings').onchange = () => { fillPents(); render(); }; $('pent').onchange = render;
 const step = d => { const n = list().length; $('pent').value = (+$('pent').value + d + n) % n; render(); };
 $('prev').onclick = () => step(-1); $('next').onclick = () => step(1);
-['sw', 'cd', 'rh', 'cl'].forEach(id => $(id).oninput = render); $('spread').onchange = render;
-fillPents(); render();
+['sw', 'rh', 'cl'].forEach(id => $(id).oninput = render);
+fillPents(); render(); spine();
 </script></body></html>"""
 opts = "".join(f'<option value="{k}">{v}</option>' for k, v in labels.items())
-html = PAGE.replace("__OPTS__", opts).replace("__JS__", js).replace("__DATA__", json.dumps(data, separators=(",", ":")))
+html = PAGE.replace("__OPTS__", opts).replace("__JS__", js).replace("__DATA__", json.dumps(data, separators=(",", ":"))).replace("__SPINES__", json.dumps(spines, separators=(",", ":")))
 open(os.path.join(HERE, "snapshot.html"), "w", encoding="utf-8").write(html)
 print("snapshot.html", round(len(html) / 1024), "KB")

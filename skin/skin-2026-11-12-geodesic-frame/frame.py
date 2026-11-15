@@ -64,6 +64,9 @@ class Frame:
             n = sum(self.pnorm[p] for p in ps)
             self.vnorm[v] = n / (np.linalg.norm(n) or 1.0)
         self.hole_diameter = float(self.params.get("HOLE_DIAMETER") or 5.0)
+        self.spine = layout.get("spine")
+        self.band = set(self.spine["band_nodes"]) if self.spine else set()
+        self.on_spine = [bool(i.get("spine")) for i in self.info]
         self._ccw = {}
 
     # ---- helpers -------------------------------------------------------------------------
@@ -102,13 +105,18 @@ class Frame:
             frontier = nxt
         return seen
 
+    def hidden(self, e):
+        """A spoke with both ends inside the spine is not there: the spine is."""
+        a, b = tuple(e)
+        return a in self.band and b in self.band
+
     def pentagons(self, rings=1):
-        """Pentagons whose whole patch lies on the real skin (not on the greyed extension)."""
+        """Pentagons whose whole patch lies on the real skin (not on the greyed extension) and not on the spine."""
         out = []
         for p, s in enumerate(self.sides):
             if s == 5 and not self.end[p]:
-                ok = all(not self.end[q] for q in self.ring_polys(p, rings + 1))
-                out.append(dict(id=p, ok=ok, centre=self.info[p]["centre"]))
+                ok = all(not self.end[q] for q in self.ring_polys(p, rings + 1)) and not self.on_spine[p]
+                out.append(dict(id=p, ok=ok, centre=self.info[p]["centre"], spine=self.on_spine[p]))
         return out
 
     # ---- the flattening --------------------------------------------------------------------
@@ -116,7 +124,7 @@ class Frame:
         """Lay one pentagon patch flat. Returns plain data (flat positions in inches, spokes, cuts)."""
         V = self.V
         pp = self.ring_polys(pent, rings)
-        S_edges = {e for e, ps in self.edge_polys.items() if any(q in pp for q in ps)}
+        S_edges = {e for e, ps in self.edge_polys.items() if any(q in pp for q in ps) and not self.hidden(e)}
         plate = self.polys[pent]
         P3 = V[plate]; o = P3.mean(0); n = newell(P3)
         e1 = P3[0] - o; e1 = e1 - n * np.dot(e1, n); e1 /= np.linalg.norm(e1)
@@ -182,11 +190,11 @@ class Frame:
             free = pos[own] + L * np.array([math.cos(th), math.sin(th)])
             cuts.append(dict(own=own, target=tgt, free=free, gap=float(np.linalg.norm(free - pos[tgt])), length=L))
         # hubs that also join a spoke outside this patch (the next patch will meet them there)
-        joint = {v for v in pos if any(frozenset((v, w)) not in S_edges for w in self.adj[v])}
+        joint = {v for v in pos if any(frozenset((v, w)) not in S_edges and not self.hidden(frozenset((v, w))) for w in self.adj[v])}
         plate_err = max(abs(float(np.linalg.norm(pos[a] - pos[b])) - float(np.linalg.norm(V[a] - V[b])))
                         for a, b in map(tuple, plate_edges))
         return dict(pent=pent, rings=rings, pos=pos, solid=solid, cuts=cuts, joint=joint, plate=plate,
-                    plate_err=plate_err, windows=sorted(q for q in pp if q != pent),
+                    plate_err=plate_err, windows=sorted(q for q in pp if q != pent), on_spine=sorted(v for v in pos if v in self.band),
                     pent_in_patch=[q for q in pp if q != pent and self.sides[q] == 5])
 
 
@@ -202,4 +210,6 @@ def patch_data(fr, patch):
         solid=[[a, b] for a, b in patch["solid"]],
         cuts=[dict(own=c["own"], target=c["target"], L=round(c["length"], 4), free0=r2(c["free"])) for c in patch["cuts"]],
         joint=sorted(patch["joint"]), windows=sorted(patch["windows"]), pent_in_patch=patch["pent_in_patch"],
+        window_nodes=[[v for v in fr.polys[q] if v in pos] for q in sorted(patch["windows"])],
+        on_spine=[int(v) for v in patch["on_spine"]],
         plate_err=round(patch["plate_err"], 4))

@@ -1,6 +1,8 @@
-/* Flat patch: spread the free ends apart, check they can be cut, draw it, measure it.
-   Used by frame_page.html (local tool) and by the no-install explorer page. Units: inches.
-   prepare(P, o) -> result      P = one patch from frame.patch_data(), o = settings
+/* One flat patch for the CNC: the body (pentagon plate + attached spokes) and the LOOSE spokes, each placed
+   inside a window of the body with a router gap all round it. Units: inches.
+   Words: a SPOKE is a strip with a half circle at each end; its length is measured between the centres of
+   those half circles. A NODE is where spoke ends meet. A loose spoke is riveted at both ends.
+   prepare(P, o) -> result      P = one patch from frame.patch_data(), o = { spoke_width, rivet_hole, clearance }
    svg(result, o, forFile)      SVG text (1 unit = 1 inch)
 */
 (function (g) {
@@ -8,105 +10,108 @@
   const sub = (a, b) => [a[0] - b[0], a[1] - b[1]], add = (a, b) => [a[0] + b[0], a[1] + b[1]], mul = (a, k) => [a[0] * k, a[1] * k];
   const len = a => Math.hypot(a[0], a[1]), dist = (a, b) => len(sub(a, b));
   const rot = (a, t) => [a[0] * Math.cos(t) - a[1] * Math.sin(t), a[0] * Math.sin(t) + a[1] * Math.cos(t)];
-
   function ptSeg(p, a, b) {
     const ab = sub(b, a), l2 = ab[0] * ab[0] + ab[1] * ab[1];
     let t = l2 ? ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1]) / l2 : 0;
     t = Math.max(0, Math.min(1, t));
     return dist(p, add(a, mul(ab, t)));
   }
-  function cross(o, a, b) { return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); }
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
   function segSeg(a, b, c, d) {
     const d1 = cross(a, b, c), d2 = cross(a, b, d), d3 = cross(c, d, a), d4 = cross(c, d, b);
     if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return 0;
     return Math.min(ptSeg(a, c, d), ptSeg(b, c, d), ptSeg(c, a, b), ptSeg(d, a, b));
   }
+  function inPoly(p, poly) {
+    let c = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      if ((poly[i][1] > p[1]) !== (poly[j][1] > p[1]) && p[0] < (poly[j][0] - poly[i][0]) * (p[1] - poly[i][1]) / (poly[j][1] - poly[i][1]) + poly[i][0]) c = !c;
+    }
+    return c;
+  }
 
   function prepare(P, o) {
-    const w = o.spoke_width, r = Math.max(o.circle_diameter, w) / 2, clear = o.clearance;   // an end is at least as wide as its spoke
+    const w = o.spoke_width, r = w / 2, clear = o.clearance;
     const pos = {}; Object.keys(P.pos).forEach(k => pos[k] = P.pos[k]);
-    const cuts = P.cuts.map(c => ({ own: String(c.own), target: String(c.target), L: c.L, free: c.free0.slice(), free0: c.free0.slice(), spread: false }));
     const solid = P.solid.map(([a, b]) => [String(a), String(b)]);
+    const plate = P.plate.map(v => pos[String(v)]);
+    const cen = pts => [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
+    const c0 = cen(plate);
+    const loose = P.cuts.map((c, i) => ({ id: i + 1, own: String(c.own), target: String(c.target), L: c.L }));
 
-    // everything a free end must stay clear of, other than the spoke it belongs to
-    function clearanceOf(c, F) {
-      const O = pos[c.own]; let m = Infinity;
-      const seg = [O, F];
-      for (const k in pos) {                                            // hub discs (not the hub this spoke hangs from)
-        if (k === c.own) continue;
-        m = Math.min(m, ptSeg(pos[k], O, F) - w / 2 - r, dist(F, pos[k]) - 2 * r);
+    // clearance of a capsule (axis A-B, width w) from the body and from the loose spokes already placed
+    function clearanceOf(A, B, placed) {
+      let m = Infinity;
+      for (const k in pos) m = Math.min(m, ptSeg(pos[k], A, B) - 2 * r);
+      for (const [a, b] of solid) m = Math.min(m, segSeg(A, B, pos[a], pos[b]) - w);
+      for (let i = 0; i < plate.length; i++) {
+        const p = plate[i], q = plate[(i + 1) % plate.length];
+        m = Math.min(m, segSeg(A, B, p, q) - r);
       }
-      for (const [a, b] of solid) {                                       // spokes that stay attached
-        const A = pos[a], B = pos[b], touches = a === c.own || b === c.own;
-        m = Math.min(m, ptSeg(F, A, B) - r - w / 2);
-        if (!touches) m = Math.min(m, segSeg(O, F, A, B) - w);
-      }
-      for (const d of cuts) {
-        if (d === c) continue;
-        const A = pos[d.own], B = d.free, touches = d.own === c.own;
-        m = Math.min(m, ptSeg(F, A, B) - r - w / 2, dist(F, B) - 2 * r);
-        if (!touches) m = Math.min(m, segSeg(O, F, A, B) - w, ptSeg(B, O, F) - r - w / 2);
-      }
+      if (inPoly(A, plate) || inPoly(B, plate)) m = Math.min(m, -1);
+      for (const l of placed) m = Math.min(m, segSeg(A, B, l.a, l.b) - w);
       return m;
     }
-
-    for (const c of cuts) {                                                // spread apart if too close to anything
-      const O = pos[c.own], T = pos[c.target];
-      c.natural = dist(c.free0, T);
-      if (!o.spread || clearanceOf(c, c.free0) >= clear - 1e-6) continue;
-      let bestF = null, bestPull = Infinity, fallback = null, fbClear = -Infinity;
-      for (let deg = 0; deg < 360; deg += 2) {                              // swing the free spoke round its own hub
-        const t = deg * Math.PI / 180, F = [O[0] + c.L * Math.cos(t), O[1] + c.L * Math.sin(t)];
-        const cl = clearanceOf(c, F);
-        if (cl >= clear - 1e-6) { const pull = dist(F, T); if (pull < bestPull) { bestPull = pull; bestF = F; } }
-        else if (cl > fbClear) { fbClear = cl; fallback = F; }
-      }
-      c.free = bestF || fallback; c.spread = true;
+    // each loose spoke goes in a window it closes (a window that has both of its end nodes), else anywhere free
+    const pts0 = Object.values(pos);
+    const bx0 = Math.min(...pts0.map(p => p[0])), bx1 = Math.max(...pts0.map(p => p[0])), by0 = Math.min(...pts0.map(p => p[1])), by1 = Math.max(...pts0.map(p => p[1]));
+    const placed = [];
+    for (const l of loose) {
+      const wins = P.window_nodes.map(ns => ns.map(String)).filter(ns => ns.includes(l.own) && ns.includes(l.target));
+      const centres = wins.map(ns => cen(ns.filter(k => pos[k]).map(k => pos[k])));
+      let best = null;
+      const tryCentre = (c, step, span, dstep) => {
+        for (let dx = -span; dx <= span + 1e-9; dx += step) for (let dy = -span; dy <= span + 1e-9; dy += step) {
+          const C = [c[0] + dx, c[1] + dy];
+          for (let deg = 0; deg < 180; deg += dstep) {
+            const t = deg * Math.PI / 180, h = [Math.cos(t) * l.L / 2, Math.sin(t) * l.L / 2];
+            const A = sub(C, h), B = add(C, h), cl = clearanceOf(A, B, placed);
+            const score = cl - 0.02 * Math.hypot(dx, dy);
+            if (!best || score > best.score) best = { A, B, cl, score };
+          }
+        }
+      };
+      centres.forEach(c => tryCentre(c, 0.5, 2, 4));
+      if (!best || best.cl < clear) for (let x = bx0; x <= bx1; x += 2) for (let y = by0; y <= by1; y += 2) tryCentre([x, y], 1, 0, 6);
+      l.a = best.A; l.b = best.B; l.clear = best.cl; l.ok = best.cl >= clear - 1e-6; l.inWindow = centres.some(c => dist(c, cen([best.A, best.B])) < 3.5);
+      placed.push(l);
     }
-    for (const c of cuts) {
-      c.gap = dist(c.free, pos[c.target]);
-      c.clear = clearanceOf(c, c.free);
-      c.blocked = c.clear < clear - 1e-6;
-    }
-    const pts = Object.values(pos).concat(cuts.map(c => c.free));
-    const pad = r;
-    let best = null;
+    // size on the sheet: everything cut from this patch
+    const pts = Object.values(pos).concat(...loose.map(l => [l.a, l.b]));
+    let bestBox = null;
     for (let deg = 0; deg < 90; deg++) {
       const t = deg * Math.PI / 180; let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
       for (const p of pts) { const q = rot(p, t); x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); }
-      const W = x1 - x0 + 2 * pad, H = y1 - y0 + 2 * pad;
-      if (!best || W * H < best.W * best.H) best = { W, H, deg };
+      const W = x1 - x0 + 2 * r, H = y1 - y0 + 2 * r;
+      if (!bestBox || W * H < bestBox.W * bestBox.H) bestBox = { W, H, deg };
     }
-    best.fits = Math.min(best.W, best.H) <= SHEET[0] && Math.max(best.W, best.H) <= SHEET[1];
-    const gaps = cuts.map(c => c.gap).sort((a, b) => b - a);
+    bestBox.fits = Math.min(bestBox.W, bestBox.H) <= SHEET[0] && Math.max(bestBox.W, bestBox.H) <= SHEET[1];
+    const Ls = loose.map(l => l.L);
     return {
-      P, pos, cuts, solid, size: best,
+      P, pos, solid, loose, plate, c0, size: bestBox,
       stats: {
-        cuts: cuts.length, blocked: cuts.filter(c => c.blocked).length, spread: cuts.filter(c => c.spread).length,
-        gapMax: gaps[0] || 0, gapMean: gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : 0,
-        hubs: Object.keys(pos).length, spokes: solid.length + cuts.length, joints: P.joint.length,
-        pentInPatch: P.pent_in_patch
+        loose: loose.length, nested: loose.filter(l => l.ok && l.inWindow).length, blocked: loose.filter(l => !l.ok).length,
+        lMin: Ls.length ? Math.min(...Ls) : 0, lMax: Ls.length ? Math.max(...Ls) : 0, lMean: Ls.length ? Ls.reduce((a, b) => a + b, 0) / Ls.length : 0,
+        nodes: Object.keys(pos).length, spokes: solid.length, joins: P.joint.length, onSpine: P.on_spine.length, pentInPatch: P.pent_in_patch
       }
     };
   }
 
   function svg(R, o, forFile) {
-    const { P, pos, cuts, solid } = R;
-    const w = o.spoke_width, cd = o.circle_diameter, rh = o.rivet_hole, r = cd / 2;
-    const all = Object.values(pos).concat(cuts.map(c => c.free));
+    const { P, pos, solid, loose, plate, c0 } = R;
+    const w = o.spoke_width, r = w / 2, rh = o.rivet_hole;
+    const all = Object.values(pos).concat(...loose.map(l => [l.a, l.b]));
     const x0 = Math.min(...all.map(p => p[0])) - r - 1.2, x1 = Math.max(...all.map(p => p[0])) + r + 1.2;
     const y0 = Math.min(...all.map(p => p[1])) - r - 1.2, y1 = Math.max(...all.map(p => p[1])) + r + 1.2;
     const W = x1 - x0, H = y1 - y0, X = p => (p[0] - x0).toFixed(3), Y = p => (y1 - p[1]).toFixed(3);
-    const ink = '#1c3d2e', fill = '#3aa675', freeC = '#e0752b', plateC = '#f2a65a', gr = 0.04;
+    const ink = '#1c3d2e', fill = '#3aa675', looseC = '#e0752b', plateC = '#f2a65a', gr = 0.04;
     const bar = (a, b, c, wd) => `<line x1="${X(a)}" y1="${Y(a)}" x2="${X(b)}" y2="${Y(b)}" stroke="${c}" stroke-width="${wd.toFixed(3)}"/>`;
-    const disc = (p, rr, c, extra) => `<circle cx="${X(p)}" cy="${Y(p)}" r="${rr.toFixed(3)}" fill="${c}" stroke="${c}" ${extra || ''}/>`;
+    const disc = (p, rr, c) => `<circle cx="${X(p)}" cy="${Y(p)}" r="${rr.toFixed(3)}" fill="${c}" stroke="${c}"/>`;
+    const hole = (p, stroke, sw) => `<circle cx="${X(p)}" cy="${Y(p)}" r="${(rh / 2).toFixed(3)}" fill="#fff" stroke="${stroke}" stroke-width="${sw}"/>`;
     const items = [];
     solid.forEach(([a, b]) => items.push(['bar', pos[a], pos[b], fill]));
-    cuts.forEach(c => items.push(['bar', pos[c.own], c.free, freeC]));
     Object.values(pos).forEach(p => items.push(['disc', p, r, fill]));
-    cuts.forEach(c => items.push(['disc', c.free, r, freeC]));
-    const plate = P.plate.map(v => pos[String(v)]);
-    const c0 = [plate.reduce((s, p) => s + p[0], 0) / plate.length, plate.reduce((s, p) => s + p[1], 0) / plate.length];
+    loose.forEach(l => { items.push(['bar', l.a, l.b, looseC]); items.push(['disc', l.a, r, looseC]); items.push(['disc', l.b, r, looseC]); });
     const pstr = plate.map(p => X(p) + ',' + Y(p)).join(' ');
     let out = '';
     items.forEach(it => { out += it[0] === 'bar' ? bar(it[1], it[2], ink, w + 2 * gr) : disc(it[1], it[2] + gr, ink); });
@@ -114,22 +119,41 @@
     out += `<polygon points="${pstr}" fill="${plateC}" stroke="${plateC}" stroke-linejoin="round"/>`;
     items.forEach(it => { out += it[0] === 'bar' ? bar(it[1], it[2], it[3], w) : disc(it[1], it[2], it[3]); });
     out += `<circle cx="${X(c0)}" cy="${Y(c0)}" r="${(P.hole / 2).toFixed(3)}" fill="#fff" stroke="${ink}" stroke-width="0.06"/>`;
-    const targets = new Set(cuts.map(c => c.target));
-    cuts.forEach(c => { [c.free, pos[c.target]].forEach(p => out += `<circle cx="${X(p)}" cy="${Y(p)}" r="${(rh / 2).toFixed(3)}" fill="#fff" stroke="${ink}" stroke-width="0.04"/>`); });
-    P.joint.forEach(v => { if (!targets.has(String(v))) out += `<circle cx="${X(pos[String(v)])}" cy="${Y(pos[String(v)])}" r="${(rh / 2).toFixed(3)}" fill="#fff" stroke="#3b6fb0" stroke-width="0.05"/>`; });
-    cuts.forEach(c => {
-      const a = c.free, b = pos[c.target], col = c.blocked ? '#c0281d' : '#c0281d';
-      if (c.blocked) out += `<circle cx="${X(a)}" cy="${Y(a)}" r="${(r + 0.12).toFixed(3)}" fill="none" stroke="#c0281d" stroke-width="0.12"/>`;
-      out += `<line x1="${X(a)}" y1="${Y(a)}" x2="${X(b)}" y2="${Y(b)}" stroke="${col}" stroke-width="0.09" stroke-dasharray="0.35 0.25"/>`;
-      const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2 + (r + 0.9)];
-      out += `<text x="${X(m)}" y="${Y(m)}" font-size="0.95" text-anchor="middle" fill="${col}" stroke="#fff" stroke-width="0.22" paint-order="stroke" font-family="sans-serif">${c.gap.toFixed(2)}</text>`;
+    const lab = (p, t, c) => `<text x="${X(p)}" y="${Y(add(p, [0, -0.32]))}" font-size="0.85" text-anchor="middle" fill="${c}" stroke="#fff" stroke-width="0.2" paint-order="stroke" font-family="sans-serif" font-weight="600">${t}</text>`;
+    loose.forEach(l => {
+      out += hole(l.a, ink, 0.04) + hole(l.b, ink, 0.04);
+      out += hole(pos[l.own], ink, 0.04) + hole(pos[l.target], ink, 0.04);
+    });
+    P.on_spine.forEach(v => { out += hole(pos[String(v)], '#7b3fa0', 0.09); });
+    const targets = new Set(loose.flatMap(l => [l.own, l.target]).concat(P.on_spine.map(String)));
+    P.joint.forEach(v => { if (!targets.has(String(v))) out += hole(pos[String(v)], '#3b6fb0', 0.07); });
+    loose.forEach(l => {
+      out += lab(add(cen2(l.a, l.b), [0, 0.5]), l.id + ' (' + l.L.toFixed(2) + ')', l.ok ? '#8a3d0c' : '#c0281d');
+      out += lab(pos[l.own], l.id, '#8a3d0c') + lab(pos[l.target], l.id, '#8a3d0c');
+      if (!l.ok) out += `<circle cx="${X(cen2(l.a, l.b))}" cy="${Y(cen2(l.a, l.b))}" r="${(l.L / 2 + r + 0.2).toFixed(3)}" fill="none" stroke="#c0281d" stroke-width="0.1" stroke-dasharray="0.4 0.3"/>`;
     });
     const sb = [x0 + 1, y0 + 1];
     out += `<line x1="${X(sb)}" y1="${Y(sb)}" x2="${X([sb[0] + 6, sb[1]])}" y2="${Y(sb)}" stroke="#222" stroke-width="0.15"/><text x="${X([sb[0], sb[1] + 0.35])}" y="${Y([sb[0], sb[1] + 0.35])}" font-size="1" font-family="sans-serif" fill="#222">6 in</text>`;
     const size = forFile ? ` width="${W.toFixed(2)}in" height="${H.toFixed(2)}in"` : '';
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W.toFixed(2)} ${H.toFixed(2)}"${size} font-family="sans-serif">${out}</svg>`;
   }
+  const cen2 = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
 
-  const api = { prepare, svg, SHEET };
+  /* The spine laid flat, true size: a strip `width` wide and `length` long with a round bump and a rivet hole
+     where each spoke connects. B = { width, length, bump_radius, hole, bumps:[{sigma,u,node}] }  */
+  function spineSvg(B, forFile) {
+    const pad = 2.5, W = B.length + 2 * pad, H = B.width + 2 * pad, X = s => (s + pad).toFixed(3), Y = u => (H / 2 - u).toFixed(3);
+    const ink = '#4a2a63', fill = '#b79ad6';
+    let out = `<rect x="${X(0)}" y="${Y(B.width / 2)}" width="${B.length}" height="${B.width}" fill="${ink}" stroke="${ink}" stroke-width="0.08"/>`;
+    B.bumps.forEach(b => { out += `<circle cx="${X(b.sigma)}" cy="${Y(b.u)}" r="${(B.bump_radius + 0.04).toFixed(3)}" fill="${ink}"/>`; });
+    out += `<rect x="${X(0)}" y="${Y(B.width / 2)}" width="${B.length}" height="${B.width}" fill="${fill}"/>`;
+    B.bumps.forEach(b => { out += `<circle cx="${X(b.sigma)}" cy="${Y(b.u)}" r="${B.bump_radius}" fill="${fill}"/>`; });
+    B.bumps.forEach(b => { out += `<circle cx="${X(b.sigma)}" cy="${Y(b.u)}" r="${(B.hole / 2).toFixed(3)}" fill="#fff" stroke="${ink}" stroke-width="0.05"/>`; });
+    out += `<line x1="${X(0)}" y1="${Y(-B.width / 2 - 1.4)}" x2="${X(12)}" y2="${Y(-B.width / 2 - 1.4)}" stroke="#222" stroke-width="0.15"/><text x="${X(0)}" y="${Y(-B.width / 2 - 1.0)}" font-size="1" font-family="sans-serif" fill="#222">12 in</text>`;
+    const size = forFile ? ` width="${W.toFixed(2)}in" height="${H.toFixed(2)}in"` : '';
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W.toFixed(2)} ${H.toFixed(2)}"${size} font-family="sans-serif">${out}</svg>`;
+  }
+
+  const api = { prepare, svg, spineSvg, SHEET };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else g.PatchDraw = api;
 })(typeof window !== 'undefined' ? window : globalThis);

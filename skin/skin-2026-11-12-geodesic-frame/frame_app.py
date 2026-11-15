@@ -49,7 +49,7 @@ def layout_files():
                 p = os.path.join(base, d, "layout.json")
                 if os.path.isfile(p):
                     out.append((d, p))
-    rank = lambda n: (0 if n.startswith("tube") else 1 if n.startswith("dome") else 2, n)
+    rank = lambda n: (0 if n.startswith("smile") else 1 if n.startswith("dome") else 2, n)
     out.sort(key=lambda t: rank(t[0]))
     return out
 
@@ -67,28 +67,45 @@ def get_frame(lid):
 def label_for(lid, fr):
     p = fr.params
     mesh = os.path.splitext(os.path.basename(str(p.get("MESH_FILE") or lid)))[0]
-    return f"{mesh}, hub spacing {p.get('EDGE', '?')} in"
+    if fr.spine:
+        return f"Tube as a smile, with a {fr.spine['width']:g} in spine (spoke spacing about {p.get('EDGE', '?')} in)"
+    return f"{mesh}, spoke spacing about {p.get('EDGE', '?')} in"
 
 
 def frame_payload(fr, rings):
     V = np.round(fr.V, 3).tolist()
+    N = np.round(np.array([fr.vnorm.get(v, [0, 0, 1]) for v in range(len(fr.V))]), 3).tolist()
+    plate_edges = set()
+    plates = []
+    for p, s_ in enumerate(fr.sides):
+        if s_ == 5 and not fr.on_spine[p]:
+            for a, b in zip(fr.polys[p], fr.polys[p][1:] + fr.polys[p][:1]):
+                plate_edges.add(frozenset((a, b)))
     edges = []
     for e, ps in fr.edge_polys.items():
+        if e in plate_edges or fr.hidden(e):
+            continue
         a, b = sorted(e)
         edges.append([a, b, 1 if all(fr.end[p] for p in ps) else 0])
     pents = fr.pentagons(rings)
+    usable = {q["id"]: q["ok"] for q in pents}
+    for p, s_ in enumerate(fr.sides):
+        if s_ == 5 and not fr.on_spine[p]:
+            plates.append(dict(id=p, ok=usable.get(p, False), end=fr.end[p], corners=fr.polys[p], normal=np.round(fr.pnorm[p], 3).tolist(),
+                               centre=np.round(fr.info[p]["centre"], 3).tolist()))
     for q in pents:
         q["corners"] = fr.polys[q["id"]]
-    ok = [q for q in pents if q["ok"]]
-    stats = []
-    for q in ok:
-        try:
-            pt = fr.flatten(q["id"], rings)
-            stats.extend(c["gap"] for c in pt["cuts"])
-        except Exception:                                           # a patch that cannot be laid out is just left out
-            pass
-    summary = dict(pentagons=len(pents), usable=len(ok), natural=[round(g, 3) for g in stats])
-    return dict(vertices=V, edges=edges, pentagons=pents, summary=summary, hole=fr.hole_diameter,
+    interior = {v for p in range(len(fr.polys)) if not fr.end[p] for v in fr.polys[p]}
+    L = [float(np.linalg.norm(fr.V[a] - fr.V[b])) for a, b, ext in edges if not ext and a in interior and b in interior]
+    summary = dict(pentagons=len(pents), usable=sum(q["ok"] for q in pents), on_spine=sum(q["spine"] for q in pents),
+                   spokes=len(L), spoke_mean=float(np.mean(L)) if L else 0.0, spoke_min=float(min(L)) if L else 0.0,
+                   spoke_max=float(max(L)) if L else 0.0, spoke_std_pct=float(np.std(L) / np.mean(L) * 100) if L else 0.0)
+    spine = None
+    if fr.spine:
+        sp = fr.spine
+        spine = dict(width=sp["width"], length=sp["length"], bump_radius=sp["bump_radius"], hole=sp["hole"], bumps=sp["bumps"], strip=sp["strip"])
+    return dict(vertices=V, normals=N, edges=edges, pentagons=pents, plates=plates, summary=summary, hole=fr.hole_diameter, spine=spine,
+                equalized=fr.layout.get("equalized"),
                 params={k: fr.params.get(k) for k in ("EDGE", "MESH_FILE", "HOLE_DIAMETER", "PENT_ACROSS")})
 
 

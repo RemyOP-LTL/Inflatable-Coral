@@ -5,13 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Frame tool</title>
 <style>
-  :root { --bg:#f6f5f1; --panel:#fff; --ink:#1d2320; --mute:#66706a; --line:#dcdad2; --accent:#1f7a55; --warn:#c0281d; --orange:#e0752b; }
+  :root { --bg:#f6f5f1; --panel:#fff; --ink:#1d2320; --mute:#66706a; --line:#dcdad2; --accent:#1f7a55; --warn:#c0281d; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#161a18; --panel:#1f2522; --ink:#e8ece9; --mute:#9aa69f; --line:#34403a; --accent:#4fc08d; --warn:#ff7b6e; } }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; }
   header { padding:12px 20px; border-bottom:1px solid var(--line); background:var(--panel); display:flex; gap:16px; align-items:baseline; flex-wrap:wrap; }
-  header h1 { margin:0; font-size:18px; }
-  header span { color:var(--mute); font-size:13px; }
+  header h1 { margin:0; font-size:18px; } header span { color:var(--mute); font-size:13px; }
   .wrap { display:grid; grid-template-columns:300px 1fr; gap:16px; padding:16px; align-items:start; }
   @media (max-width: 900px) { .wrap { grid-template-columns:1fr; } }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:14px; }
@@ -21,33 +20,24 @@
   input[type=range] { width:100%; }
   .row { display:flex; gap:8px; align-items:center; } .row > * { flex:1; }
   button { padding:7px 12px; border:1px solid var(--line); background:var(--bg); color:var(--ink); border-radius:6px; font:inherit; cursor:pointer; }
-  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-  button:disabled { opacity:.5; cursor:default; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); } button:disabled { opacity:.5; cursor:default; }
   .val { float:right; color:var(--ink); font-variant-numeric:tabular-nums; }
-  .views { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-  @media (max-width: 1250px) { .views { grid-template-columns:1fr; } }
-  #three { width:100%; height:520px; border-radius:8px; background:#e9e7df; position:relative; }
+  #three { width:100%; height:560px; border-radius:8px; background:#e9e7df; position:relative; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) #three { background:#101412; } }
-  #three canvas { border-radius:8px; }
-  #flat { min-height:300px; }
-  #flat svg { width:100%; height:auto; max-height:560px; display:block; }
-  #flat.both { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin-top:10px; }
+  #flat svg { width:100%; height:auto; max-height:600px; display:block; } #spine svg { width:100%; height:auto; display:block; }
+  .views { display:grid; grid-template-columns:1.25fr 1fr; gap:14px; } @media (max-width: 1300px) { .views { grid-template-columns:1fr; } }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(125px,1fr)); gap:10px; margin-top:10px; }
   .stat b { display:block; font-size:20px; font-variant-numeric:tabular-nums; } .stat span { font-size:12px; color:var(--mute); }
   .key { display:flex; flex-wrap:wrap; gap:6px 16px; font-size:12.5px; color:var(--mute); margin-top:8px; }
   .key i { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:5px; vertical-align:-1px; }
   .note { font-size:13px; color:var(--mute); } .bad { color:var(--warn); }
   .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:8px; } .bar i { display:block; height:100%; background:var(--accent); width:30%; animation:slide 1.2s infinite alternate ease-in-out; }
   @keyframes slide { from { margin-left:0; } to { margin-left:70%; } }
-  details summary { cursor:pointer; color:var(--mute); font-size:13px; }
-  pre { white-space:pre-wrap; font-size:12px; max-height:140px; overflow:auto; background:var(--bg); padding:6px; border-radius:6px; }
+  details summary { cursor:pointer; color:var(--mute); font-size:13px; } pre { white-space:pre-wrap; font-size:12px; max-height:140px; overflow:auto; background:var(--bg); padding:6px; border-radius:6px; }
 </style>
 </head>
 <body>
-<header>
-  <h1>Frame tool</h1>
-  <span>Hubs at the polygon corners, spokes between them, pentagons as solid plates. One pentagon patch laid flat.</span>
-</header>
+<header><h1>Frame tool</h1><span>Spokes with round ends, pentagons as solid plates, loose spokes riveted at both ends. Spine along the inside of the curve.</span></header>
 <div class="wrap">
   <div>
     <div class="card">
@@ -56,9 +46,10 @@
       <div class="note" id="layoutInfo" style="margin-top:6px"></div>
       <details style="margin-top:10px"><summary>Make a new layout (about 40 s)</summary>
         <label>Shape file</label><select id="mesh"></select>
-        <label>Hub spacing (spoke length), in</label><input type="number" id="edge" value="5" min="2" max="12" step="0.5">
+        <label>Spoke spacing, in</label><input type="number" id="edge" value="5" min="2" max="12" step="0.5">
         <div class="row" style="margin-top:10px"><button class="primary" id="run">Make layout</button></div>
         <div id="runState" class="note"></div>
+        <div class="note">Layouts made here are plain (no spine, spokes not yet equalised). The smile tube is made with equalize.py and spine.py; see the notes.</div>
       </details>
     </div>
     <div class="card">
@@ -67,41 +58,44 @@
       <div class="row"><button id="prev">&larr;</button><select id="pent" style="flex:4"></select><button id="next">&rarr;</button></div>
       <label>Rings of windows round the pentagon <span class="val" id="ringsV"></span></label>
       <input type="range" id="rings" min="1" max="3" step="1" value="1">
-      <div class="note">1 = the five windows touching the pentagon. 2 and 3 add more rings; the patch grows past 4 ft quickly.</div>
+      <div class="note">1 = the windows touching the pentagon. More rings grow the patch past 4 ft quickly.</div>
     </div>
     <div class="card">
       <h2>Plastic</h2>
-      <label>Spoke width, in <span class="val" id="swV"></span></label><input type="range" id="sw" min="0.5" max="2.5" step="0.25" value="1.5">
-      <label>Hub circle diameter, in <span class="val" id="cdV"></span></label><input type="range" id="cd" min="0.5" max="2" step="0.25" value="1">
-      <div class="note">A hub narrower than the spoke is hidden by it: the free end is as wide as the wider of the two.</div>
+      <label>Spoke width, in <span class="val" id="swV"></span></label><input type="range" id="sw" min="0.75" max="2.5" step="0.125" value="1.25">
+      <div class="note">The end of every spoke is a half circle of this width. Spoke length is measured between the centres of the two end half circles.</div>
       <label>Rivet hole diameter, in <span class="val" id="rhV"></span></label><input type="range" id="rh" min="0.125" max="0.5" step="0.125" value="0.25">
       <label>Gap the router must cut between parts, in <span class="val" id="clV"></span></label><input type="range" id="cl" min="0.0625" max="0.5" step="0.0625" value="0.125">
-      <label style="margin-top:10px"><input type="checkbox" id="spread" checked> Swing free ends apart so they can be cut</label>
+    </div>
+    <div class="card">
+      <h2>3D view</h2>
+      <label><input type="checkbox" id="onlySection"> Show only the selected section</label>
+      <label><input type="checkbox" id="showSpine" checked> Show the spine</label>
     </div>
     <div class="card note">
-      <b>Reading the flat patch.</b> Orange spokes are cut: they stay joined at one end, and the far end is a free circle.
-      The red dashed line and number say how far (in) to pull it to the hub it belongs to; rivet through the two small holes. A red ring means that end still touches something and cannot be cut.
-      Blue-ringed holes are hubs that join the next patch.
+      <b>Reading the flat patch.</b> Green = the body: the pentagon plate and the spokes that stay attached to it. Orange = loose spokes: each is cut as its own piece and sits inside a window of the body. Each is riveted at both ends: the number on a loose spoke matches the number at the two body ends it joins. Purple rings = nodes that rivet to the spine. Blue rings = nodes that join the next patch.
     </div>
   </div>
 
   <div>
     <div class="views">
-      <div class="card"><h2>On the skin (3D) &middot; click a pentagon to pick it</h2><div id="three"></div>
+      <div class="card"><h2>On the tube (3D) &middot; click a pentagon to pick it</h2><div id="three"></div>
         <div class="key">
-          <span><i style="background:#3aa675"></i>this patch</span><span><i style="background:#e0752b"></i>spoke that gets cut</span>
-          <span><i style="background:#f2a65a"></i>pentagon plates</span><span><i style="background:#9aa6b2"></i>rest of the frame</span>
-          <span><i style="background:#d6d2c6"></i>extension past the edge</span>
+          <span><i style="background:#3aa675"></i>this section</span><span><i style="background:#e0752b"></i>loose spoke in it</span>
+          <span><i style="background:#f2a65a"></i>pentagon plates</span><span><i style="background:#9aa6b2"></i>rest of the spokes</span>
+          <span><i style="background:#b79ad6"></i>spine</span><span><i style="background:#d6d2c6"></i>extension past the ends</span>
         </div>
-        <div class="row" style="margin-top:8px"><button id="focus">Zoom to patch</button><button id="all">Show everything</button></div>
+        <div class="row" style="margin-top:8px"><button id="focus">Zoom to section</button><button id="all">Show everything</button></div>
       </div>
-      <div class="card"><h2>Laid flat (true size)</h2><div id="flat"></div>
+      <div class="card"><h2>One section laid flat (true size)</h2><div id="flat"></div>
         <div class="row" style="margin-top:8px"><button id="dl">Download SVG (1 unit = 1 in)</button></div>
         <div class="stats" id="stats"></div>
         <div class="note" id="fit" style="margin-top:8px"></div>
       </div>
     </div>
-    <div class="card"><h2>Across the whole skin</h2><div id="summary" class="note"></div></div>
+    <div class="card" id="spineCard"><h2>The spine laid flat (true size)</h2><div id="spine"></div><div class="note" id="spineNote"></div>
+      <button id="dlSpine" style="margin-top:8px">Download spine SVG</button></div>
+    <div class="card"><h2>Across the whole tube</h2><div id="summary" class="note"></div></div>
   </div>
 </div>
 
@@ -111,28 +105,25 @@
 <script>
 const $ = id => document.getElementById(id);
 const S = { layout:null, frame:null, pent:null, patch:null };
-const store = { get(k, d){ try { const v = localStorage.getItem('frame.'+k); return v===null? d : v; } catch(e){ return d; } },
-                set(k, v){ try { localStorage.setItem('frame.'+k, v); } catch(e){} } };
+const store = { get(k, d){ try { const v = localStorage.getItem('frame3.'+k); return v===null? d : v; } catch(e){ return d; } },
+                set(k, v){ try { localStorage.setItem('frame3.'+k, v); } catch(e){} } };
 const j = async (url, opt) => { const r = await fetch(url, opt); return r.json(); };
 const fmt = (x, n=2) => Number(x).toFixed(n);
 
 // ---------- 3D ----------
-let R = null;                                   // renderer bits
+let R = null;
 function init3d() {
   const el = $('three');
   const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
-  renderer.setPixelRatio(window.devicePixelRatio || 1);
-  renderer.setSize(el.clientWidth, el.clientHeight);
-  el.appendChild(renderer.domElement);
+  renderer.setPixelRatio(window.devicePixelRatio || 1); renderer.setSize(el.clientWidth, el.clientHeight); el.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(40, el.clientWidth / el.clientHeight, 0.5, 2000);
+  const camera = new THREE.PerspectiveCamera(40, el.clientWidth / el.clientHeight, 0.5, 3000);
   camera.up.set(0, 0, 1);
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x667766, 0.9));
-  const dl = new THREE.DirectionalLight(0xffffff, 0.7); dl.position.set(60, -80, 120); scene.add(dl);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x667766, 0.95));
+  const dl = new THREE.DirectionalLight(0xffffff, 0.6); dl.position.set(60, -80, 120); scene.add(dl);
   R = { renderer, scene, camera, controls, group:null, pentMeshes:[] };
-  const loop = () => { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); };
-  loop();
+  (function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); })();
   window.addEventListener('resize', () => { renderer.setSize(el.clientWidth, el.clientHeight); camera.aspect = el.clientWidth / el.clientHeight; camera.updateProjectionMatrix(); });
   let down = null;
   renderer.domElement.addEventListener('pointerdown', e => down = [e.clientX, e.clientY]);
@@ -141,68 +132,106 @@ function init3d() {
     const rect = renderer.domElement.getBoundingClientRect();
     const m = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     const ray = new THREE.Raycaster(); ray.setFromCamera(m, camera);
-    const hit = ray.intersectObjects(R.pentMeshes)[0];
+    const hit = ray.intersectObjects(R.pentMeshes.filter(x => x.visible))[0];
     if (hit && hit.object.userData.ok) selectPent(hit.object.userData.id, false);
   });
 }
-
-const COL = { patch:0x3aa675, cut:0xe0752b, rest:0x9aa6b2, ext:0xd6d2c6, plate:0xf2a65a, plateSel:0xe0752b, plateOff:0xe6d5c0 };
+const COL = { patch:0x3aa675, cut:0xe0752b, rest:0x9aa6b2, ext:0xd6d2c6, plate:0xf2a65a, plateSel:0xe0752b, plateOff:0xe6d5c0, spine:0xb79ad6 };
+const T = 0.14;                                                         // thickness drawn for the plastic, in
+function basis(ex, n) { const ez = n.clone().normalize(); const e1 = ex.clone().sub(ez.clone().multiplyScalar(ex.dot(ez))).normalize(); return [e1, new THREE.Vector3().crossVectors(ez, e1), ez]; }
 function build3d() {
-  const f = S.frame, V = f.vertices.map(v => new THREE.Vector3(...v));
+  const f = S.frame, V = f.vertices.map(v => new THREE.Vector3(...v)), Nn = f.normals.map(v => new THREE.Vector3(...v));
   if (R.group) R.scene.remove(R.group);
   const g = new THREE.Group(); R.group = g; R.pentMeshes = [];
-  const n = f.edges.length;
-  const cyl = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.5, 1, 6), new THREE.MeshLambertMaterial({ color:0xffffff }), n);
-  const up = new THREE.Vector3(0, 1, 0), m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), c = new THREE.Vector3();
+  const w = +$('sw').value, n = f.edges.length;
+  // spokes: flat strips lying on the surface
+  const bars = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color:0xffffff }), n);
+  R.edgeM = [];
   f.edges.forEach(([a, b], i) => {
-    const d = new THREE.Vector3().subVectors(V[b], V[a]); const L = d.length();
-    q.setFromUnitVectors(up, d.normalize()); c.addVectors(V[a], V[b]).multiplyScalar(0.5);
-    m.compose(c, q, s.set(1, L, 1)); cyl.setMatrixAt(i, m);
+    const d = new THREE.Vector3().subVectors(V[b], V[a]), L = d.length(), nn = Nn[a].clone().add(Nn[b]);
+    const [ex, ey, ez] = basis(d, nn), m = new THREE.Matrix4().makeBasis(ex, ey, ez);
+    m.scale(new THREE.Vector3(L, w, T)); m.setPosition(V[a].clone().add(V[b]).multiplyScalar(0.5).add(ez.clone().multiplyScalar(T / 2)));
+    R.edgeM.push(m); bars.setMatrixAt(i, m);
   });
-  const nv = V.length;
-  const hub = new THREE.InstancedMesh(new THREE.SphereGeometry(0.75, 10, 8), new THREE.MeshLambertMaterial({ color:0xffffff }), nv);
-  V.forEach((p, i) => { m.compose(p, q.identity(), s.set(1, 1, 1)); hub.setMatrixAt(i, m); });
-  g.add(cyl); g.add(hub); R.cyl = cyl; R.hub = hub;
-  f.pentagons.forEach(p => {
-    const P = p.corners.map(i => V[i]); const cen = new THREE.Vector3(); P.forEach(x => cen.add(x)); cen.divideScalar(P.length);
-    const pos = []; P.forEach((a, i) => { const b = P[(i + 1) % P.length]; pos.push(cen.x, cen.y, cen.z, a.x, a.y, a.z, b.x, b.y, b.z); });
+  const nodeIds = [...new Set(f.edges.flatMap(e => [e[0], e[1]]))];
+  const discs = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.5, 1, 20).rotateX(Math.PI / 2), new THREE.MeshLambertMaterial({ color:0xffffff }), nodeIds.length);
+  R.nodeM = []; R.nodeIds = nodeIds;
+  nodeIds.forEach((v, i) => {
+    const ex = Math.abs(Nn[v].x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0); const [e1, e2, ez] = basis(ex, Nn[v]);
+    const m = new THREE.Matrix4().makeBasis(e1, e2, ez); m.scale(new THREE.Vector3(w, w, T)); m.setPosition(V[v].clone().add(ez.clone().multiplyScalar(T / 2)));
+    R.nodeM.push(m); discs.setMatrixAt(i, m);
+  });
+  g.add(bars); g.add(discs); R.bars = bars; R.discs = discs;
+  // pentagon plates with the polyp hole
+  f.plates.forEach(p => {
+    const P = p.corners.map(i => V[i]), c = new THREE.Vector3(...p.centre), nrm = new THREE.Vector3(...p.normal);
+    const ex = P[0].clone().sub(c); const [e1, e2, ez] = basis(ex, nrm);
+    const pl = P.map(q => [q.clone().sub(c).dot(e1), q.clone().sub(c).dot(e2)]);
+    const K = 48, rin = f.hole / 2, pos = [], ring = (rad, k) => [rad * Math.cos(2 * Math.PI * k / K), rad * Math.sin(2 * Math.PI * k / K)];
+    const hit = (ang) => { let best = 1e9; const dx = Math.cos(ang), dy = Math.sin(ang);
+      for (let i = 0; i < pl.length; i++) { const a = pl[i], b = pl[(i + 1) % pl.length], ex_ = b[0] - a[0], ey_ = b[1] - a[1], den = dx * ey_ - dy * ex_;
+        if (Math.abs(den) < 1e-9) continue; const t = (a[0] * ey_ - a[1] * ex_) / den, s = (a[0] * dy - a[1] * dx) / den; if (t > 0 && s >= -1e-6 && s <= 1 + 1e-6) best = Math.min(best, t); }
+      return best; };
+    const to3 = q => c.clone().add(e1.clone().multiplyScalar(q[0])).add(e2.clone().multiplyScalar(q[1])).add(ez.clone().multiplyScalar(T * 0.6));
+    for (let k = 0; k < K; k++) {
+      const a0 = 2 * Math.PI * k / K, a1 = 2 * Math.PI * (k + 1) / K, o0 = ring(hit(a0), k), o1 = ring(hit(a1), k + 1), i0 = ring(rin, k), i1 = ring(rin, k + 1);
+      [[i0, o0, o1], [i0, o1, i1]].forEach(tr => tr.forEach(q => { const v = to3(q); pos.push(v.x, v.y, v.z); }));
+    }
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.computeVertexNormals();
     const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color:COL.plate, side:THREE.DoubleSide }));
-    mesh.userData = { id:p.id, ok:p.ok, centre:cen.clone() }; g.add(mesh); R.pentMeshes.push(mesh);
+    mesh.userData = { id:p.id, ok:p.ok, centre:c.clone() }; g.add(mesh); R.pentMeshes.push(mesh);
   });
+  // spine: a 4 in strip along the inside of the curve, with a round bump and a rivet hole at each connection
+  R.spineMeshes = [];
+  if (f.spine) {
+    const pos = [], st = f.spine.strip;
+    const lift = (p, q) => { return p; };
+    for (let i = 0; i < st.length - 1; i++) {
+      const A = new THREE.Vector3(...st[i][0]), B = new THREE.Vector3(...st[i][1]), C = new THREE.Vector3(...st[i + 1][0]), D = new THREE.Vector3(...st[i + 1][1]);
+      const up = new THREE.Vector3(0, 0, T * 0.5);
+      [[A, B, D], [A, D, C]].forEach(tr => tr.forEach(v => { const q = v.clone().add(up); pos.push(q.x, q.y, q.z); }));
+    }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.computeVertexNormals();
+    const strip = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color:COL.spine, side:THREE.DoubleSide })); g.add(strip); R.spineMeshes.push(strip);
+    const bumpGeo = new THREE.CylinderGeometry(f.spine.bump_radius, f.spine.bump_radius, T, 24).rotateX(Math.PI / 2);
+    const holeGeo = new THREE.CylinderGeometry(f.spine.hole / 2, f.spine.hole / 2, T * 1.2, 12).rotateX(Math.PI / 2);
+    f.spine.bumps.forEach(b => {
+      const nn = Nn[b.node], ex = Math.abs(nn.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0); const [e1, e2, ez] = basis(ex, nn);
+      [[bumpGeo, COL.spine], [holeGeo, 0x222222]].forEach(([geo_, col]) => { const mm = new THREE.Mesh(geo_, new THREE.MeshLambertMaterial({ color:col })); mm.setRotationFromMatrix(new THREE.Matrix4().makeBasis(e1, e2, ez)); mm.position.copy(V[b.node]).add(ez.clone().multiplyScalar(T / 2 + (col === 0x222222 ? 0.02 : 0))); g.add(mm); R.spineMeshes.push(mm); });
+    });
+  }
   R.scene.add(g);
-  const box = new THREE.Box3().setFromPoints(V); R.box = box; showAll();
+  R.box = new THREE.Box3().setFromPoints(V); showAll();
   colour3d();
 }
 function colour3d() {
-  const f = S.frame, P = S.patch, col = new THREE.Color();
-  const inPatch = new Set(P ? P.vertices : []), solid = new Set((P ? P.spokes : []).map(([a, b]) => a + '-' + b));
+  const f = S.frame, P = S.patch, col = new THREE.Color(), only = $('onlySection').checked && P;
+  const inPatch = new Set(P ? P.vertices : []), solid = new Set((P ? P.spokes : []).map(([a, b]) => Math.min(a, b) + '-' + Math.max(a, b)));
   const cutSet = new Set((P ? P.cuts : []).map(([a, b]) => Math.min(a, b) + '-' + Math.max(a, b)));
+  const zero = new THREE.Matrix4().makeScale(0, 0, 0);
   f.edges.forEach(([a, b, ext], i) => {
-    const k = a + '-' + b, k2 = b + '-' + a;
-    let c = ext ? COL.ext : COL.rest;
-    if (cutSet.has(k)) c = COL.cut; else if (solid.has(k) || solid.has(k2)) c = COL.patch;
-    R.cyl.setColorAt(i, col.setHex(c));
+    const k = a + '-' + b; let c = ext ? COL.ext : COL.rest, inSec = false;
+    if (cutSet.has(k)) { c = COL.cut; inSec = true; } else if (solid.has(k)) { c = COL.patch; inSec = true; }
+    R.bars.setColorAt(i, col.setHex(c)); R.bars.setMatrixAt(i, only && !inSec ? zero : R.edgeM[i]);
   });
-  for (let i = 0; i < f.vertices.length; i++) R.hub.setColorAt(i, col.setHex(inPatch.has(i) ? COL.patch : COL.rest));
-  R.cyl.instanceColor.needsUpdate = true; R.hub.instanceColor.needsUpdate = true;
-  R.pentMeshes.forEach(mm => mm.material.color.setHex(mm.userData.id === S.pent ? COL.plateSel : (mm.userData.ok ? COL.plate : COL.plateOff)));
+  R.nodeIds.forEach((v, i) => { R.discs.setColorAt(i, col.setHex(inPatch.has(v) ? COL.patch : (S.frame.edges.length && COL.rest))); R.discs.setMatrixAt(i, only && !inPatch.has(v) ? zero : R.nodeM[i]); });
+  R.bars.instanceColor.needsUpdate = true; R.discs.instanceColor.needsUpdate = true; R.bars.instanceMatrix.needsUpdate = true; R.discs.instanceMatrix.needsUpdate = true;
+  R.pentMeshes.forEach(mm => { mm.material.color.setHex(mm.userData.id === S.pent ? COL.plateSel : (mm.userData.ok ? COL.plate : COL.plateOff)); mm.visible = !only || mm.userData.id === S.pent; });
+  R.spineMeshes.forEach(m => m.visible = $('showSpine').checked && !only);
 }
 function showAll() {
   const b = R.box, c = b.getCenter(new THREE.Vector3()), sz = b.getSize(new THREE.Vector3()), r = Math.max(sz.x, sz.y, sz.z);
-  R.controls.target.copy(c); R.camera.position.set(c.x - r * 0.9, c.y - r * 1.4, c.z + r * 0.35); R.camera.lookAt(c); R.controls.update();
+  R.controls.target.copy(c); R.camera.position.set(c.x, c.y - r * 1.4, c.z + r * 0.6); R.camera.lookAt(c); R.controls.update();
 }
-function zoomPatch() {
-  const mesh = R.pentMeshes.find(mm => mm.userData.id === S.pent); if (!mesh) return;
-  const c = mesh.userData.centre, dir = R.camera.position.clone().sub(R.controls.target).normalize();
-  R.controls.target.copy(c); R.camera.position.copy(c.clone().add(dir.multiplyScalar(55))); R.controls.update();
+function zoomPatch() {                                   // look straight at the selected pentagon, from outside the tube
+  const pl = S.frame.plates.find(p => p.id === S.pent); if (!pl) return;
+  const c = new THREE.Vector3(...pl.centre), n = new THREE.Vector3(...pl.normal);
+  R.controls.target.copy(c); R.camera.position.copy(c.clone().add(n.multiplyScalar(62))); R.camera.up.set(0, 0, 1); R.controls.update();
 }
 
 // ---------- data ----------
-function opts() {
-  return { spoke_width:+$('sw').value, circle_diameter:+$('cd').value, rivet_hole:+$('rh').value, clearance:+$('cl').value, spread:$('spread').checked };
-}
-function qs() { return new URLSearchParams({ layout:S.layout, pent:S.pent, rings:$('rings').value }).toString(); }
+const opts = () => ({ spoke_width:+$('sw').value, rivet_hole:+$('rh').value, clearance:+$('cl').value });
+const qs = () => new URLSearchParams({ layout:S.layout, pent:S.pent, rings:$('rings').value }).toString();
 async function loadLayouts(pick) {
   const d = await j('/api/layouts');
   $('layout').innerHTML = d.layouts.map(l => `<option value="${l.id}">${l.label}</option>`).join('');
@@ -219,57 +248,59 @@ async function loadFrame() {
   if (f.error) { $('layoutInfo').textContent = f.error; return; }
   S.frame = f;
   const usable = f.pentagons.filter(p => p.ok);
-  $('pent').innerHTML = f.pentagons.map(p => `<option value="${p.id}" ${p.ok ? '' : 'disabled'}>Pentagon ${p.id}${p.ok ? '' : ' (too near the edge)'}</option>`).join('');
-  $('layoutInfo').innerHTML = `Hub spacing ${f.params.EDGE} in &middot; polyp hole ${fmt(f.hole, 1)} in &middot; ${f.pentagons.length} pentagons, ${usable.length} usable with ${$('rings').value} ring(s)`;
-  S.natural = f.summary.natural; S.usableN = usable.length; S.pentN = f.pentagons.length;
+  $('pent').innerHTML = f.pentagons.map(p => `<option value="${p.id}" ${p.ok ? '' : 'disabled'}>Pentagon ${p.id}${p.ok ? '' : (p.spine ? ' (on the spine)' : ' (too near the end)')}</option>`).join('');
+  const s = f.summary;
+  $('layoutInfo').innerHTML = `Polyp hole ${fmt(f.hole, 1)} in &middot; ${s.pentagons} pentagons: ${s.usable} usable with ${$('rings').value} ring(s)` + (s.on_spine ? `, ${s.on_spine} lost to the spine` : '');
+  $('summary').innerHTML = `<b>${s.spokes}</b> spokes between the ends: length <b>${fmt(s.spoke_mean)} in</b> on average, from ${fmt(s.spoke_min)} to ${fmt(s.spoke_max)} in (spread ${fmt(s.spoke_std_pct, 1)} %). ` +
+    (f.equalized ? `The layout was equalised (see notes): the rule is every spoke the same length; this is how close it got while keeping the cells round.` : `This layout has not been equalised.`);
   if (!R) init3d();
   S.pent = usable.length ? (usable.some(p => p.id === S.pent) ? S.pent : usable[Math.floor(usable.length / 2)].id) : null;
   $('pent').value = S.pent;
+  $('spineCard').style.display = f.spine ? '' : 'none';
+  if (f.spine) { S.spineB = { width:f.spine.width, length:f.spine.length, bump_radius:f.spine.bump_radius, hole:f.spine.hole, bumps:f.spine.bumps.filter(b => b.sigma >= -1 && b.sigma <= f.spine.length + 1) };
+    $('spine').innerHTML = PatchDraw.spineSvg(S.spineB, false);
+    $('spineNote').textContent = `${f.spine.width} in wide, ${fmt(f.spine.length, 1)} in long (measured along its middle), ${S.spineB.bumps.length} bumps, each with a ${f.spine.hole} in rivet hole where a spoke connects. Drawn flat; on the tube it follows the curve.`; }
   build3d();
   await loadPatch(true);
 }
 let pending = null;
-function schedulePatch() { clearTimeout(pending); pending = setTimeout(render, 100); }
+function schedule() { clearTimeout(pending); pending = setTimeout(() => { if (S.frame) build3d(); render(); }, 120); }
 async function loadPatch(zoom) {
-  if (S.pent === null) { S.P = null; $('flat').innerHTML = '<div class="note">No pentagon is far enough from the edge for this many rings.</div>'; $('stats').innerHTML = ''; return; }
+  if (S.pent === null) { S.P = null; $('flat').innerHTML = '<div class="note">No pentagon is far enough from the ends and the spine for this many rings.</div>'; $('stats').innerHTML = ''; colour3d(); return; }
   const P = await j('/api/patch?' + qs());
   if (P.error) { $('flat').innerHTML = `<div class="bad">${P.error}</div>`; return; }
-  S.P = P;
-  render();
-  if (zoom) zoomPatch();
+  S.P = P; render(); if (zoom) zoomPatch();
 }
 function render() {
   if (!S.P) return;
-  const o = opts(), R_ = PatchDraw.prepare(S.P, o), st = R_.stats, sz = R_.size;
-  S.patch = { vertices:S.P.vertices, spokes:S.P.spokes, cuts:S.P.cut_pairs };
-  $('flat').innerHTML = PatchDraw.svg(R_, o, false);
-  S.R = R_;
-  $('stats').innerHTML = [
-    ['Spokes cut', st.cuts], ['Cannot be cut yet', st.blocked], ['Longest pull', fmt(st.gapMax) + ' in'], ['Average pull', fmt(st.gapMean) + ' in'],
-    ['Patch size', fmt(Math.max(sz.W, sz.H), 1) + ' x ' + fmt(Math.min(sz.W, sz.H), 1) + ' in'], ['Hubs joining next patch', st.joints]
-  ].map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
+  const o = opts(), Rz = PatchDraw.prepare(S.P, o), st = Rz.stats, sz = Rz.size;
+  S.patch = { vertices:S.P.vertices, spokes:S.P.spokes, cuts:S.P.cut_pairs }; S.R = Rz;
+  $('flat').innerHTML = PatchDraw.svg(Rz, o, false);
+  $('stats').innerHTML = [['Loose spokes', st.loose], ['Not fitting a window', st.loose - st.nested], ['Loose length', fmt(st.lMin, 1) + ' to ' + fmt(st.lMax, 1) + ' in'],
+    ['Patch size', fmt(Math.max(sz.W, sz.H), 1) + ' x ' + fmt(Math.min(sz.W, sz.H), 1) + ' in'], ['Nodes riveted to the spine', st.onSpine], ['Nodes joining next patch', st.joins]]
+    .map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
   $('fit').innerHTML = (sz.fits ? 'Fits a 4 x 8 ft sheet' : '<span class="bad">Does not fit a 4 x 8 ft sheet</span>') +
-    ` (smallest box ${fmt(sz.W, 1)} x ${fmt(sz.H, 1)} in, turned ${sz.deg} degrees).` +
-    (st.blocked ? ` <span class="bad">${st.blocked} free end(s) still touch something (red rings). Try a narrower spoke, or a smaller gap.</span>` : '') +
-    (st.pentInPatch.length ? ` <span class="bad">Another pentagon (${st.pentInPatch.join(', ')}) is inside this patch and is treated as an ordinary window, so its plate is not rigid yet. Use fewer rings.</span>` : '');
-  const need = o.circle_diameter < o.spoke_width ? o.spoke_width : o.circle_diameter, nat = S.natural || [];
-  const close = nat.filter(g => g < need + o.clearance).length;
-  $('summary').innerHTML = `With ${$('rings').value} ring(s), ${S.usableN} of ${S.pentN} pentagon patches are on the real skin. Before swinging apart, <b>${close} of ${nat.length}</b> cut spokes would have their two circles touching (their natural gap is under ${fmt(need + o.clearance)} in): that is why the free ends are swung apart.`;
+    ` (smallest box ${fmt(sz.W, 1)} x ${fmt(sz.H, 1)} in, turned ${sz.deg} degrees), loose spokes included.` +
+    (st.blocked ? ` <span class="bad">${st.blocked} loose spoke(s) found no clear spot (red dashed circle).</span>` : '') +
+    (st.pentInPatch.length ? ` <span class="bad">Another pentagon (${st.pentInPatch.join(', ')}) is inside this patch and is treated as ordinary windows, so its plate is not rigid yet. Use 1 ring.</span>` : '');
   colour3d();
 }
 function selectPent(id, zoom) { S.pent = id; $('pent').value = id; loadPatch(zoom !== false); }
 
 // ---------- controls ----------
-function labels() { $('ringsV').textContent = $('rings').value; $('swV').textContent = $('sw').value; $('cdV').textContent = $('cd').value; $('rhV').textContent = $('rh').value; $('clV').textContent = $('cl').value; }
+const labels = () => { $('ringsV').textContent = $('rings').value; $('swV').textContent = $('sw').value; $('rhV').textContent = $('rh').value; $('clV').textContent = $('cl').value; };
 $('layout').onchange = () => { S.layout = $('layout').value; loadFrame(); };
 $('pent').onchange = () => selectPent(Number($('pent').value));
-const step = d => { const ids = S.frame.pentagons.filter(p => p.ok).map(p => p.id); selectPent(ids[(ids.indexOf(S.pent) + d + ids.length) % ids.length]); };
+const step = d => { const ids = S.frame.pentagons.filter(p => p.ok).map(p => p.id); if (ids.length) selectPent(ids[(ids.indexOf(S.pent) + d + ids.length) % ids.length]); };
 $('prev').onclick = () => step(-1); $('next').onclick = () => step(1);
 $('rings').oninput = () => { labels(); store.set('rings', $('rings').value); clearTimeout(pending); pending = setTimeout(loadFrame, 150); };
-['sw', 'cd', 'rh', 'cl'].forEach(id => $(id).oninput = () => { labels(); store.set(id === 'sw' ? 'sw2' : id === 'cd' ? 'cd2' : id, $(id).value); schedulePatch(); });
-$('spread').onchange = render;
+['sw', 'rh', 'cl'].forEach(id => $(id).oninput = () => { labels(); store.set(id + '3', $(id).value); schedule(); });
+$('onlySection').onchange = () => { colour3d(); if ($('onlySection').checked) zoomPatch(); };
+$('showSpine').onchange = colour3d;
 $('focus').onclick = zoomPatch; $('all').onclick = showAll;
-$('dl').onclick = () => { if (!S.R) return; const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([PatchDraw.svg(S.R, opts(), true)], { type:'image/svg+xml' })); a.download = `patch-${S.layout}-pentagon${S.pent}.svg`; a.click(); };
+const save = (text, name) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type:'image/svg+xml' })); a.download = name; a.click(); };
+$('dl').onclick = () => { if (S.R) save(PatchDraw.svg(S.R, opts(), true), `section-${S.layout}-pentagon${S.pent}.svg`); };
+$('dlSpine').onclick = () => { if (S.spineB) save(PatchDraw.spineSvg(S.spineB, true), `spine-${S.layout}.svg`); };
 $('run').onclick = async () => {
   $('run').disabled = true; $('runState').textContent = 'Starting...';
   const r = await j('/api/run', { method:'POST', body:JSON.stringify({ mesh:$('mesh').value, edge:$('edge').value }) });
@@ -283,8 +314,7 @@ $('run').onclick = async () => {
   };
   poll();
 };
-$('rings').value = store.get('rings', '1'); $('sw').value = store.get('sw2', '1.5'); $('cd').value = store.get('cd2', '1');
-$('rh').value = store.get('rh', '0.25'); $('cl').value = store.get('cl', '0.125'); labels();
+$('rings').value = store.get('rings', '1'); $('sw').value = store.get('sw3', '1.25'); $('rh').value = store.get('rh3', '0.25'); $('cl').value = store.get('cl3', '0.125'); labels();
 loadLayouts();
 </script>
 </body>
