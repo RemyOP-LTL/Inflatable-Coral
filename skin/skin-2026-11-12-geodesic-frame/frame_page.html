@@ -37,7 +37,7 @@
 </style>
 </head>
 <body>
-<header><h1>Frame tool</h1><span>Spokes with round ends, pentagons as solid plates, loose spokes riveted at both ends. Spine along the inside of the curve.</span></header>
+<header><h1>Frame tool</h1><span>Spokes with round ends, pentagons as solid plates, loose spokes riveted at both ends, spine along the inside of the curve.</span></header>
 <div class="wrap">
   <div>
     <div class="card">
@@ -56,9 +56,8 @@
       <h2>Patch</h2>
       <label>Pentagon</label>
       <div class="row"><button id="prev">&larr;</button><select id="pent" style="flex:4"></select><button id="next">&rarr;</button></div>
-      <label>Rings of windows round the pentagon <span class="val" id="ringsV"></span></label>
-      <input type="range" id="rings" min="1" max="3" step="1" value="1">
-      <div class="note">1 = the windows touching the pentagon. More rings grow the patch past 4 ft quickly.</div>
+      <input type="hidden" id="rings" value="1">
+      <div class="note">A part is one pentagon plate and the spokes attached to it. Every other spoke is loose.</div>
     </div>
     <div class="card">
       <h2>Plastic</h2>
@@ -73,7 +72,7 @@
       <label><input type="checkbox" id="showSpine" checked> Show the spine</label>
     </div>
     <div class="card note">
-      <b>Reading the flat patch.</b> Green = the body: the pentagon plate and the spokes that stay attached to it. Orange = loose spokes: each is cut as its own piece and sits inside a window of the body. Each is riveted at both ends: the number on a loose spoke matches the number at the two body ends it joins. Purple rings = nodes that rivet to the spine. Blue rings = nodes that join the next patch.
+      <b>Reading the flat patch.</b> Green = the part: one pentagon plate and the spokes attached to it. Orange = loose spokes that are cut on this part's sheet, each nested in a window; all loose spokes are one length. Every loose spoke has a number; the same number marks each place it rivets to (the spoke may belong to a neighbouring part's sheet). Purple = ends that rivet to the spine.
     </div>
   </div>
 
@@ -81,7 +80,7 @@
     <div class="views">
       <div class="card"><h2>On the tube (3D) &middot; click a pentagon to pick it</h2><div id="three"></div>
         <div class="key">
-          <span><i style="background:#3aa675"></i>this section</span><span><i style="background:#e0752b"></i>loose spoke in it</span>
+          <span><i style="background:#3aa675"></i>this part</span><span><i style="background:#e0752b"></i>loose spokes on its sheet</span><span><i style="background:#f0b98c"></i>other loose spokes</span>
           <span><i style="background:#f2a65a"></i>pentagon plates</span><span><i style="background:#9aa6b2"></i>rest of the spokes</span>
           <span><i style="background:#b79ad6"></i>spine</span><span><i style="background:#d6d2c6"></i>extension past the ends</span>
         </div>
@@ -136,7 +135,7 @@ function init3d() {
     if (hit && hit.object.userData.ok) selectPent(hit.object.userData.id, false);
   });
 }
-const COL = { patch:0x3aa675, cut:0xe0752b, rest:0x9aa6b2, ext:0xd6d2c6, plate:0xf2a65a, plateSel:0xe0752b, plateOff:0xe6d5c0, spine:0xb79ad6 };
+const COL = { patch:0x3aa675, cut:0xe0752b, looseAll:0xf0b98c, rest:0x9aa6b2, ext:0xd6d2c6, plate:0xf2a65a, plateSel:0xe0752b, plateOff:0xe6d5c0, spine:0xb79ad6 };
 const T = 0.14;                                                         // thickness drawn for the plastic, in
 function basis(ex, n) { const ez = n.clone().normalize(); const e1 = ex.clone().sub(ez.clone().multiplyScalar(ex.dot(ez))).normalize(); return [e1, new THREE.Vector3().crossVectors(ez, e1), ez]; }
 function build3d() {
@@ -209,8 +208,8 @@ function colour3d() {
   const inPatch = new Set(P ? P.vertices : []), solid = new Set((P ? P.spokes : []).map(([a, b]) => Math.min(a, b) + '-' + Math.max(a, b)));
   const cutSet = new Set((P ? P.cuts : []).map(([a, b]) => Math.min(a, b) + '-' + Math.max(a, b)));
   const zero = new THREE.Matrix4().makeScale(0, 0, 0);
-  f.edges.forEach(([a, b, ext], i) => {
-    const k = a + '-' + b; let c = ext ? COL.ext : COL.rest, inSec = false;
+  f.edges.forEach(([a, b, ext_], i) => {
+    const ext = ext_ === 1; const k = a + '-' + b; let c = ext ? COL.ext : (ext_ === 2 ? COL.looseAll : COL.rest), inSec = false;
     if (cutSet.has(k)) { c = COL.cut; inSec = true; } else if (solid.has(k)) { c = COL.patch; inSec = true; }
     R.bars.setColorAt(i, col.setHex(c)); R.bars.setMatrixAt(i, only && !inSec ? zero : R.edgeM[i]);
   });
@@ -250,9 +249,9 @@ async function loadFrame() {
   const usable = f.pentagons.filter(p => p.ok);
   $('pent').innerHTML = f.pentagons.map(p => `<option value="${p.id}" ${p.ok ? '' : 'disabled'}>Pentagon ${p.id}${p.ok ? '' : (p.spine ? ' (on the spine)' : ' (too near the end)')}</option>`).join('');
   const s = f.summary;
-  $('layoutInfo').innerHTML = `Polyp hole ${fmt(f.hole, 1)} in &middot; ${s.pentagons} pentagons: ${s.usable} usable with ${$('rings').value} ring(s)` + (s.on_spine ? `, ${s.on_spine} lost to the spine` : '');
-  $('summary').innerHTML = `<b>${s.spokes}</b> spokes between the ends: length <b>${fmt(s.spoke_mean)} in</b> on average, from ${fmt(s.spoke_min)} to ${fmt(s.spoke_max)} in (spread ${fmt(s.spoke_std_pct, 1)} %). ` +
-    (f.equalized ? `The layout was equalised (see notes): the rule is every spoke the same length; this is how close it got while keeping the cells round.` : `This layout has not been equalised.`);
+  $('layoutInfo').innerHTML = `Polyp hole ${fmt(f.hole, 1)} in &middot; ${s.pentagons} pentagons: ${s.usable} complete parts` + (s.on_spine ? `, ${s.on_spine} lost to the spine (no polyp)` : '');
+  $('summary').innerHTML = `<b>${s.loose}</b> loose spokes (the rule: all the same length): <b>${fmt(s.loose_mean)} in</b> on average, from ${fmt(s.loose_min)} to ${fmt(s.loose_max)} in, a spread of <b>${fmt(s.loose_std_pct, 1)} %</b>. ` +
+    `<b>${s.attached}</b> attached spokes (cut with their plate, any length): ${fmt(s.attached_min)} to ${fmt(s.attached_max)} in.`;
   if (!R) init3d();
   S.pent = usable.length ? (usable.some(p => p.id === S.pent) ? S.pent : usable[Math.floor(usable.length / 2)].id) : null;
   $('pent').value = S.pent;
@@ -276,8 +275,8 @@ function render() {
   const o = opts(), Rz = PatchDraw.prepare(S.P, o), st = Rz.stats, sz = Rz.size;
   S.patch = { vertices:S.P.vertices, spokes:S.P.spokes, cuts:S.P.cut_pairs }; S.R = Rz;
   $('flat').innerHTML = PatchDraw.svg(Rz, o, false);
-  $('stats').innerHTML = [['Loose spokes', st.loose], ['Not fitting a window', st.loose - st.nested], ['Loose length', fmt(st.lMin, 1) + ' to ' + fmt(st.lMax, 1) + ' in'],
-    ['Patch size', fmt(Math.max(sz.W, sz.H), 1) + ' x ' + fmt(Math.min(sz.W, sz.H), 1) + ' in'], ['Nodes riveted to the spine', st.onSpine], ['Nodes joining next patch', st.joins]]
+  $('stats').innerHTML = [['Loose spokes cut on this sheet', st.loose], ['Not fitting a window', st.loose - st.nested], ['Loose ends riveted here', st.ends], ['Loose length', fmt(st.lMin, 1) + ' to ' + fmt(st.lMax, 1) + ' in'],
+    ['Patch size', fmt(Math.max(sz.W, sz.H), 1) + ' x ' + fmt(Math.min(sz.W, sz.H), 1) + ' in'], ['Of those, to the spine', st.toSpine]]
     .map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
   $('fit').innerHTML = (sz.fits ? 'Fits a 4 x 8 ft sheet' : '<span class="bad">Does not fit a 4 x 8 ft sheet</span>') +
     ` (smallest box ${fmt(sz.W, 1)} x ${fmt(sz.H, 1)} in, turned ${sz.deg} degrees), loose spokes included.` +
@@ -288,12 +287,11 @@ function render() {
 function selectPent(id, zoom) { S.pent = id; $('pent').value = id; loadPatch(zoom !== false); }
 
 // ---------- controls ----------
-const labels = () => { $('ringsV').textContent = $('rings').value; $('swV').textContent = $('sw').value; $('rhV').textContent = $('rh').value; $('clV').textContent = $('cl').value; };
+const labels = () => { $('swV').textContent = $('sw').value; $('rhV').textContent = $('rh').value; $('clV').textContent = $('cl').value; };
 $('layout').onchange = () => { S.layout = $('layout').value; loadFrame(); };
 $('pent').onchange = () => selectPent(Number($('pent').value));
 const step = d => { const ids = S.frame.pentagons.filter(p => p.ok).map(p => p.id); if (ids.length) selectPent(ids[(ids.indexOf(S.pent) + d + ids.length) % ids.length]); };
 $('prev').onclick = () => step(-1); $('next').onclick = () => step(1);
-$('rings').oninput = () => { labels(); store.set('rings', $('rings').value); clearTimeout(pending); pending = setTimeout(loadFrame, 150); };
 ['sw', 'rh', 'cl'].forEach(id => $(id).oninput = () => { labels(); store.set(id + '3', $(id).value); schedule(); });
 $('onlySection').onchange = () => { colour3d(); if ($('onlySection').checked) zoomPatch(); };
 $('showSpine').onchange = colour3d;
@@ -314,7 +312,7 @@ $('run').onclick = async () => {
   };
   poll();
 };
-$('rings').value = store.get('rings', '1'); $('sw').value = store.get('sw3', '1.25'); $('rh').value = store.get('rh3', '0.25'); $('cl').value = store.get('cl3', '0.125'); labels();
+$('sw').value = store.get('sw3', '1.25'); $('rh').value = store.get('rh3', '0.25'); $('cl').value = store.get('cl3', '0.125'); labels();
 loadLayouts();
 </script>
 </body>

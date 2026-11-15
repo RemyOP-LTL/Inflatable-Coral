@@ -22,6 +22,8 @@ from collections import deque
 
 import numpy as np
 
+from partition import partition as make_partition
+
 DEFAULTS = dict(rings=1, spoke_width=1.0, circle_diameter=1.5, rivet_hole=0.25, plate="outline")
 SHEET = (48.0, 96.0)          # 4 x 8 ft sheet, inches
 
@@ -67,6 +69,16 @@ class Frame:
         self.spine = layout.get("spine")
         self.band = set(self.spine["band_nodes"]) if self.spine else set()
         self.on_spine = [bool(i.get("spine")) for i in self.info]
+        part = layout.get("partition") or make_partition(layout, self.band)
+        self.part = part
+        self.root = {int(k): v for k, v in part["root"].items()}
+        self.depth = {int(k): v for k, v in part["depth"].items()}
+        self.tree = {frozenset(e) for e in part["tree"]}
+        self.loose = [tuple(e) for e in part["loose"]]
+        self.loose_id = {frozenset(e): i + 1 for i, e in enumerate(self.loose)}
+        self.region = {}
+        for v, r in self.root.items():
+            self.region.setdefault(r, set()).add(v)
         self._ccw = {}
 
     # ---- helpers -------------------------------------------------------------------------
@@ -111,20 +123,26 @@ class Frame:
         return a in self.band and b in self.band
 
     def pentagons(self, rings=1):
-        """Pentagons whose whole patch lies on the real skin (not on the greyed extension) and not on the spine."""
+        """Plates, and whether their part (the plate and its attached spokes) lies on the real skin, not on the greyed
+        extension at the ends. A plate that touches the spine is lost (no polyp there)."""
         out = []
-        for p, s in enumerate(self.sides):
-            if s == 5 and not self.end[p]:
-                ok = all(not self.end[q] for q in self.ring_polys(p, rings + 1)) and not self.on_spine[p]
-                out.append(dict(id=p, ok=ok, centre=self.info[p]["centre"], spine=self.on_spine[p]))
+        for p, s_ in enumerate(self.sides):
+            if s_ == 5 and not self.end[p]:
+                if self.on_spine[p]:
+                    out.append(dict(id=p, ok=False, centre=self.info[p]["centre"], spine=True)); continue
+                nodes = self.region.get(p, set())
+                ok = all(not self.end[q] for v in nodes for q in self.vpolys[v])
+                out.append(dict(id=p, ok=ok, centre=self.info[p]["centre"], spine=False))
         return out
 
     # ---- the flattening --------------------------------------------------------------------
     def flatten(self, pent, rings=1):
-        """Lay one pentagon patch flat. Returns plain data (flat positions in inches, spokes, cuts)."""
+        """Lay one part flat: the plate and the tree of spokes attached to it (a tree always lays flat, nothing to close).
+        Also lists the loose spokes that belong to this part's sheet and the loose ends that rivet to its nodes."""
         V = self.V
-        pp = self.ring_polys(pent, rings)
-        S_edges = {e for e, ps in self.edge_polys.items() if any(q in pp for q in ps) and not self.hidden(e)}
+        nodes = self.region.get(pent, set())
+        S_edges = {e for e in self.tree if e <= nodes}
+        pp = {q for v in nodes for q in self.vpolys[v]}
         plate = self.polys[pent]
         P3 = V[plate]; o = P3.mean(0); n = newell(P3)
         e1 = P3[0] - o; e1 = e1 - n * np.dot(e1, n); e1 /= np.linalg.norm(e1)
@@ -176,40 +194,43 @@ class Frame:
                 pos[w] = pos[x] + L * np.array([math.cos(d[w]), math.sin(d[w])])
                 parent[w] = x; depth[w] = depth[x] + 1; order[w] = len(order)
                 tree.add(e); queue.append(w)
-        # spokes that are not in the tree: the owner (nearer the plate) keeps the spoke, its far end is free
-        cuts, solid = [], []
-        for e in S_edges:
-            if e in plate_edges:
+        solid = [tuple(e) for e in S_edges if e not in plate_edges]
+        cuts, ends = [], []
+        for (a_, b_) in self.loose:
+            ina, inb = a_ in nodes, b_ in nodes
+            if not (ina or inb):
                 continue
-            a, b = tuple(e)
-            if e in tree:
-                solid.append((a, b)); continue
-            own, tgt = (a, b) if (depth[a], order[a]) <= (depth[b], order[b]) else (b, a)
-            L = float(np.linalg.norm(V[a] - V[b]))
-            th = dirs[own][tgt]
-            free = pos[own] + L * np.array([math.cos(th), math.sin(th)])
-            cuts.append(dict(own=own, target=tgt, free=free, gap=float(np.linalg.norm(free - pos[tgt])), length=L))
-        # hubs that also join a spoke outside this patch (the next patch will meet them there)
-        joint = {v for v in pos if any(frozenset((v, w)) not in S_edges and not self.hidden(frozenset((v, w))) for w in self.adj[v])}
+            key = frozenset((a_, b_))
+            ra, rb = self.root.get(a_), self.root.get(b_)
+            # the spoke is cut on the sheet of the part whose end is nearer its plate (ties: lower plate number)
+            ka = (self.depth.get(a_, 99), ra if ra is not None else 1e9, a_)
+            kb = (self.depth.get(b_, 99), rb if rb is not None else 1e9, b_)
+            own, tgt = (a_, b_) if ka <= kb else (b_, a_)
+            spine_end = (a_ in self.band) or (b_ in self.band)
+            for v in (a_, b_):
+                if v in nodes:
+                    ends.append(dict(id=self.loose_id[key], node=v, spine=spine_end))
+            if own in nodes:
+                cuts.append(dict(id=self.loose_id[key], own=own, target=tgt, length=float(np.linalg.norm(V[a_] - V[b_]))))
+        # nodes that also join a spoke outside this part (the next part will meet them there)
+        joint = set()
         plate_err = max(abs(float(np.linalg.norm(pos[a] - pos[b])) - float(np.linalg.norm(V[a] - V[b])))
                         for a, b in map(tuple, plate_edges))
-        return dict(pent=pent, rings=rings, pos=pos, solid=solid, cuts=cuts, joint=joint, plate=plate,
+        return dict(pent=pent, rings=rings, pos=pos, solid=solid, cuts=cuts, ends=ends, joint=joint, plate=plate,
                     plate_err=plate_err, windows=sorted(q for q in pp if q != pent), on_spine=sorted(v for v in pos if v in self.band),
-                    pent_in_patch=[q for q in pp if q != pent and self.sides[q] == 5])
+                    pent_in_patch=[])
 
 
 # ---- what the page needs ------------------------------------------------------------------------
 def patch_data(fr, patch):
-    """Plain data for one flattened patch (inches). The page (patch_draw.js) does the rest: spreading the free ends
-    apart so the parts can be cut, drawing, sizes. Flat positions are keyed by hub number."""
+    """Plain data for one flattened part (inches). The page (patch_draw.js) nests the loose spokes in the flat and draws it."""
     pos = patch["pos"]
     r2 = lambda p: [round(float(p[0]), 4), round(float(p[1]), 4)]
     return dict(
-        pent=patch["pent"], rings=patch["rings"], hole=fr.hole_diameter,
-        plate=patch["plate"], pos={str(v): r2(p) for v, p in pos.items()},
+        pent=patch["pent"], hole=fr.hole_diameter, plate=patch["plate"], pos={str(v): r2(p) for v, p in pos.items()},
         solid=[[a, b] for a, b in patch["solid"]],
-        cuts=[dict(own=c["own"], target=c["target"], L=round(c["length"], 4), free0=r2(c["free"])) for c in patch["cuts"]],
-        joint=sorted(patch["joint"]), windows=sorted(patch["windows"]), pent_in_patch=patch["pent_in_patch"],
+        cuts=[dict(id=c["id"], own=c["own"], target=c["target"], L=round(c["length"], 4)) for c in patch["cuts"]],
+        ends=[dict(id=e["id"], node=e["node"], spine=e["spine"]) for e in patch["ends"]],
+        joint=[], windows=sorted(patch["windows"]), pent_in_patch=[],
         window_nodes=[[v for v in fr.polys[q] if v in pos] for q in sorted(patch["windows"])],
-        on_spine=[int(v) for v in patch["on_spine"]],
-        plate_err=round(patch["plate_err"], 4))
+        on_spine=[], plate_err=round(patch["plate_err"], 4))

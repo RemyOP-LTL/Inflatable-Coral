@@ -33,7 +33,7 @@ HEX57 = os.path.join(os.path.dirname(HERE), "hex57")
 MESH_DIRS = (("example", os.path.join(HEX57, "meshes")), ("yours", os.path.join(HEX57, "uploads")))
 LAYOUT_DIRS = (os.path.join(HERE, "layouts"), os.path.join(HERE, "runs"))
 RUNS = os.path.join(HERE, "runs")
-PORT = int(os.environ.get("FRAME_TOOL_PORT", 8820))     # skin tool 8765.., polyp tool 8800, this tool 8820
+PORT = int(os.environ.get("FRAME_TOOL_PORT", 8790))     # skin tools own 8760-8799 (skin_app 8765.., this tool 8790); polyps own 8800 and up
 VENDOR = os.environ.get("FRAME_VENDOR_DIR", "")         # optional local copy of the 3D library (for offline testing)
 CDN = "https://cdn.jsdelivr.net/npm/three@0.128.0/"
 
@@ -49,7 +49,7 @@ def layout_files():
                 p = os.path.join(base, d, "layout.json")
                 if os.path.isfile(p):
                     out.append((d, p))
-    rank = lambda n: (0 if n.startswith("smile") else 1 if n.startswith("dome") else 2, n)
+    rank = lambda n: (0 if n == "smile-tube" else 1 if n.startswith("smile") else 2 if n.startswith("dome") else 3, n)
     out.sort(key=lambda t: rank(t[0]))
     return out
 
@@ -68,7 +68,9 @@ def label_for(lid, fr):
     p = fr.params
     mesh = os.path.splitext(os.path.basename(str(p.get("MESH_FILE") or lid)))[0]
     if fr.spine:
-        return f"Tube as a smile, with a {fr.spine['width']:g} in spine (spoke spacing about {p.get('EDGE', '?')} in)"
+        lost = len((fr.layout.get("partition") or {}).get("lost", []))
+        how = "layout built around the spine" if "clear" in lid else "spine cut through the layout"
+        return f"Smile tube, {fr.spine['width']:g} in spine: {how}" + ("" if "clear" in lid else f" ({lost} polygons lost)")
     return f"{mesh}, spoke spacing about {p.get('EDGE', '?')} in"
 
 
@@ -86,7 +88,7 @@ def frame_payload(fr, rings):
         if e in plate_edges or fr.hidden(e):
             continue
         a, b = sorted(e)
-        edges.append([a, b, 1 if all(fr.end[p] for p in ps) else 0])
+        edges.append([a, b, 1 if all(fr.end[p] for p in ps) else (2 if e in fr.loose_id else 0)])
     pents = fr.pentagons(rings)
     usable = {q["id"]: q["ok"] for q in pents}
     for p, s_ in enumerate(fr.sides):
@@ -96,10 +98,12 @@ def frame_payload(fr, rings):
     for q in pents:
         q["corners"] = fr.polys[q["id"]]
     interior = {v for p in range(len(fr.polys)) if not fr.end[p] for v in fr.polys[p]}
-    L = [float(np.linalg.norm(fr.V[a] - fr.V[b])) for a, b, ext in edges if not ext and a in interior and b in interior]
+    L = [float(np.linalg.norm(fr.V[a] - fr.V[b])) for a, b, f_ in edges if f_ == 2 and a in interior and b in interior]
+    Tr = [float(np.linalg.norm(fr.V[a] - fr.V[b])) for a, b, f_ in edges if f_ == 0 and a in interior and b in interior]
     summary = dict(pentagons=len(pents), usable=sum(q["ok"] for q in pents), on_spine=sum(q["spine"] for q in pents),
-                   spokes=len(L), spoke_mean=float(np.mean(L)) if L else 0.0, spoke_min=float(min(L)) if L else 0.0,
-                   spoke_max=float(max(L)) if L else 0.0, spoke_std_pct=float(np.std(L) / np.mean(L) * 100) if L else 0.0)
+                   loose=len(L), loose_mean=float(np.mean(L)) if L else 0.0, loose_min=float(min(L)) if L else 0.0,
+                   loose_max=float(max(L)) if L else 0.0, loose_std_pct=float(np.std(L) / np.mean(L) * 100) if L else 0.0,
+                   attached=len(Tr), attached_min=float(min(Tr)) if Tr else 0.0, attached_max=float(max(Tr)) if Tr else 0.0)
     spine = None
     if fr.spine:
         sp = fr.spine
@@ -116,6 +120,7 @@ def patch_payload(fr, pent, rings):
     d["vertices"] = sorted(pt["pos"])
     d["spokes"] = [[a, b] for a, b in pt["solid"]]
     d["cut_pairs"] = [[c["own"], c["target"]] for c in pt["cuts"]]
+    d["end_nodes"] = sorted({e["node"] for e in pt["ends"]})
     return d
 
 

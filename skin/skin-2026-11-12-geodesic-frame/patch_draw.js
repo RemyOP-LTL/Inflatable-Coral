@@ -37,7 +37,7 @@
     const plate = P.plate.map(v => pos[String(v)]);
     const cen = pts => [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
     const c0 = cen(plate);
-    const loose = P.cuts.map((c, i) => ({ id: i + 1, own: String(c.own), target: String(c.target), L: c.L }));
+    const loose = P.cuts.map(c => ({ id: c.id, own: String(c.own), target: String(c.target), L: c.L }));
 
     // clearance of a capsule (axis A-B, width w) from the body and from the loose spokes already placed
     function clearanceOf(A, B, placed) {
@@ -57,7 +57,8 @@
     const bx0 = Math.min(...pts0.map(p => p[0])), bx1 = Math.max(...pts0.map(p => p[0])), by0 = Math.min(...pts0.map(p => p[1])), by1 = Math.max(...pts0.map(p => p[1]));
     const placed = [];
     for (const l of loose) {
-      const wins = P.window_nodes.map(ns => ns.map(String)).filter(ns => ns.includes(l.own) && ns.includes(l.target));
+      let wins = P.window_nodes.map(ns => ns.map(String)).filter(ns => ns.includes(l.own) && ns.includes(l.target));
+      if (!wins.length) wins = P.window_nodes.map(ns => ns.map(String)).filter(ns => ns.includes(l.own));
       const centres = wins.map(ns => cen(ns.filter(k => pos[k]).map(k => pos[k])));
       let best = null;
       const tryCentre = (c, step, span, dstep) => {
@@ -92,7 +93,7 @@
       stats: {
         loose: loose.length, nested: loose.filter(l => l.ok && l.inWindow).length, blocked: loose.filter(l => !l.ok).length,
         lMin: Ls.length ? Math.min(...Ls) : 0, lMax: Ls.length ? Math.max(...Ls) : 0, lMean: Ls.length ? Ls.reduce((a, b) => a + b, 0) / Ls.length : 0,
-        nodes: Object.keys(pos).length, spokes: solid.length, joins: P.joint.length, onSpine: P.on_spine.length, pentInPatch: P.pent_in_patch
+        nodes: Object.keys(pos).length, spokes: solid.length, ends: P.ends.length, toSpine: P.ends.filter(e => e.spine).length, joins: 0, onSpine: 0, pentInPatch: P.pent_in_patch
       }
     };
   }
@@ -120,16 +121,10 @@
     items.forEach(it => { out += it[0] === 'bar' ? bar(it[1], it[2], it[3], w) : disc(it[1], it[2], it[3]); });
     out += `<circle cx="${X(c0)}" cy="${Y(c0)}" r="${(P.hole / 2).toFixed(3)}" fill="#fff" stroke="${ink}" stroke-width="0.06"/>`;
     const lab = (p, t, c) => `<text x="${X(p)}" y="${Y(add(p, [0, -0.32]))}" font-size="0.85" text-anchor="middle" fill="${c}" stroke="#fff" stroke-width="0.2" paint-order="stroke" font-family="sans-serif" font-weight="600">${t}</text>`;
-    loose.forEach(l => {
-      out += hole(l.a, ink, 0.04) + hole(l.b, ink, 0.04);
-      out += hole(pos[l.own], ink, 0.04) + hole(pos[l.target], ink, 0.04);
-    });
-    P.on_spine.forEach(v => { out += hole(pos[String(v)], '#7b3fa0', 0.09); });
-    const targets = new Set(loose.flatMap(l => [l.own, l.target]).concat(P.on_spine.map(String)));
-    P.joint.forEach(v => { if (!targets.has(String(v))) out += hole(pos[String(v)], '#3b6fb0', 0.07); });
+    loose.forEach(l => { out += hole(l.a, ink, 0.04) + hole(l.b, ink, 0.04); });
+    P.ends.forEach(e => { const p = pos[String(e.node)]; out += hole(p, e.spine ? '#7b3fa0' : ink, e.spine ? 0.09 : 0.04) + lab(p, e.id, e.spine ? '#7b3fa0' : '#8a3d0c'); });
     loose.forEach(l => {
       out += lab(add(cen2(l.a, l.b), [0, 0.5]), l.id + ' (' + l.L.toFixed(2) + ')', l.ok ? '#8a3d0c' : '#c0281d');
-      out += lab(pos[l.own], l.id, '#8a3d0c') + lab(pos[l.target], l.id, '#8a3d0c');
       if (!l.ok) out += `<circle cx="${X(cen2(l.a, l.b))}" cy="${Y(cen2(l.a, l.b))}" r="${(l.L / 2 + r + 0.2).toFixed(3)}" fill="none" stroke="#c0281d" stroke-width="0.1" stroke-dasharray="0.4 0.3"/>`;
     });
     const sb = [x0 + 1, y0 + 1];

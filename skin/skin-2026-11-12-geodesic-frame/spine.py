@@ -53,6 +53,8 @@ def make(layout, width=4.0, bump_radius=1.0, hole=0.25):
     st = np.array([station(p) for p in V0])
     u = st[:, 2]
     inband = np.abs(u) < width / 2
+    if layout.get("partition") and layout["partition"].get("band") is not None:       # the nodes the partition treated as spine
+        inband = np.zeros(len(V0), bool); inband[layout["partition"]["band"]] = True
     polys = layout["polygons"]
     adj = {}
     for p in polys:
@@ -84,6 +86,7 @@ def make(layout, width=4.0, bump_radius=1.0, hole=0.25):
     out = dict(layout)
     out["vertices"] = np.round(V, 4).tolist()
     out["polygon_info"] = info
+    out["partition"] = layout.get("partition")
     out["description"] = "Smile tube with a spine. " + layout.get("description", "")
     out["spine"] = dict(width=width, bump_radius=bump_radius, hole=hole, length=round(length, 2),
                         band_nodes=[int(v) for v in np.where(inband)[0]], connections=[int(v) for v in conn],

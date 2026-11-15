@@ -40,13 +40,15 @@ class Surface:
         return X - ((X - p) * n).sum(1)[:, None] * n
 
 
-def equalize(layout, mesh_path, length=None, iters=600, plate_scale=1.0, log=print, anchor=0.05, lam=3.0, round_w=0.5):
+def equalize(layout, mesh_path, length=None, iters=600, plate_scale=1.0, log=print, anchor=0.05, lam=3.0, round_w=0.5, tree_w=0.3):
     V = np.array(layout["vertices"], float)
     polys = layout["polygons"]
     surf = Surface(mesh_path)
     plate_edges, spoke_edges, plate_pairs = set(), set(), []
-    for p in polys:
-        if len(p) == 5:
+    lost = set((layout.get("partition") or {}).get("lost", ()))        # pentagons on the spine are windows, not plates
+    is_plate = [len(p) == 5 and i not in lost for i, p in enumerate(polys)]
+    for p in [q for q, ok in zip(polys, is_plate) if ok]:
+        if True:
             for a, b in zip(p, p[1:] + p[:1]):
                 plate_edges.add(frozenset((a, b)))
     for p in polys:
@@ -54,26 +56,34 @@ def equalize(layout, mesh_path, length=None, iters=600, plate_scale=1.0, log=pri
             e = frozenset((a, b))
             if e not in plate_edges:
                 spoke_edges.add(e)
-    S = np.array([sorted(e) for e in spoke_edges])
+    part = layout.get("partition")
+    if part:                                                     # Remy: only the LOOSE spokes must be equal
+        S = np.array([sorted(e) for e in part["loose"]])
+        T_ = np.array([sorted(e) for e in part["tree"]])
+    else:                                                        # every spoke equal
+        S = np.array([sorted(e) for e in spoke_edges]); T_ = np.zeros((0, 2), int)
     L0 = np.linalg.norm(V[S[:, 0]] - V[S[:, 1]], axis=1)
     L = float(length or L0.mean())
-    pent = [p for p in polys if len(p) == 5]
+    Lt = float(np.linalg.norm(V[T_[:, 0]] - V[T_[:, 1]], axis=1).mean()) if len(T_) else L
+    pent = [q for q, ok in zip(polys, is_plate) if ok]
     sp0 = np.mean([np.linalg.norm(V[a] - V[b]) for p in pent for a, b in zip(p, p[1:] + p[:1])]) * plate_scale
     phi = (1 + 5 ** 0.5) / 2
     A, B, T, W = [], [], [], []
     for a, b in S:
         A.append(a); B.append(b); T.append(L); W.append(1.0)
+    for a, b in T_:                                                  # attached spokes: only a gentle pull toward their own average
+        A.append(a); B.append(b); T.append(Lt); W.append(tree_w)
     for p in pent:                                             # regular pentagon: 5 sides + 5 diagonals
         for i in range(5):
             A.append(p[i]); B.append(p[(i + 1) % 5]); T.append(sp0); W.append(1.0)
             A.append(p[i]); B.append(p[(i + 2) % 5]); T.append(sp0 * phi); W.append(1.0)
-    for p in polys:                                            # windows: second-nearest corners at the regular-polygon distance
+    for p, plate_ in zip(polys, is_plate):                     # windows: second-nearest corners at the regular-polygon distance
         k = len(p)
-        if k == 5:
+        if plate_:
             continue
         al = math.pi * (k - 2) / k
         for i in range(k):
-            A.append(p[i]); B.append(p[(i + 2) % k]); T.append(2 * L * math.sin(al / 2)); W.append(round_w)
+            A.append(p[i]); B.append(p[(i + 2) % k]); T.append(2 * (L if part is None else (L + Lt) / 2) * math.sin(al / 2)); W.append(round_w)
     A, B, T, W = np.array(A), np.array(B), np.array(T), np.array(W)
     n = len(V)
     start = V.copy()
