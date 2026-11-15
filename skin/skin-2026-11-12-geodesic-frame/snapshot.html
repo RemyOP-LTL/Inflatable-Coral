@@ -32,8 +32,7 @@ tr.cur td{font-weight:600}code{background:var(--bg);padding:1px 5px;border-radiu
  </div>
  <div class="card note"><b>Reading it.</b> Orange spokes are cut: attached at one end, free circle at the other. Red dashed line and number = how far (in) to pull that circle to its hub, then rivet through the two small holes. A red ring = that end still touches something. Blue-ringed holes join the next patch.</div>
 </div><div>
- <div class="card"><h2>Laid flat (true size)</h2><div id="flat"></div><div class="stats" id="stats"></div><p class="note" id="fit"></p>
-  <button id="dl">Download SVG (1 unit = 1 in)</button></div>
+ <div class="card"><h2>Laid flat (true size)</h2><div id="flat"></div><div class="stats" id="stats"></div><p class="note" id="fit"></p></div>
  <div class="card tbl"><h2>Size trade-off, all patches of this shape and ring count</h2><div id="tbl"></div>
   <p class="note">Spreading the free ends apart makes the pull roughly the wider of spoke and hub, plus the router gap, plus whatever the surface already needs. A hub narrower than its spoke is hidden by the spoke, so only the spoke width matters then.</p></div>
 </div></div></main>
@@ -203,6 +202,5 @@ $('layout').onchange = () => { fillPents(); render(); }; $('rings').onchange = (
 const step = d => { const n = list().length; $('pent').value = (+$('pent').value + d + n) % n; render(); };
 $('prev').onclick = () => step(-1); $('next').onclick = () => step(1);
 ['sw', 'cd', 'rh', 'cl'].forEach(id => $(id).oninput = render); $('spread').onchange = render;
-$('dl').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([PatchDraw.svg(R, opts(), true)], { type: 'image/svg+xml' })); a.download = 'patch.svg'; a.click(); };
 fillPents(); render();
 </script></body></html>
