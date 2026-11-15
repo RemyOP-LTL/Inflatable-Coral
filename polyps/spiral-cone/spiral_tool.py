@@ -37,6 +37,7 @@ FIELDS = [
     ("RUFFLE_FULLNESS", "Ruffle fullness", "x", 1, 2.5, 0.1, "Ruffle length / seam length. 1 = flat, more = gathered, frillier."),
     ("SEAM", "Seam allowance", "in", 0.25, 1, 0.125, "Added to every edge."),
     ("CUFF_HEIGHT", "Cuff height", "in", 1, 5, 0.25, "Finished height of the cuff."),
+    ("CUFF_IN_STRIP", "Cuff part of the strip", "1/0", 0, 1, 1, "1 = the cuff is the bottom 'cuff height' of the cone strip (2 pieces, slightly flared). 0 = separate straight cuff band (3 pieces)."),
     ("FABRIC_WIDTH", "Fabric width", "in", 20, 120, 1, "Usable width of the fabric. Only used for the fit check."),
 ]
 DEFAULTS = {k: getattr(S, k) for k in S.NAMES}

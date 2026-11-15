@@ -19,20 +19,20 @@ ul { margin:6px 0; padding-left:20px; } a { color:var(--accent); }
 </style>
 <main>
 <header><h1>Spiral-cone polyp</h1>
-<p class="sub">First flat pattern, 2026-11-15, branch <code>polyp-2026-11-15-spiral-cone</code>. Three pieces instead of ten, one long seam.</p></header>
+<p class="sub">First flat pattern, 2026-11-15, branch <code>polyp-2026-11-15-spiral-cone</code>. Two pieces (cone strip with the cuff built in, and a ruffle strip) instead of ten.</p></header>
 
 <section class="card"><h2>Flat pieces and a sketch of the finished cone</h2>
 <img src="spiral-cone.png" alt="Flat cone strip, ruffle strip and cuff band, and a 3D sketch of the cone with a spiral seam">
-<p class="sub">Red is the cut line, blue dashed is the sew line. Numbered notches match along the spiral seam. The SVG for the laser is <a href="spiral-cone.svg">spiral-cone.svg</a> (true size, inches).</p></section>
+<p class="sub">Red is the cut line, blue dashed is the sew line, grey dotted is the cuff line (top of the cuff). Notch 0 is where the ruffle starts; numbered notches match along the spiral seam. The SVG for the laser is <a href="spiral-cone.svg">spiral-cone.svg</a> (true size, inches).</p></section>
 
 <section class="card"><h2>Numbers at the starting settings</h2>
 <div class="scroll"><table>
-<tr><td>Cone</td><td>10 in long, 130 mm (5.12 in) base, 1 in tip (assumed)</td></tr>
-<tr><td>Pitch (height per turn)</td><td>3.0 in at the base to 1.2 in at the tip (assumed), 5.1 turns</td></tr>
-<tr><td>Seam, sewn once</td><td>45.2 in. Both edges of the strip match it exactly.</td></tr>
-<tr><td>Cone strip</td><td>about 20 x 23 in bounding box, cut 1</td></tr>
-<tr><td>Ruffle strip</td><td>3 x 46 in, cut 1, folded in half, fin stands out 1.0 in</td></tr>
-<tr><td>Cuff band</td><td>17.1 x 3.5 in, cut 1 (2 in tall, ring 16.1 in around)</td></tr>
+<tr><td>Cone</td><td>10 in long above the cuff, 130 mm (5.12 in) across at the cuff line, 1 in tip (assumed)</td></tr>
+<tr><td>Pitch (height per turn)</td><td>3.0 in at the base to 2.0 in at the tip (assumed, loosened from 1.2), 4.7 turns</td></tr>
+<tr><td>Seam, sewn once</td><td>38.7 in above the cuff line, 50.5 in with the cuff part. Both edges of the strip match it exactly.</td></tr>
+<tr><td>Cone strip</td><td>about 24 x 27 in bounding box, cut 1, cuff included</td></tr>
+<tr><td>Ruffle strip</td><td>3 x 39.7 in, cut 1, folded in half, fin stands out 1.0 in</td></tr>
+<tr><td>Cuff</td><td>the bottom 2 in of the strip: 5.12 in across at the cuff line, 5.94 in at the open end (it flares, it is not a straight ring). Setting off gives a separate straight band.</td></tr>
 </table></div></section>
 
 <section class="card"><h2>Please check</h2>
@@ -40,9 +40,10 @@ ul { margin:6px 0; padding-left:20px; } a { color:var(--accent); }
 <ul>
 <li>Is the ruffle folded in half with both raw edges in the seam (1 in fin from a 3 in strip), or do you want a taller single layer?</li>
 <li>Tip diameter, the two pitches and fabric width are my guesses.</li>
-<li>Laser bed size? The ruffle strip is 46 in long and can be cut in pieces.</li>
+<li>Is a flared cuff acceptable? A straight cuff cannot be in the same flat piece without stretching.</li>
+<li>Laser bed size? The ruffle strip is 40 in long and can be cut in pieces.</li>
 </ul></section>
 
 <section class="card"><h2>Try other sizes</h2>
-<p>On your Mac, open the tool at <code>http://127.0.0.1:8820/</code> and change length, base diameter, pitch, ruffle width and more. It redraws in about two seconds and gives you the SVG. First time only: pick this branch in the polyp simulator (<code>http://127.0.0.1:8800/</code>), press Get latest changes, then run the one-line setup Claude gave you in chat.</p></section>
+<p>On your Mac, open the tool at <code>http://127.0.0.1:8820/</code> and change length, base diameter, pitch, ruffle width and more. It redraws in about two seconds and gives you the SVG. First time only: run the one-block setup from the chat (it fetches this branch and starts the tool).</p></section>
 </main>
