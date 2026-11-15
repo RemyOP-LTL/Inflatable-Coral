@@ -24,6 +24,23 @@ To run it on any shape from a mesh file: `python3 hex57_mesh.py meshes/lumpy_dom
 Layout prototype exists, outside Fusion. Nothing built in Fusion 360 yet. At default settings on the test tube: 58 pentagons, about 23 % coverage, about 5 in across, no two touching; shapes about 0.27 in out of flat on average.
 The layout now works on any surface given as a mesh (2026-11-02). Tried on the tube as a mesh (76 pentagons, 24 %), a 48 in dome (44 pentagons, 25 %, 0.04 in out of flat) and a lumpy dome (47 pentagons, 25 %, 0.22 in out of flat). Not tried on a real Fusion export yet.
 
+## Done this session (2026-11-15): geodesic-frame concept, first prototype (branch `skin-2026-11-12-geodesic-frame`)
+All new work is in `skin-2026-11-12-geodesic-frame/`. Nothing else in `skin/` was touched.
+- **Concept (Remy):** the skin as a geodesic-style frame. Hubs = the corners of today's polygons (3 spokes each). Spokes = polygon edges, 1 in wide. A 1.5 in circle at every hub. Pentagons = solid plates with the polyp hole (an "oversized hub"). Hexagons and heptagons are open windows. Laid flat, a patch (one pentagon plus rings of windows) does not close; spokes that come up short keep a free 1.5 in circle that is pulled to its hub and riveted (0.25 in holes, only where a rivet goes).
+- **Decisions:** hub spacing 5 in (a setting, `--edge`); corrugation direction ignored for now; tube is the main shape, dome second; one ring of windows is the working patch size. Not yet answered by Remy: which joints are cut (the tool cuts the spoke that closes each window; free end kept by the hub nearer the plate), and which pentagon-plate style he wants (see below).
+- `frame.py`: the maths (frame from layout.json, flattening a patch, pull distances, sheet fit, SVG at 1 unit = 1 in). Checked: on a flat honeycomb the pull is 0.00 in.
+- `frame_app.py` + `frame_page.html`: browser tool on **port 8820** (`Start Frame Tool.command`, or `python3 frame_app.py`). 3D frame, click a pentagon, flat patch, sliders for rings / spoke width / circle / rivet hole, plate style (pentagon outline or round hub, or both side by side), SVG download, and "Make a new layout" (runs `hex57_mesh.py --edge N` into `runs/`, git-ignored). Tested in a real browser here (needs the 3D library from the internet; tested with a local copy).
+- `layouts/tube-edge5`, `layouts/dome-edge5`: layouts at 5 in spacing (tube 16 in across, dome 48 in). `snapshot.html` (built by `make_snapshot.py`) is the link page.
+- **Results (1 ring):** every patch has 5 cut spokes; typical longest pull 1.8 in on the tube (worst 3.4), 0.7 in on the dome; patches are about 26 in across and fit a 4 x 8 ft sheet. With 2 rings several other pentagons fall inside the patch (their plates are not kept rigid yet), and pulls grow to 4 in typical, 10 in worst.
+- Observation: at 5 in spacing the tube's panels are about 8 in across and 0.8 in out of flat on average, the "playing card on a can" effect from before.
+- Port 8820 is not yet in the root CLAUDE.md ports list (outside `skin/`, so left for Remy to approve).
+
+## Next (frame concept)
+- Remy to pick the plate style and the cut rule; try the tool on his Mac.
+- Split the whole skin into patches (which pentagon owns which hubs, no overlap) and make plates rigid when several are in one patch.
+- Union the shapes into one cut outline per patch, nest on 4 x 8 ft, then into Fusion (SVG import is the quick route).
+- Pull distances of 1 to 3 in: decide how much the plastic can be pulled (flex, slotted holes?) or whether to shrink spacing / patch size.
+
 ## Done this session, second round (2026-11-02): holes, cutouts, extension, scale, tabs
 Remy asked for six things; all built and tested (details in `hex57/README.md`, last section):
 - Scale bar and skin size in the 3D viewer.
