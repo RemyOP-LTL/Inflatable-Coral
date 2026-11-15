@@ -7,26 +7,35 @@ Settings:
   PITCH_BASE       3
   PITCH_TIP        2
   PITCH_CURVE      1
+  STRAIGHT_LENGTH  2
+  TRANSITION       2
   SEAM             0.5
   RUFFLE_WIDTH     3
-  RUFFLE_FULLNESS  1
+  FRILL_START      3
   CUFF_HEIGHT      2
   CUFF_IN_STRIP    1
   HEM              1
   FABRIC_WIDTH     58
-  TICK             5
+  TAB_SIZE         0.5
+  TAB_SPACING      5
+  MAX_FRILL_TURN   270
 
 Results:
   Cone half-angle                 11.6 deg
-  Turns of the spiral seam        4.72
-  Height gained per full turn     2.85 in at the base, 2.10 in at the tip (a bit under the PITCH settings, which are the rate at that exact height)
-  Seam length (sewn once)         38.7 in above the cuff line (ruffle goes here), 50.5 in in all with the cuff part
-  Cone strip, cut size            bounding box 24.1 x 26.9 in, tightest rectangle 20.5 x 25.3 in
-  Ruffle strip                    3.0 x 39.7 in, cut 1; fin stands out 1.00 in (folded in half, 1/2 in allowance)
-  Cuff                            part of the cone strip: 5.12 in across at the top of the cuff, 5.94 in at the open end, 2 in tall
+  Turns of the spiral seam        3.43 (cuff included)
+  Height gained per turn          2.82 in at the cuff line (the PITCH settings are the rate at one exact height)
+  Spiral seam length              44.3 in; the frill covers the last 17.1 in of it
+  Straight seam                   2.0 in
+  Cone strip, cut size            bounding box 24.1 x 26.7 in, tightest rectangle 20.6 x 25.3 in
+  Frill                           3 piece(s); stands out 2.50 in, 3 in cut width, curves through 563 deg in all, tightest curve radius 1.43 in
+    frill1: 6.3 in of seam, 8.9 x 5.0 in, turns 187 deg
+    frill2: 4.0 in of seam, 6.7 x 4.9 in, turns 137 deg
+    frill3: 6.8 in of seam, 7.9 x 6.5 in, turns 239 deg
+  Cuff                            part of the cone strip: 5.12 in across at the cuff line, 5.94 in at the open end, 2 in tall, no seam allowance on the open end
+  Alignment tabs                  0.5 in squares: 11 numbered tabs along the spiral seam (on both cone edges, and on the frill where it covers), S1.. on the straight seam
   Tip opening, circumference      3.1 in
-  Pieces to cut                   2
+  Pieces to cut                   4
 
 Checks:
-  Fin height 1.00 in is taller than the tip radius 0.50 in. The fins from opposite sides of the tip will crowd each other.
-  Cuff is part of the cone, so it is not a straight tube: 5.12 in across at the top of the cuff (the tube fit) and 5.94 in at the open end. Use a separate cuff band (CUFF_IN_STRIP = 0) for a straight cuff.
+  The frill stands out 2.50 in, more than the cone's radius (0.91 in) where the spiral ends, so frill from opposite sides of the cone will push into each other there.
+  The cuff is part of the cone, so it flares: 5.12 in across at the cuff line (the tube fit) and 5.94 in at the open end. CUFF_IN_STRIP = 0 gives a straight separate band.

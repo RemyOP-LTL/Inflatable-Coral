@@ -19,31 +19,32 @@ ul { margin:6px 0; padding-left:20px; } a { color:var(--accent); }
 </style>
 <main>
 <header><h1>Spiral-cone polyp</h1>
-<p class="sub">First flat pattern, 2026-11-15, branch <code>polyp-2026-11-15-spiral-cone</code>. Two pieces (cone strip with the cuff built in, and a ruffle strip) instead of ten.</p></header>
+<p class="sub">Third pass, 2026-11-15, branch <code>polyp-2026-11-15-spiral-cone</code>. The cone strip, with the cuff built in, plus a flared frill cut in pieces.</p></header>
 
 <section class="card"><h2>Flat pieces and a sketch of the finished cone</h2>
-<img src="spiral-cone.png" alt="Flat cone strip, ruffle strip and cuff band, and a 3D sketch of the cone with a spiral seam">
-<p class="sub">Red is the cut line, blue dashed is the sew line, grey dotted is the cuff line (top of the cuff). Notch 0 is where the ruffle starts; numbered notches match along the spiral seam. The SVG for the laser is <a href="spiral-cone.svg">spiral-cone.svg</a> (true size, inches).</p></section>
+<img src="spiral-cone.png" alt="The flat cone strip and three frill pieces with numbered alignment tabs, and a 3D sketch of the cone with a spiral seam, a straight seam at the top and a frill">
+<p class="sub">Red is the cut line, blue dashed is the sew line, grey dotted is the cuff line (top of the cuff). Numbered squares are the 0.5 in alignment tabs: tabs with the same number go together (both edges of the cone strip and the frill). S1 and S2 are on the straight seam. The SVG for the laser is <a href="spiral-cone.svg">spiral-cone.svg</a> (true size, inches).</p></section>
 
 <section class="card"><h2>Numbers at the starting settings</h2>
 <div class="scroll"><table>
-<tr><td>Cone</td><td>10 in long above the cuff, 130 mm (5.12 in) across at the cuff line, 1 in tip (assumed)</td></tr>
-<tr><td>Pitch (height per turn)</td><td>3.0 in at the base to 2.0 in at the tip (assumed, loosened from 1.2), 4.7 turns</td></tr>
-<tr><td>Seam, sewn once</td><td>38.7 in above the cuff line, 50.5 in with the cuff part. Both edges of the strip match it exactly.</td></tr>
-<tr><td>Cone strip</td><td>about 24 x 27 in bounding box, cut 1, cuff included</td></tr>
-<tr><td>Ruffle strip</td><td>3 x 39.7 in, cut 1, folded in half, fin stands out 1.0 in</td></tr>
-<tr><td>Cuff</td><td>the bottom 2 in of the strip: 5.12 in across at the cuff line, 5.94 in at the open end (it flares, it is not a straight ring). Setting off gives a separate straight band.</td></tr>
+<tr><td>Cone</td><td>10 in above the cuff line, 130 mm (5.12 in) across at the cuff line, 1 in tip (assumed)</td></tr>
+<tr><td>Spiral seam</td><td>3.4 turns including the cuff, 44.3 in long; pitch 3 in at the base to 2 in near the end</td></tr>
+<tr><td>Straight seam</td><td>the last 2 in of the cone, blended in smoothly</td></tr>
+<tr><td>Cone strip</td><td>about 24 x 27 in bounding box, cut 1, cuff included, no allowance on the open end of the cuff</td></tr>
+<tr><td>Frill</td><td>starts 3 in up the axis, runs to the end of the spiral (17.1 in of seam), stands out 2.5 in, single layer. 3 flared pieces, each about 8 x 5 in</td></tr>
+<tr><td>Cuff</td><td>the bottom 2 in of the strip: 5.12 in at the cuff line, 5.94 in at the open end (it flares)</td></tr>
+<tr><td>Pieces to cut</td><td>4</td></tr>
 </table></div></section>
 
 <section class="card"><h2>Please check</h2>
-<p class="warn">At these settings the 1 in fin is taller than the 0.5 in tip radius and about as tall as the tightest pitch, so the fins will crowd near the tip. A smaller ruffle width, a wider tip or a looser tip pitch fixes it.</p>
+<p class="warn">The 2.5 in frill is taller than the cone's radius (0.91 in) where the spiral ends, so frill from opposite sides will push into each other there. A narrower frill strip or a wider tip fixes it.</p>
 <ul>
-<li>Is the ruffle folded in half with both raw edges in the seam (1 in fin from a 3 in strip), or do you want a taller single layer?</li>
-<li>Tip diameter, the two pitches and fabric width are my guesses.</li>
-<li>Is a flared cuff acceptable? A straight cuff cannot be in the same flat piece without stretching.</li>
-<li>Laser bed size? The ruffle strip is 40 in long and can be cut in pieces.</li>
+<li>Strip width: I read your 3 in as the cut width, so 0.5 in allowance plus 2.5 in standing out. If you meant 3 in standing out, set 3.5.</li>
+<li>Frill start: measured from the cuff line, not from the open end of the cuff.</li>
+<li>The frill pieces butt together at their ends and are not sewn to each other. The flat shape is the closest flat match to the frill's free edge and is about 2 % short on it.</li>
+<li>Tip diameter, the two pitches and fabric width are still my guesses. Laser bed size?</li>
 </ul></section>
 
 <section class="card"><h2>Try other sizes</h2>
-<p>On your Mac, open the tool at <code>http://127.0.0.1:8820/</code> and change length, base diameter, pitch, ruffle width and more. It redraws in about two seconds and gives you the SVG. First time only: run the one-block setup from the chat (it fetches this branch and starts the tool).</p></section>
+<p>On your Mac, open <code>http://127.0.0.1:8820/</code> and press Get latest changes with this branch selected. Every setting is a field there.</p></section>
 </main>

@@ -27,17 +27,22 @@ import spiral_cone as S
 
 # (setting, label, unit, min, max, step, help)
 FIELDS = [
-    ("LENGTH", "Cone length", "in", 3, 30, 0.5, "Height of the cone along its axis (cuff not included)."),
-    ("BASE_DIAMETER", "Base / cuff diameter", "in", 2, 12, 0.05, "Inside diameter of the cuff. 130 mm = 5.12 in."),
+    ("LENGTH", "Cone length", "in", 4, 30, 0.5, "Height above the cuff line, including the straight-seam part at the top."),
+    ("BASE_DIAMETER", "Cuff line diameter", "in", 2, 12, 0.05, "Inside diameter where the cuff meets the cone (the tube fit). 130 mm = 5.12 in."),
     ("TIP_DIAMETER", "Tip diameter", "in", 0.25, 6, 0.25, "The open top where the string is anchored. Not decided yet."),
     ("PITCH_BASE", "Pitch at the base", "in", 0.5, 8, 0.1, "Height gained per turn of the seam at the bottom. Bigger = more open spiral."),
-    ("PITCH_TIP", "Pitch at the tip", "in", 0.3, 8, 0.1, "Same at the top. Smaller than the base = tighter wind at the tip."),
-    ("PITCH_CURVE", "Pitch curve", "", 0.3, 3, 0.1, "1 = changes evenly. Above 1 stays open longer, then tightens near the tip."),
-    ("RUFFLE_WIDTH", "Ruffle strip width", "in", 1, 6, 0.25, "Cut width. Folded in half, so the fin stands out (width - 2 x seam) / 2."),
-    ("RUFFLE_FULLNESS", "Ruffle fullness", "x", 1, 2.5, 0.1, "Ruffle length / seam length. 1 = flat, more = gathered, frillier."),
-    ("SEAM", "Seam allowance", "in", 0.25, 1, 0.125, "Added to every edge."),
+    ("PITCH_TIP", "Pitch at the end of the spiral", "in", 0.5, 8, 0.1, "Same where the spiral ends. Smaller than the base = tighter wind toward the tip."),
+    ("PITCH_CURVE", "Pitch curve", "", 0.3, 3, 0.1, "1 = changes evenly. Above 1 stays open longer, then tightens near the end."),
+    ("STRAIGHT_LENGTH", "Straight seam length", "in", 0, 6, 0.25, "The last part of the cone has one straight seam instead of a spiral."),
+    ("TRANSITION", "Spiral to straight blend", "in", 0, 6, 0.25, "The spiral fades into the straight seam over this length. 0 = a sharp corner."),
+    ("FRILL_START", "Frill starts at", "in", 0, 9, 0.25, "Inches up the axis from the cuff line. The frill runs to the end of the spiral."),
+    ("RUFFLE_WIDTH", "Frill strip width", "in", 1, 6, 0.25, "Cut width: the seam allowance plus the part that stands out."),
+    ("SEAM", "Seam allowance", "in", 0.25, 1, 0.125, "On every edge except the open end of the cuff."),
     ("CUFF_HEIGHT", "Cuff height", "in", 1, 5, 0.25, "Finished height of the cuff."),
-    ("CUFF_IN_STRIP", "Cuff part of the strip", "1/0", 0, 1, 1, "1 = the cuff is the bottom 'cuff height' of the cone strip (2 pieces, slightly flared). 0 = separate straight cuff band (3 pieces)."),
+    ("CUFF_IN_STRIP", "Cuff part of the strip", "1/0", 0, 1, 1, "1 = the cuff is the bottom of the cone strip (flares slightly). 0 = separate straight cuff band."),
+    ("TAB_SIZE", "Alignment tab size", "in", 0.25, 1, 0.125, "Square tabs along the seams to tack the pieces together."),
+    ("TAB_SPACING", "Tab spacing", "in", 2, 12, 0.5, "About one tab every this many inches of seam."),
+    ("MAX_FRILL_TURN", "Most a frill piece turns", "deg", 90, 330, 15, "The frill is cut in pieces that each turn at most this much, so they lie flat."),
     ("FABRIC_WIDTH", "Fabric width", "in", 20, 120, 1, "Usable width of the fabric. Only used for the fit check."),
 ]
 DEFAULTS = {k: getattr(S, k) for k in S.NAMES}
@@ -58,7 +63,7 @@ def run_pattern(params):
         for k, v in {**DEFAULTS, **clean}.items():
             setattr(S, k, v)
         info, text = S.make(folder, "spiral-cone")
-    return key, {"text": text, "warnings": info["warnings"], "seam": info["seam"], "turns": info["turns"]}
+    return key, {"text": text, "warnings": info["warnings"], "seam": info["seam_total"], "turns": info["turns"]}
 
 
 # --- version card, shared with the polyp tool (same repo, same git commands)

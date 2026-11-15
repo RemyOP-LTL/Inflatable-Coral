@@ -1,52 +1,50 @@
 # polyps/spiral-cone/
 
 ## Purpose
-A second polyp design, started 2026-11-15 on branch `polyp-2026-11-15-spiral-cone`. It sits beside the 5-finger design in `../fabric-pattern/` (which is not changed). Remy's 5-finger prototype did not work as hoped, and it had too many pieces and too many seams in tight spaces to sew at the scale of dozens of polyps. Cutting is not the problem (laser).
+A second polyp design, started 2026-11-15 on branch `polyp-2026-11-15-spiral-cone`. It sits beside the 5-finger design in `../fabric-pattern/` (not changed). Remy's 5-finger prototype did not work as hoped and had too many pieces and seams in tight spaces to sew at the scale of dozens of polyps. Cutting is not the problem (laser).
 
 ## The design (Remy, 2026-11-15)
-- A long cone made from ONE long strip of woven nylon wound in a spiral (like a barber pole) and sewn edge to edge. The cone shape comes from the strip tapering.
-- Tighter wind at the tip: the turns sit closer together near the tip than at the base.
-- Seams on the inside. A second strip, about 3 in wide with 1/2 in seam allowance, is sewn into the spiral seam and stands out on the outside as a spiral ruffle (fin).
-- Cuff at the bottom, about 2 in tall, about 5 in across. Base is 130 mm (5.12 in) across, so the cuff is the same size and slides over a 5 in (127 mm) tube. Air enters through the cuff; a stitch seal is enough.
-- Length about 10 in to start. Length and base diameter must be variables to play with.
-- Motion: it collapses along its axis. One string, attached at the tip, runs straight down the axis.
-- Pieces: 2 with the cuff built into the cone strip (default since 2026-11-15, Remy asked), or 3 with a separate cuff band (`CUFF_IN_STRIP=0`).
+- A long cone made from ONE long strip of woven nylon wound in a spiral (like a barber pole) and sewn edge to edge, seams on the inside. The cone shape comes from the strip tapering.
+- Tighter wind toward the tip: turns closer together near the tip. Not too tight (the tip pitch was loosened to 2 in).
+- **Cuff built into the strip** (2 in tall, 130 mm = 5.12 in across at the cuff line, which slides over the 5 in = 127 mm tube). **No seam allowance on the open end of the cuff** (removed 2026-11-15, it made an "ear" on the flat pattern).
+- **Finish:** the spiral seam turns into one straight seam for the last 2 in of the cone length (smooth blend over `TRANSITION`, default 2 in).
+- **Frill:** starts 3 in up the axis (from the cuff line) and runs to the end of the spiral seam. Single layer, 0.5 in seam allowance on the sewn edge only, not folded. It is laser cut with its flare built in so a non-stretching fabric does not scrunch.
+- **Alignment tabs:** 0.5 in squares sticking out of the cut edges, at matching places on both cone edges and the frill (numbered 1..n), and on the straight seam (S1, S2). Remy tacks them together before sewing.
+- Length about 10 in, base diameter and length are variables. Air enters through the cuff (a stitch seal is enough). Motion: collapses along its axis; one string anchored at the tip, straight down the axis.
 
 ## What's here
-- `spiral_cone.py`: makes the flat pattern from settings. Writes `<name>.svg` (true-size cut and sew lines, inches, for the laser), `<name>.png` (flat pieces and a 3D sketch) and `<name>.txt` (numbers and checks). `python3 spiral_cone.py --out folder`; change settings with `CONE="LENGTH=12,PITCH_TIP=0.9" python3 ...`. Needs numpy, matplotlib, shapely only.
-- `spiral_tool.py`: browser page with fields for every setting, port **8820** (http://127.0.0.1:8820/), with the same Version card and Get latest changes button as the polyp tool. `install-mac.sh`: one-time setup on the Mac so it runs all the time (launchd agent `com.coral.spiraltool`). Tested here in a headless browser on Linux; not run on a Mac yet.
-- `polyp-2026-11-15-spiral-cone/`: the first outputs, default settings.
-- It does not import the cloth simulation. This step needed none (see below). `spiral_tool.py` does import `polyp_tool.py` from `../fabric-pattern/` for its git/version helpers, so both folders must be present.
+- `spiral_cone.py`: makes the flat pattern from settings. Writes `<name>.svg` (true size, inches, laser: red cut, blue sew, grey dotted cuff line), `<name>.png` (flat pieces and a 3D sketch), `<name>.txt` (numbers and checks). `python3 spiral_cone.py --out folder`; change settings with `CONE="LENGTH=12,PITCH_TIP=3" python3 ...`. Needs numpy, matplotlib, shapely only.
+- `spiral_tool.py`: browser page with a field for every setting, port **8820** (http://127.0.0.1:8820/), with the same Version card and Get latest changes button as the polyp tool. `install-mac.sh`: one-time Mac setup (launchd agent `com.coral.spiraltool`). Tested here in a headless browser and with the Mac-only commands stubbed; not run on a real Mac yet.
+- `polyp-2026-11-15-spiral-cone/`: the latest outputs, default settings. `snapshot.html`: the link page for Remy.
+- It does not use the cloth simulation. `spiral_tool.py` imports `polyp_tool.py` from `../fabric-pattern/` for its git/version helpers, so both folders must be present.
 
 ## How the geometry works
-A cone unrolls flat exactly, like a paper party hat. A seam that winds up the cone becomes a spiral curve on that flat fan. The seam height at angle theta is Q(theta), found from dQ/dtheta = pitch(Q) / (2 pi), with the pitch changing linearly with height (`PITCH_BASE` to `PITCH_TIP`, bent by `PITCH_CURVE`). The strip is what lies between one turn of the seam and the next turn above it, cut off at the base and tip circles. So the strip starts as a thin wedge at the base (its edge along the base circle for exactly one turn, the cuff seam) and ends as a thin wedge at the tip (the tip opening, also exactly one turn). Cut line = sew line plus `SEAM` all round.
+A cone unrolls flat exactly, like a paper party hat. A seam winding up the cone becomes a spiral curve on the flat fan. The seam goes round theta(z) = 2 pi * integral of dz / pitch(z); over the last `TRANSITION` inches before the straight part the winding rate fades to zero, so the seam turns smoothly straight. The strip is the region between one turn of the seam and the next turn above it, starting as a thin wedge at the open end of the cuff and ending at the straight seam: its top edge on the last turn is the tip opening (one full turn), and the two straight edges are the two radial edges that meet in the straight seam.
 
-Checked (2026-11-15): the seam is the same length as the strip's bottom and top edge (45.169 in both, so the ruffle fits both sides), the base edge equals pi x base diameter (16.079 in) and the tip edge equals pi x tip diameter (3.142 in).
+The frill stands out at right angles to the cone surface. Flattening a strip around a curve gives a strip around a plane curve whose curvature is the cone's normal curvature along the seam, kappa = cos(half angle) cos^2(psi) / r (psi = angle between the seam and the circumference). The seam side is the inner edge (with the allowance) and the free edge is longer. The frill winds through more than 360 degrees in total, so it is cut in pieces (each at most `MAX_FRILL_TURN` degrees, more pieces automatically if one would overlap itself), with the ends of the pieces placed halfway between tabs.
 
-## Updates 2026-11-15 (second round, Remy)
-- Pitch made less tight: the tip pitch default is now 2.0 in (was 1.2). Base pitch 3.0 in. Both are sliders.
-- **Cuff built into the strip** (`CUFF_IN_STRIP=1`, default). The strip simply starts `CUFF_HEIGHT` lower. The seam continues through the cuff as a plain seam, the ruffle starts at the cuff line (grey dotted line, notch 0). Limit found: a straight tube cannot be joined to a cone in one flat piece without stretching. The cuff-to-cone circle is a different curve flat on each side (the cuff would need about 8 % more length on its open edge). So the cuff here is the cone carried on downward: 130 mm (5.12 in) across at the cuff line, which is the tube fit, and 5.94 in at the open end. The cuff is not a straight ring. For a straight cuff, use `CUFF_IN_STRIP=0` (separate band, 3 pieces). The 130 mm is now the diameter at the cuff line, the top of the cuff.
-- Verified again: seam edges equal (50.470 in both), open-end arc equals pi x its diameter (18.667 in), tip arc equals pi x tip diameter, radius at the cuff line is exactly 130 mm / 2.
-- Fixed a bug: the ruffle strip's notches were piled at one end. They now sit every `TICK` inches of seam, notch 0 at the cuff line.
-- The Mac setup script was tested here with launchctl and open replaced by stubs (environment built, agent file correct, tool starts from the new environment and answers). Still not run on a real Mac.
+## Checked (2026-11-15, defaults)
+Seam edge lengths bottom and top: 44.274 in both. Open-end arc 18.667 in = pi x its diameter. Tip arc 3.142 in = pi x tip diameter. Straight edges 2.042 in each (2 in rise along the axis, 2.04 along the surface). Radius at the cuff line exactly 130 mm / 2. Frill sewn edge 17.147 in vs seam 17.148 in. The flat frill's free edge is 41.7 in, the true 3D free edge (the seam pushed out 2.5 in along the cone's normal) is 42.6 in, so the frill is about 2 % short on its free edge: the surface a normal-standing frill sweeps out is not exactly flattenable, and this is the closest flat shape. Expect a slight pull on that edge. Settings ran without errors for other lengths and diameters, no straight part, a sharp corner (`TRANSITION=0`, which warns about touching tabs), the separate cuff band and other frill widths.
 
-## Defaults and results, first round (10 in long, 130 mm base, 1 in tip, pitch 3 to 1.2 in, separate cuff band)
-- Half angle 11.6 degrees, 5.1 turns of seam, 45.2 in of seam. Cone strip cut size about 20 x 23 in (bounding box). Ruffle strip 3 x 46 in. Cuff band 17.1 x 3.5 in.
-- The pitch settings are the rate at that exact height. The height actually gained across one full turn is a little less near the base (2.75 in against 3.0) and more at the tip (1.31 against 1.2). The report shows both.
-- Fin height is (ruffle width - 2 x seam) / 2 = 1.0 in. It is taller than the 0.5 in tip radius and about as tall as the tightest pitch, so the tool warns that fins will crowd near the tip.
-
-## Current defaults (2026-11-15 second round): 2 pieces, cone strip bounding box 24.1 x 26.9 in, ruffle strip 3 x 39.7 in, 38.7 in of seam above the cuff line (50.5 in with the cuff part), 4.7 turns, pitch 3 to 2 in.
+## Defaults and results (2026-11-15, third round)
+10 in cone above the cuff line, 130 mm cuff line, 1 in tip, pitch 3 in at the base to 2 in at the end of the spiral, spiral 3.4 turns (cuff included), spiral seam 44.3 in, frill on the last 17.1 in of it, straight seam 2 in. Cone strip bounding box 24.1 x 26.7 in. Frill: 3 pieces, each about 8 x 5 in, stands out 2.5 in. 11 numbered tabs plus S1, S2. 4 pieces to cut. A flared cuff: 5.12 in at the cuff line, 5.94 in at the open end (a straight ring cannot share a flat piece with the cone without stretching; `CUFF_IN_STRIP=0` gives a separate straight band).
 
 ## Assumed, not decided (confirm with Remy)
-- Tip diameter 1 in; pitch 3 in at the base and 2 in at the tip; ruffle fullness 1 (not gathered); fabric width 58 in.
-- Ruffle strip is folded in half lengthwise, both raw edges in the spiral seam (three layers: cone edge, folded ruffle, cone edge), so a 3 in strip with 1/2 in allowance gives a 1 in fin. If Remy means a single layer that stands out 2 in or more, change `RUFFLE_WIDTH` or the fold logic.
-- The 3D sketch only draws fin direction (straight out). It does not simulate fabric, air or collapse.
+- Frill strip: `RUFFLE_WIDTH` = 3 in cut width = 0.5 in allowance + 2.5 in standing out. (If the 3 in is the part standing out, set 3.5.)
+- Frill start is measured from the cuff line (the top of the cuff) along the axis.
+- Tip diameter 1 in; pitch 3 and 2 in; fabric width 58 in; the straight seam blends in over 2 in (set `TRANSITION=0` for a sharp corner).
+- Neighbouring frill pieces just butt together along their ends, they are not sewn to each other.
+- The frill stands at right angles to the cone surface.
 
-## Not done yet
-- No 3D inflated surface for Fusion 360, no simulation of collapse along the axis (does the ruffle seam let it telescope? how much force does the string need?), no string path, no cuff-to-tube seal or air inlet detail, no gathered ruffle.
-- Laser bed size unknown (the cone strip is about 20 x 23 in; the ruffle is 46 in long and could be cut in pieces).
-- The strip is one piece sewn once around 5 turns. Sewing order, and whether a machine can follow the spiral, needs a test sew.
+## Open flags
+- The 2.5 in frill is taller than the cone's radius (0.91 in) where the spiral ends, so frill from opposite sides pushes into each other there. The tool warns. A narrower frill or a wider tip fixes it.
+- Not done: no 3D inflated surface for Fusion 360, no collapse simulation, no string path, no cuff-to-tube seal or air inlet detail. Laser bed size unknown (the cone strip is about 24 x 27 in). Whether a machine can follow the spiral, and whether the frill pieces behave, needs a test sew.
 
 ## Next
-- Remy checks the assumptions above and a test cut on paper or cheap fabric.
+- Remy checks the flags and cuts a test on paper or cheap fabric.
 - Then: a collapse and inflation simulation (reuse `../fabric-pattern/sim_polyp.py`), or the 3D surface output.
+
+## History
+- Round 1 (2026-11-15): first pattern, 3 pieces, folded ruffle, tight tip pitch 1.2.
+- Round 2: looser tip pitch (2.0), cuff built into the strip (flared), fixed ruffle notches.
+- Round 3: no allowance on the cuff's open end, straight seam for the last 2 in, 0.5 in alignment tabs, single-layer flared frill (starts 3 in up, cut in pieces).
