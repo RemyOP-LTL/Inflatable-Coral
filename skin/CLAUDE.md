@@ -35,6 +35,14 @@ All new work is in `skin-2026-11-12-geodesic-frame/`. Nothing else in `skin/` wa
 - Observation: at 5 in spacing the tube's panels are about 8 in across and 0.8 in out of flat on average, the "playing card on a can" effect from before.
 - Port 8820 is not yet in the root CLAUDE.md ports list (outside `skin/`, so left for Remy to approve).
 
+### Update (2026-11-15, later): overlap fix, plate A, no-install page
+- **Remy chose plate style A** (the plate is the pentagon outline). The round-hub option was removed.
+- **Bug found by Remy:** with 1 in spokes and 1.5 in hubs, the two circles to be pinned overlap in the flat (natural gaps 0.3 to 1.5 in are under the circle size), so the parts cannot be cut. Confirmed: all 65 pairs on the tube overlapped.
+- **Fix:** `patch_draw.js` swings each free spoke round its own hub until a router gap (default 0.125 in) clears everything, choosing the smallest pull that works. It also checks the free end against all other flat parts and marks any that still touch with a red ring. With it on, 1 to 4 of 65 pairs on the tube still touch (2 to 3 at 1.5 in spokes), none on the dome.
+- **Finding:** an end is as wide as the wider of spoke and hub, so a smaller hub with a wider spoke does not help. Pull is about spoke width + router gap + the surface's own gap. Tube averages: 0.75 in spokes 1.3 in pull; 1 in 1.6; 1.5 in 2.1; 2 in 2.7. The tool now defaults to Remy's request (1.5 in spokes, 1 in hubs); his original numbers were 1 in spokes, 1.5 in hub circles, 0.25 in hole.
+- `patch_draw.js` is the one place that spreads, checks and draws; `frame.py` only flattens (`patch_data`). `snapshot.html` (built by `make_snapshot.py`) is now a standalone interactive page with the flattened patches baked in (no server): Remy's laptop could not open 127.0.0.1:8820.
+- Open: spoke width choice (narrower = smaller pulls), how large a pull the plastic tolerates, joint rule, patch partition.
+
 ## Next (frame concept)
 - Remy to pick the plate style and the cut rule; try the tool on his Mac.
 - Split the whole skin into patches (which pentagon owns which hubs, no overlap) and make plates rigid when several are in one patch.

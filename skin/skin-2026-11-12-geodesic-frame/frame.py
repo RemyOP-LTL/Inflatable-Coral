@@ -190,110 +190,16 @@ class Frame:
                     pent_in_patch=[q for q in pp if q != pent and self.sides[q] == 5])
 
 
-# ---- sizes and the sheet --------------------------------------------------------------------
-def bounds(points, pad=0.0):
-    P = np.array(points)
-    return P.min(0) - pad, P.max(0) + pad
-
-
-def best_fit_on_sheet(points, pad=0.75):
-    """Smallest bounding rectangle over rotations, and whether it fits a 48 x 96 in sheet."""
-    P = np.array(points)
-    best = None
-    for deg in np.arange(0, 90, 1.0):
-        t = math.radians(deg)
-        R = np.array([[math.cos(t), -math.sin(t)], [math.sin(t), math.cos(t)]])
-        Q = P @ R.T
-        w, h = (Q.max(0) - Q.min(0)) + 2 * pad
-        if best is None or w * h < best[0]:
-            best = (w * h, deg, w, h)
-    _, deg, w, h = best
-    return dict(angle=float(deg), w=float(w), h=float(h), fits=bool(min(w, h) <= SHEET[0] and max(w, h) <= SHEET[1]))
-
-
-def patch_stats(fr, patch, opts):
-    pts = list(patch["pos"].values()) + [c["free"] for c in patch["cuts"]]
-    gaps = sorted((c["gap"] for c in patch["cuts"]), reverse=True)
-    return dict(
-        pentagon=patch["pent"], rings=patch["rings"], windows=len(patch["windows"]),
-        hubs=len(patch["pos"]), spokes=len(patch["solid"]) + len(patch["cuts"]),
-        cuts=len(gaps), gap_max=gaps[0] if gaps else 0.0, gap_mean=float(np.mean(gaps)) if gaps else 0.0,
-        gaps=[round(g, 3) for g in gaps], plate_err=patch["plate_err"], pent_in_patch=patch["pent_in_patch"],
-        joints=len(patch["joint"]), size=best_fit_on_sheet(pts, opts["circle_diameter"] / 2))
-
-
-# ---- drawing (SVG, 1 unit = 1 inch, so it can go straight into Fusion or a CAM program) -----------
-def patch_svg(fr, patch, opts, show_labels=True, title=None):
-    o = {**DEFAULTS, **opts}
-    sw, cd, rh = o["spoke_width"], o["circle_diameter"], o["rivet_hole"]
+# ---- what the page needs ------------------------------------------------------------------------
+def patch_data(fr, patch):
+    """Plain data for one flattened patch (inches). The page (patch_draw.js) does the rest: spreading the free ends
+    apart so the parts can be cut, drawing, sizes. Flat positions are keyed by hub number."""
     pos = patch["pos"]
-    pts = list(pos.values()) + [c["free"] for c in patch["cuts"]]
-    c0 = np.mean([pos[v] for v in patch["plate"]], axis=0)
-    hub_r = max(float(np.linalg.norm(pos[v] - c0)) for v in patch["plate"]) + cd / 2
-    pad = cd / 2 + 1.2
-    lo, hi = bounds(pts, pad)
-    if o["plate"] == "round":
-        lo, hi = np.minimum(lo, c0 - hub_r - 0.5), np.maximum(hi, c0 + hub_r + 0.5)
-    W, H = hi - lo
-    X = lambda p: f"{p[0] - lo[0]:.3f}"
-    Y = lambda p: f"{hi[1] - p[1]:.3f}"                        # SVG y points down
-    ink, fill, free_c, plate_c = "#1c3d2e", "#3aa675", "#e0752b", "#f2a65a"
-    under, over = [], []
-
-    def bar(a, b, color, wid):
-        return f'<line x1="{X(a)}" y1="{Y(a)}" x2="{X(b)}" y2="{Y(b)}" stroke="{color}" stroke-width="{wid:.3f}"/>'
-
-    def disc(p, r, color):
-        return f'<circle cx="{X(p)}" cy="{Y(p)}" r="{r:.3f}" fill="{color}" stroke="{color}"/>'
-
-    items = []                                                   # (a, b, colour) bars and (p, r, colour) discs
-    plate_pts = [pos[v] for v in patch["plate"]]
-    for a, b in patch["solid"]:
-        items.append(("bar", pos[a], pos[b], fill))
-    for c in patch["cuts"]:
-        items.append(("bar", pos[c["own"]], c["free"], free_c))
-    hubs = set(pos) - (set(patch["plate"]) if o["plate"] == "round" else set())
-    for v in hubs:
-        items.append(("disc", pos[v], cd / 2, fill))
-    for c in patch["cuts"]:
-        items.append(("disc", c["free"], cd / 2, free_c))
-    # dark underlay (grows every shape by 0.04 in) then the colours: shows one clean outline round the union
-    g = 0.04
-    for it in items:
-        if it[0] == "bar":
-            under.append(bar(it[1], it[2], ink, sw + 2 * g))
-        else:
-            under.append(disc(it[1], it[2] + g, ink))
-    if o["plate"] == "round":
-        under.append(disc(c0, hub_r + g, ink))
-        over.append(disc(c0, hub_r, plate_c))
-    else:
-        pstr = " ".join(f"{X(p)},{Y(p)}" for p in plate_pts)
-        under.append(f'<polygon points="{pstr}" fill="{ink}" stroke="{ink}" stroke-width="{2 * g}" stroke-linejoin="round"/>')
-        over.append(f'<polygon points="{pstr}" fill="{plate_c}" stroke="{plate_c}" stroke-linejoin="round"/>')
-    for it in items:
-        if it[0] == "bar":
-            over.append(bar(it[1], it[2], it[3], sw))
-        else:
-            over.append(disc(it[1], it[2], it[3]))
-    over.append(f'<circle cx="{X(c0)}" cy="{Y(c0)}" r="{fr.hole_diameter / 2:.3f}" fill="#fff" stroke="{ink}" stroke-width="0.06"/>')
-    # rivet holes: both ends of every cut spoke, and hubs that join the next patch
-    holes = [c["free"] for c in patch["cuts"]] + [pos[c["target"]] for c in patch["cuts"]]
-    holes_j = [pos[v] for v in patch["joint"] if v not in {c["target"] for c in patch["cuts"]}]
-    for p in holes:
-        over.append(f'<circle cx="{X(p)}" cy="{Y(p)}" r="{rh / 2:.3f}" fill="#fff" stroke="{ink}" stroke-width="0.04"/>')
-    for p in holes_j:
-        over.append(f'<circle cx="{X(p)}" cy="{Y(p)}" r="{rh / 2:.3f}" fill="#fff" stroke="#3b6fb0" stroke-width="0.05"/>')
-    pull = []
-    for c in patch["cuts"]:
-        a, b = c["free"], pos[c["target"]]
-        pull.append(f'<line x1="{X(a)}" y1="{Y(a)}" x2="{X(b)}" y2="{Y(b)}" stroke="#c0281d" stroke-width="0.09" stroke-dasharray="0.35 0.25"/>')
-        if show_labels:
-            m = (a + b) / 2
-            pull.append(f'<text x="{X(m)}" y="{Y(m + np.array([0, 0.45]))}" font-size="0.95" text-anchor="middle" fill="#c0281d" '
-                        f'stroke="#fff" stroke-width="0.22" paint-order="stroke" font-family="sans-serif">{c["gap"]:.2f}</text>')
-    sb = lo + np.array([1.0, 1.0])
-    scale = (f'<line x1="{X(sb)}" y1="{Y(sb)}" x2="{X(sb + np.array([6, 0]))}" y2="{Y(sb)}" stroke="#222" stroke-width="0.15"/>'
-             f'<text x="{X(sb + np.array([0, 0.35]))}" y="{Y(sb + np.array([0, 0.35]))}" font-size="1.0" font-family="sans-serif" fill="#222">6 in</text>')
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W:.2f} {H:.2f}" width="{W:.2f}in" height="{H:.2f}in" '
-            f'font-family="sans-serif">' + "".join(under) + "".join(over) + "".join(pull) + scale + "</svg>")
+    r2 = lambda p: [round(float(p[0]), 4), round(float(p[1]), 4)]
+    return dict(
+        pent=patch["pent"], rings=patch["rings"], hole=fr.hole_diameter,
+        plate=patch["plate"], pos={str(v): r2(p) for v, p in pos.items()},
+        solid=[[a, b] for a, b in patch["solid"]],
+        cuts=[dict(own=c["own"], target=c["target"], L=round(c["length"], 4), free0=r2(c["free"])) for c in patch["cuts"]],
+        joint=sorted(patch["joint"]), windows=sorted(patch["windows"]), pent_in_patch=patch["pent_in_patch"],
+        plate_err=round(patch["plate_err"], 4))

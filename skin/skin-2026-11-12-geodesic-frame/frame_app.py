@@ -70,12 +70,6 @@ def label_for(lid, fr):
     return f"{mesh}, hub spacing {p.get('EDGE', '?')} in"
 
 
-def opts_from(q):
-    g = lambda k, d: float(q.get(k, [d])[0])
-    return dict(spoke_width=g("spoke_width", 1.0), circle_diameter=g("circle_diameter", 1.5),
-                rivet_hole=g("rivet_hole", 0.25), plate=q.get("plate", ["outline"])[0])
-
-
 def frame_payload(fr, rings):
     V = np.round(fr.V, 3).tolist()
     edges = []
@@ -90,27 +84,22 @@ def frame_payload(fr, rings):
     for q in ok:
         try:
             pt = fr.flatten(q["id"], rings)
-            stats.append((max((c["gap"] for c in pt["cuts"]), default=0.0), len(pt["cuts"])))
+            stats.extend(c["gap"] for c in pt["cuts"])
         except Exception:                                           # a patch that cannot be laid out is just left out
             pass
-    summary = dict(pentagons=len(pents), usable=len(ok),
-                   gap_median=float(np.median([s[0] for s in stats])) if stats else 0.0,
-                   gap_worst=float(max((s[0] for s in stats), default=0.0)))
+    summary = dict(pentagons=len(pents), usable=len(ok), natural=[round(g, 3) for g in stats])
     return dict(vertices=V, edges=edges, pentagons=pents, summary=summary, hole=fr.hole_diameter,
                 params={k: fr.params.get(k) for k in ("EDGE", "MESH_FILE", "HOLE_DIAMETER", "PENT_ACROSS")})
 
 
-def patch_payload(fr, pent, rings, opts, svg_only=False):
+def patch_payload(fr, pent, rings):
+    """One flattened patch as plain numbers. The page (patch_draw.js) spreads the free ends apart and draws it."""
     pt = fr.flatten(pent, rings)
-    svg = F.patch_svg(fr, pt, opts)
-    if svg_only:
-        return svg
-    st = F.patch_stats(fr, pt, {**F.DEFAULTS, **opts})
-    verts = sorted(pt["pos"])
-    return dict(svg=re.sub(r' width="[\d.]+in" height="[\d.]+in"', "", svg, count=1), stats=st, vertices=verts,
-                polys=sorted(pt["windows"] + [pent]),
-                cuts=[[c["own"], c["target"], round(c["gap"], 3)] for c in pt["cuts"]],
-                spokes=[[a, b] for a, b in pt["solid"]])
+    d = F.patch_data(fr, pt)
+    d["vertices"] = sorted(pt["pos"])
+    d["spokes"] = [[a, b] for a, b in pt["solid"]]
+    d["cut_pairs"] = [[c["own"], c["target"]] for c in pt["cuts"]]
+    return d
 
 
 # ---- making a new layout (runs the existing hex57_mesh.py) ----------------------------------------
@@ -234,16 +223,13 @@ class Handler(BaseHTTPRequestHandler):
                 if fr is None:
                     return self.send(dict(error="No such layout"), code=404)
                 return self.send(frame_payload(fr, int(q.get("rings", ["1"])[0])))
-            if path in ("/api/patch", "/api/patch.svg"):
+            if path == "/api/patch":
                 fr = get_frame(q["layout"][0])
                 if fr is None:
                     return self.send(dict(error="No such layout"), code=404)
-                pent, rings = int(q["pent"][0]), int(q.get("rings", ["1"])[0])
-                if path.endswith(".svg"):
-                    name = f"patch-{q['layout'][0]}-pentagon{pent}.svg"
-                    return self.send(patch_payload(fr, pent, rings, opts_from(q), svg_only=True), "image/svg+xml",
-                                     extra={"Content-Disposition": f'attachment; filename="{name}"'})
-                return self.send(patch_payload(fr, pent, rings, opts_from(q)))
+                return self.send(patch_payload(fr, int(q["pent"][0]), int(q.get("rings", ["1"])[0])))
+            if path == "/patch_draw.js":
+                return self.send(open(os.path.join(HERE, "patch_draw.js"), "rb").read(), "application/javascript")
             if path == "/api/state":
                 job = jobs.get(q.get("job", [""])[0])
                 if not job:

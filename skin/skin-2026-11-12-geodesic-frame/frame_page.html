@@ -46,7 +46,7 @@
 <body>
 <header>
   <h1>Frame tool</h1>
-  <span>Hubs at the polygon corners, 1 in spokes, pentagons as solid plates. One pentagon patch laid flat.</span>
+  <span>Hubs at the polygon corners, spokes between them, pentagons as solid plates. One pentagon patch laid flat.</span>
 </header>
 <div class="wrap">
   <div>
@@ -71,16 +71,16 @@
     </div>
     <div class="card">
       <h2>Plastic</h2>
-      <label>Spoke width, in <span class="val" id="swV"></span></label><input type="range" id="sw" min="0.5" max="2" step="0.25" value="1">
-      <label>Hub circle diameter, in <span class="val" id="cdV"></span></label><input type="range" id="cd" min="1" max="3" step="0.25" value="1.5">
+      <label>Spoke width, in <span class="val" id="swV"></span></label><input type="range" id="sw" min="0.5" max="2.5" step="0.25" value="1.5">
+      <label>Hub circle diameter, in <span class="val" id="cdV"></span></label><input type="range" id="cd" min="0.5" max="2" step="0.25" value="1">
+      <div class="note">A hub narrower than the spoke is hidden by it: the free end is as wide as the wider of the two.</div>
       <label>Rivet hole diameter, in <span class="val" id="rhV"></span></label><input type="range" id="rh" min="0.125" max="0.5" step="0.125" value="0.25">
-      <label>Pentagon plate</label>
-      <select id="plate"><option value="outline">Pentagon outline (plate is the pentagon)</option><option value="round">Round hub (disc round the polyp hole)</option></select>
-      <label style="margin-top:10px"><input type="checkbox" id="both"> Show both plate styles side by side</label>
+      <label>Gap the router must cut between parts, in <span class="val" id="clV"></span></label><input type="range" id="cl" min="0.0625" max="0.5" step="0.0625" value="0.125">
+      <label style="margin-top:10px"><input type="checkbox" id="spread" checked> Swing free ends apart so they can be cut</label>
     </div>
     <div class="card note">
       <b>Reading the flat patch.</b> Orange spokes are cut: they stay joined at one end, and the far end is a free circle.
-      The red dashed line and number say how far (in) to pull it to the hub it belongs to; rivet through the two small holes.
+      The red dashed line and number say how far (in) to pull it to the hub it belongs to; rivet through the two small holes. A red ring means that end still touches something and cannot be cut.
       Blue-ringed holes are hubs that join the next patch.
     </div>
   </div>
@@ -107,6 +107,7 @@
 
 <script src="/vendor/three.min.js"></script>
 <script src="/vendor/OrbitControls.js"></script>
+<script src="/patch_draw.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const S = { layout:null, frame:null, pent:null, patch:null };
@@ -199,9 +200,9 @@ function zoomPatch() {
 
 // ---------- data ----------
 function opts() {
-  return { spoke_width:$('sw').value, circle_diameter:$('cd').value, rivet_hole:$('rh').value, plate:$('plate').value };
+  return { spoke_width:+$('sw').value, circle_diameter:+$('cd').value, rivet_hole:+$('rh').value, clearance:+$('cl').value, spread:$('spread').checked };
 }
-function qs(extra) { return new URLSearchParams({ layout:S.layout, pent:S.pent, rings:$('rings').value, ...opts(), ...(extra || {}) }).toString(); }
+function qs() { return new URLSearchParams({ layout:S.layout, pent:S.pent, rings:$('rings').value }).toString(); }
 async function loadLayouts(pick) {
   const d = await j('/api/layouts');
   $('layout').innerHTML = d.layouts.map(l => `<option value="${l.id}">${l.label}</option>`).join('');
@@ -220,8 +221,7 @@ async function loadFrame() {
   const usable = f.pentagons.filter(p => p.ok);
   $('pent').innerHTML = f.pentagons.map(p => `<option value="${p.id}" ${p.ok ? '' : 'disabled'}>Pentagon ${p.id}${p.ok ? '' : ' (too near the edge)'}</option>`).join('');
   $('layoutInfo').innerHTML = `Hub spacing ${f.params.EDGE} in &middot; polyp hole ${fmt(f.hole, 1)} in &middot; ${f.pentagons.length} pentagons, ${usable.length} usable with ${$('rings').value} ring(s)`;
-  const s = f.summary;
-  $('summary').innerHTML = `With ${$('rings').value} ring(s), ${s.usable} of ${s.pentagons} pentagon patches are on the real skin. In those, the longest free-spoke pull is <b>${fmt(s.gap_median)} in</b> in the typical patch and <b>${fmt(s.gap_worst)} in</b> in the worst. Each patch has one cut spoke per window round the pentagon (about five at 1 ring).`;
+  S.natural = f.summary.natural; S.usableN = usable.length; S.pentN = f.pentagons.length;
   if (!R) init3d();
   S.pent = usable.length ? (usable.some(p => p.id === S.pent) ? S.pent : usable[Math.floor(usable.length / 2)].id) : null;
   $('pent').value = S.pent;
@@ -229,43 +229,47 @@ async function loadFrame() {
   await loadPatch(true);
 }
 let pending = null;
-function schedulePatch() { clearTimeout(pending); pending = setTimeout(() => loadPatch(false), 120); }
+function schedulePatch() { clearTimeout(pending); pending = setTimeout(render, 100); }
 async function loadPatch(zoom) {
-  if (S.pent === null) { $('flat').innerHTML = '<div class="note">No pentagon is far enough from the edge for this many rings.</div>'; $('stats').innerHTML = ''; return; }
-  const both = $('both').checked;
-  const mk = async plate => j('/api/patch?' + qs({ plate }));
-  let a, b;
-  if (both) { [a, b] = await Promise.all([mk('outline'), mk('round')]); } else { a = await mk($('plate').value); }
-  if (a.error) { $('flat').innerHTML = `<div class="bad">${a.error}</div>`; return; }
-  S.patch = a;
-  $('flat').className = both ? 'both' : '';
-  $('flat').innerHTML = both ? `<div><div class="note">Pentagon outline</div>${a.svg}</div><div><div class="note">Round hub</div>${b.svg}</div>` : a.svg;
-  const st = a.stats, sz = st.size;
+  if (S.pent === null) { S.P = null; $('flat').innerHTML = '<div class="note">No pentagon is far enough from the edge for this many rings.</div>'; $('stats').innerHTML = ''; return; }
+  const P = await j('/api/patch?' + qs());
+  if (P.error) { $('flat').innerHTML = `<div class="bad">${P.error}</div>`; return; }
+  S.P = P;
+  render();
+  if (zoom) zoomPatch();
+}
+function render() {
+  if (!S.P) return;
+  const o = opts(), R_ = PatchDraw.prepare(S.P, o), st = R_.stats, sz = R_.size;
+  S.patch = { vertices:S.P.vertices, spokes:S.P.spokes, cuts:S.P.cut_pairs };
+  $('flat').innerHTML = PatchDraw.svg(R_, o, false);
+  S.R = R_;
   $('stats').innerHTML = [
-    ['Spokes cut', st.cuts], ['Longest pull', fmt(st.gap_max) + ' in'], ['Average pull', fmt(st.gap_mean) + ' in'],
-    ['Patch size', fmt(Math.max(sz.w, sz.h), 1) + ' x ' + fmt(Math.min(sz.w, sz.h), 1) + ' in'], ['Hubs / spokes', st.hubs + ' / ' + st.spokes], ['Hubs joining next patch', st.joints]
+    ['Spokes cut', st.cuts], ['Cannot be cut yet', st.blocked], ['Longest pull', fmt(st.gapMax) + ' in'], ['Average pull', fmt(st.gapMean) + ' in'],
+    ['Patch size', fmt(Math.max(sz.W, sz.H), 1) + ' x ' + fmt(Math.min(sz.W, sz.H), 1) + ' in'], ['Hubs joining next patch', st.joints]
   ].map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
   $('fit').innerHTML = (sz.fits ? 'Fits a 4 x 8 ft sheet' : '<span class="bad">Does not fit a 4 x 8 ft sheet</span>') +
-    ` (smallest box ${fmt(sz.w, 1)} x ${fmt(sz.h, 1)} in, turned ${sz.angle} degrees).` +
-    (st.pent_in_patch.length ? ` <span class="bad">Another pentagon (${st.pent_in_patch.join(', ')}) is inside this patch and is treated as an ordinary window, so its plate is not rigid yet. Use fewer rings.</span>` : '') +
-    (st.plate_err > 0.1 ? ` Plate edges differ from 3D by up to ${fmt(st.plate_err)} in.` : '');
+    ` (smallest box ${fmt(sz.W, 1)} x ${fmt(sz.H, 1)} in, turned ${sz.deg} degrees).` +
+    (st.blocked ? ` <span class="bad">${st.blocked} free end(s) still touch something (red rings). Try a narrower spoke, or a smaller gap.</span>` : '') +
+    (st.pentInPatch.length ? ` <span class="bad">Another pentagon (${st.pentInPatch.join(', ')}) is inside this patch and is treated as an ordinary window, so its plate is not rigid yet. Use fewer rings.</span>` : '');
+  const need = o.circle_diameter < o.spoke_width ? o.spoke_width : o.circle_diameter, nat = S.natural || [];
+  const close = nat.filter(g => g < need + o.clearance).length;
+  $('summary').innerHTML = `With ${$('rings').value} ring(s), ${S.usableN} of ${S.pentN} pentagon patches are on the real skin. Before swinging apart, <b>${close} of ${nat.length}</b> cut spokes would have their two circles touching (their natural gap is under ${fmt(need + o.clearance)} in): that is why the free ends are swung apart.`;
   colour3d();
-  if (zoom) zoomPatch();
 }
 function selectPent(id, zoom) { S.pent = id; $('pent').value = id; loadPatch(zoom !== false); }
 
 // ---------- controls ----------
-function labels() { $('ringsV').textContent = $('rings').value; $('swV').textContent = $('sw').value; $('cdV').textContent = $('cd').value; $('rhV').textContent = $('rh').value; }
+function labels() { $('ringsV').textContent = $('rings').value; $('swV').textContent = $('sw').value; $('cdV').textContent = $('cd').value; $('rhV').textContent = $('rh').value; $('clV').textContent = $('cl').value; }
 $('layout').onchange = () => { S.layout = $('layout').value; loadFrame(); };
 $('pent').onchange = () => selectPent(Number($('pent').value));
 const step = d => { const ids = S.frame.pentagons.filter(p => p.ok).map(p => p.id); selectPent(ids[(ids.indexOf(S.pent) + d + ids.length) % ids.length]); };
 $('prev').onclick = () => step(-1); $('next').onclick = () => step(1);
 $('rings').oninput = () => { labels(); store.set('rings', $('rings').value); clearTimeout(pending); pending = setTimeout(loadFrame, 150); };
-['sw', 'cd', 'rh'].forEach(id => $(id).oninput = () => { labels(); store.set(id, $(id).value); schedulePatch(); });
-$('plate').onchange = () => { store.set('plate', $('plate').value); loadPatch(false); };
-$('both').onchange = () => loadPatch(false);
+['sw', 'cd', 'rh', 'cl'].forEach(id => $(id).oninput = () => { labels(); store.set(id === 'sw' ? 'sw2' : id === 'cd' ? 'cd2' : id, $(id).value); schedulePatch(); });
+$('spread').onchange = render;
 $('focus').onclick = zoomPatch; $('all').onclick = showAll;
-$('dl').onclick = () => { if (S.pent !== null) location.href = '/api/patch.svg?' + qs(); };
+$('dl').onclick = () => { if (!S.R) return; const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([PatchDraw.svg(S.R, opts(), true)], { type:'image/svg+xml' })); a.download = `patch-${S.layout}-pentagon${S.pent}.svg`; a.click(); };
 $('run').onclick = async () => {
   $('run').disabled = true; $('runState').textContent = 'Starting...';
   const r = await j('/api/run', { method:'POST', body:JSON.stringify({ mesh:$('mesh').value, edge:$('edge').value }) });
@@ -279,8 +283,8 @@ $('run').onclick = async () => {
   };
   poll();
 };
-$('rings').value = store.get('rings', '1'); $('sw').value = store.get('sw', '1'); $('cd').value = store.get('cd', '1.5');
-$('rh').value = store.get('rh', '0.25'); $('plate').value = store.get('plate', 'outline'); labels();
+$('rings').value = store.get('rings', '1'); $('sw').value = store.get('sw2', '1.5'); $('cd').value = store.get('cd2', '1');
+$('rh').value = store.get('rh', '0.25'); $('cl').value = store.get('cl', '0.125'); labels();
 loadLayouts();
 </script>
 </body>
