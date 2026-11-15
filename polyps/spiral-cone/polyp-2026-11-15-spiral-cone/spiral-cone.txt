@@ -1,0 +1,30 @@
+SPIRAL-CONE POLYP: flat pattern numbers (inches; 1 in = 25.4 mm)
+
+Settings:
+  LENGTH           10
+  BASE_DIAMETER    5.11811
+  TIP_DIAMETER     1
+  PITCH_BASE       3
+  PITCH_TIP        1.2
+  PITCH_CURVE      1
+  SEAM             0.5
+  RUFFLE_WIDTH     3
+  RUFFLE_FULLNESS  1
+  CUFF_HEIGHT      2
+  HEM              1
+  FABRIC_WIDTH     58
+  TICK             5
+
+Results:
+  Cone half-angle                 11.6 deg
+  Turns of the spiral seam        5.09
+  Height gained per full turn     2.75 in at the base, 1.31 in at the tip (a bit under the PITCH settings, which are the rate at that exact height)
+  Seam length (sewn once)         45.2 in  (1.15 m)
+  Cone strip, cut size            bounding box 20.4 x 23.2 in, tightest rectangle 17.8 x 21.8 in
+  Ruffle strip                    3.0 x 46.2 in, cut 1; fin stands out 1.00 in (folded in half, 1/2 in allowance)
+  Cuff band                       17.1 x 3.5 in, cut 1 (ring 16.1 in around)
+  Tip opening, circumference      3.1 in
+  Pieces to cut                   3
+
+Checks:
+  Fin height 1.00 in is taller than the tip radius 0.50 in. The fins from opposite sides of the tip will crowd each other.

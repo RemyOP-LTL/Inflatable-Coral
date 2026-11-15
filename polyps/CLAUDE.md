@@ -5,7 +5,8 @@ Inflatable polyps. One sits in each pentagon panel of the skin.
 
 ## Sub-folders
 - `air/` — blowers, ducting and pressure (a separate workstream).
-- `fabric-pattern/` — the sewn nylon pattern, including string channels.
+- `fabric-pattern/` — the sewn nylon pattern, including string channels (5-finger design).
+- `spiral-cone/` — a second design, started 2026-11-15: one long strip wound in a spiral into a cone, with a spiral ruffle, a cuff, and one string down the axis. Fewer pieces and seams than the 5-finger design. Pattern tool on port 8820. See its CLAUDE.md.
 - `motor/` — the motor that winds the string.
 - `electronics/` — custom board with motor controllers and LEDs; controller, power.
 
@@ -16,6 +17,9 @@ Inflatable polyps. One sits in each pentagon panel of the skin.
 - A motor winds up the string to collapse the polyp. Releasing the string lets the air inflate it again.
 
 ## Status
+Two designs. The 5-finger one did not work as hoped in a prototype and takes too much sewing. The spiral cone (`spiral-cone/`) is the new direction; first flat-pattern generator done 2026-11-15, nothing sewn yet.
+
+5-finger design:
 Fabric pattern in `fabric-pattern/` (copied from the Modeling repo and re-run successfully). Design `polyp-5-taper`: 5 fingers on a cuff that slides over a 5 in tube. Motor and electronics not started.
 
 ## Open questions

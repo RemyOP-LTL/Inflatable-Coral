@@ -1,0 +1,48 @@
+<title>Spiral-cone polyp</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+:root { /* one column: summary, picture, numbers, open questions */
+  --bg:#f5f4f1; --card:#ffffff; --fg:#1f2326; --mute:#5f676d; --line:#dcdad4; --accent:#b4432b; --warn-bg:#fdf1d6; --warn-fg:#5a4300;
+  --font: Inter, system-ui, sans-serif; --mono: ui-monospace, Menlo, monospace; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#171a1c; --card:#202427; --fg:#e8eaeb; --mute:#9aa3a9; --line:#343a3e; --accent:#e47a5f; --warn-bg:#3a3017; --warn-fg:#f0d9a0; color-scheme: dark; } }
+:root[data-theme="dark"] { --bg:#171a1c; --card:#202427; --fg:#e8eaeb; --mute:#9aa3a9; --line:#343a3e; --accent:#e47a5f; --warn-bg:#3a3017; --warn-fg:#f0d9a0; color-scheme: dark; }
+body { background:var(--bg); color:var(--fg); font:15px/1.5 var(--font); padding-block:20px; padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); }
+main { max-width:980px; margin:0 auto; display:grid; gap:16px; }
+h1 { font-size:22px; margin:0; } h2 { font-size:16px; margin:0 0 8px; } p { margin:6px 0; max-width:70ch; }
+.sub { color:var(--mute); }
+.card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px 16px; min-width:0; }
+img { display:block; width:100%; height:auto; background:#fff; border-radius:4px; }
+table { border-collapse:collapse; width:100%; font-size:14px; } td { padding:4px 8px 4px 0; border-top:1px solid var(--line); vertical-align:top; } td:first-child { color:var(--mute); width:44%; }
+.scroll { overflow-x:auto; } .warn { background:var(--warn-bg); color:var(--warn-fg); padding:8px 12px; border-radius:6px; }
+code { font-family:var(--mono); font-size:13px; }
+ul { margin:6px 0; padding-left:20px; } a { color:var(--accent); }
+</style>
+<main>
+<header><h1>Spiral-cone polyp</h1>
+<p class="sub">First flat pattern, 2026-11-15, branch <code>polyp-2026-11-15-spiral-cone</code>. Three pieces instead of ten, one long seam.</p></header>
+
+<section class="card"><h2>Flat pieces and a sketch of the finished cone</h2>
+<img src="spiral-cone.png" alt="Flat cone strip, ruffle strip and cuff band, and a 3D sketch of the cone with a spiral seam">
+<p class="sub">Red is the cut line, blue dashed is the sew line. Numbered notches match along the spiral seam. The SVG for the laser is <a href="spiral-cone.svg">spiral-cone.svg</a> (true size, inches).</p></section>
+
+<section class="card"><h2>Numbers at the starting settings</h2>
+<div class="scroll"><table>
+<tr><td>Cone</td><td>10 in long, 130 mm (5.12 in) base, 1 in tip (assumed)</td></tr>
+<tr><td>Pitch (height per turn)</td><td>3.0 in at the base to 1.2 in at the tip (assumed), 5.1 turns</td></tr>
+<tr><td>Seam, sewn once</td><td>45.2 in. Both edges of the strip match it exactly.</td></tr>
+<tr><td>Cone strip</td><td>about 20 x 23 in bounding box, cut 1</td></tr>
+<tr><td>Ruffle strip</td><td>3 x 46 in, cut 1, folded in half, fin stands out 1.0 in</td></tr>
+<tr><td>Cuff band</td><td>17.1 x 3.5 in, cut 1 (2 in tall, ring 16.1 in around)</td></tr>
+</table></div></section>
+
+<section class="card"><h2>Please check</h2>
+<p class="warn">At these settings the 1 in fin is taller than the 0.5 in tip radius and about as tall as the tightest pitch, so the fins will crowd near the tip. A smaller ruffle width, a wider tip or a looser tip pitch fixes it.</p>
+<ul>
+<li>Is the ruffle folded in half with both raw edges in the seam (1 in fin from a 3 in strip), or do you want a taller single layer?</li>
+<li>Tip diameter, the two pitches and fabric width are my guesses.</li>
+<li>Laser bed size? The ruffle strip is 46 in long and can be cut in pieces.</li>
+</ul></section>
+
+<section class="card"><h2>Try other sizes</h2>
+<p>On your Mac, open the tool at <code>http://127.0.0.1:8820/</code> and change length, base diameter, pitch, ruffle width and more. It redraws in about two seconds and gives you the SVG. First time only: pick this branch in the polyp simulator (<code>http://127.0.0.1:8800/</code>), press Get latest changes, then run the one-line setup Claude gave you in chat.</p></section>
+</main>
