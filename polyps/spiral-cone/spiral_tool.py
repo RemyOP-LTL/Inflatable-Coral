@@ -25,25 +25,25 @@ OUT = os.path.join(HERE, "tool-output")
 PORT = int(os.environ.get("SPIRAL_TOOL_PORT", 8820))   # polyp tool 8800, skin tool 8765+; each tool has its own block
 import spiral_cone as S
 
-# (setting, label, unit, min, max, step, help)
+# (section, setting, label, unit, min, max, step)  -- all lengths in millimetres
 FIELDS = [
-    ("LENGTH", "Cone length", "in", 4, 30, 0.5, "Height above the cuff line, including the straight-seam part at the top."),
-    ("BASE_DIAMETER", "Cuff line diameter", "in", 2, 12, 0.05, "Inside diameter where the cuff meets the cone (the tube fit). 130 mm = 5.12 in."),
-    ("TIP_DIAMETER", "Tip diameter", "in", 0, 6, 0.25, "0 = the cone comes to a point."),
-    ("PITCH_BASE", "Pitch at the base", "in", 0.5, 8, 0.1, "Height gained per turn of the seam at the bottom. Bigger = more open spiral."),
-    ("PITCH_TIP", "Pitch at the end of the spiral", "in", 0.5, 8, 0.1, "Same where the spiral ends. Smaller than the base = tighter wind toward the tip."),
-    ("PITCH_CURVE", "Pitch curve", "", 0.3, 3, 0.1, "1 = changes evenly. Above 1 stays open longer, then tightens near the end."),
-    ("STRAIGHT_LENGTH", "Straight seam length", "in", 0, 6, 0.25, "The last part of the cone has one straight seam instead of a spiral."),
-    ("TRANSITION", "Spiral to straight blend", "in", 0, 6, 0.25, "The spiral fades into the straight seam over this length. 0 = a sharp corner."),
-    ("FRILL_START", "Frill starts at", "in", 0, 9, 0.25, "Inches up the axis from the cuff line. The frill runs to the end of the spiral."),
-    ("RUFFLE_WIDTH", "Frill strip width", "in", 1, 6, 0.25, "Cut width: the solid seam allowance plus the fringe that stands out."),
-    ("SEAM", "Seam allowance", "in", 0.25, 1, 0.125, "On every edge except the open end of the cuff."),
-    ("CUFF_HEIGHT", "Cuff height", "in", 1, 5, 0.25, "Finished height of the cuff."),
-    ("CUFF_IN_STRIP", "Cuff part of the strip", "1/0", 0, 1, 1, "1 = the cuff is the bottom of the cone strip (flares slightly). 0 = separate straight cuff band."),
-    ("TAB_SIZE", "Alignment tab size", "in", 0.25, 1, 0.125, "Square tabs along the seams to tack the pieces together."),
-    ("TAB_SPACING", "Tab spacing", "in", 2, 12, 0.5, "About one tab every this many inches of seam."),
-    ("FRINGE_WIDTH", "Fringe strip width", "in", 0.1, 1, 0.05, "The part of the frill that stands out is slit into strips this wide."),
-    ("FABRIC_WIDTH", "Fabric width", "in", 20, 120, 1, "Usable width of the fabric. Only used for the fit check."),
+    ("Cone shape", "LENGTH", "Cone length", "mm", 100, 800, 5),
+    ("Cone shape", "BASE_DIAMETER", "Cuff line diameter", "mm", 50, 300, 1),
+    ("Cone shape", "TIP_DIAMETER", "Tip diameter", "mm", 0, 150, 5),
+    ("Cone shape", "CUFF_HEIGHT", "Cuff height", "mm", 25, 125, 5),
+    ("Cone shape", "CUFF_IN_STRIP", "Cuff in the strip (1 yes, 0 no)", "", 0, 1, 1),
+    ("Seam", "PITCH_BASE", "Pitch at the base", "mm", 10, 200, 1),
+    ("Seam", "PITCH_TIP", "Pitch at the end of the spiral", "mm", 10, 200, 1),
+    ("Seam", "PITCH_CURVE", "Pitch curve", "", 0.3, 3, 0.1),
+    ("Seam", "STRAIGHT_LENGTH", "Straight seam length", "mm", 0, 150, 5),
+    ("Seam", "TRANSITION", "Spiral to straight blend", "mm", 0, 150, 5),
+    ("Seam", "SEAM", "Seam allowance", "mm", 6, 25, 1),
+    ("Seam", "FABRIC_WIDTH", "Fabric width (fit check)", "mm", 500, 3000, 10),
+    ("Frill", "FRILL_START", "Frill starts at (up from cuff line)", "mm", 0, 225, 5),
+    ("Frill", "RUFFLE_WIDTH", "Frill strip width (cut)", "mm", 25, 150, 1),
+    ("Frill", "FRINGE_WIDTH", "Fringe strip width", "mm", 3, 25, 0.5),
+    ("Tabs", "TAB_SIZE", "Tab size", "mm", 6, 25, 1),
+    ("Tabs", "TAB_SPACING", "Tab spacing", "mm", 50, 300, 5),
 ]
 DEFAULTS = {k: getattr(S, k) for k in S.NAMES}
 LOCK = threading.Lock()
@@ -52,7 +52,7 @@ LOCK = threading.Lock()
 def run_pattern(params):
     """Make the pattern for these settings. Returns (folder name, result dict)."""
     clean = {}
-    for name, *_ in FIELDS:
+    for _sec, name, *_ in FIELDS:
         v = float(params.get(name, DEFAULTS[name]))
         if not (v == v) or abs(v) > 1e4:
             raise ValueError(f"{name} is not a sensible number")
@@ -66,16 +66,9 @@ def run_pattern(params):
     return key, {"text": text, "warnings": info["warnings"], "seam": info["seam_total"], "turns": info["turns"]}
 
 
-# --- version card, shared with the polyp tool (same repo, same git commands)
-try:                                        # only needed for the "Get latest changes" version card
-    sys.path.insert(0, os.path.join(HERE, "..", "fabric-pattern"))
-    import polyp_tool as PT
-except ImportError:                         # stand-alone copy of this folder: no version card, everything else works
-    PT = None
-
-
+# --- version label and Refresh (same as the skin tool's)
 def git(*args, timeout=60):
-    """Run a git command in THIS folder (so path prefixes are right). Returns (ok, text)."""
+    """Run a git command in THIS folder. Returns (ok, text)."""
     try:
         r = subprocess.run(["git", *args], cwd=HERE, capture_output=True, text=True, timeout=timeout)
         return r.returncode == 0, (r.stdout + r.stderr).strip()
@@ -84,44 +77,40 @@ def git(*args, timeout=60):
 
 
 def version():
-    """Version info for the page: which branch we are on, and which branches have this tool (newest first)."""
-    v = PT.version_info() if PT else {"git": False}
-    if not v.get("git"):
-        return v
-    _, prefix = git("rev-parse", "--show-prefix")
-    keep = [b for b in v["branches"] if git("cat-file", "-e", f"origin/{b['name']}:{prefix}spiral_tool.py")[0]]
-    v["branches"] = keep
-    v["newest"] = keep[0]["name"] if keep else None
-    return v
+    """Which branch and last change this copy is on (shown in the top bar)."""
+    ok, branch = git("rev-parse", "--abbrev-ref", "HEAD")
+    if not ok:
+        return dict(git=False)
+    _, line = git("log", "-1", "--format=%h|%cs|%s")
+    sha, date, subject = (line.split("|", 2) + ["", "", ""])[:3]
+    _, dirty = git("status", "--porcelain", "--untracked-files=no")
+    return dict(git=True, branch=branch, sha=sha, date=date, subject=subject, edited=bool(dirty))
 
 
-def update_code(branch):
-    """Switch to `branch` and bring it up to date, like the polyp tool's button."""
-    if PT is None:
-        return False, "This copy is stand-alone (not inside the Coral repo), so there is nothing to update."
-    if not re.fullmatch(r"[A-Za-z0-9._/-]+", branch or ""):
-        return False, "That branch name isn't valid."
-    ok, out = git("status", "--porcelain", "--untracked-files=no")
-    if out:
-        return False, "Some files in this copy were edited on this computer, so I won't overwrite them:\n" + out
-    ok, out = git("fetch", "--prune", "origin", timeout=60)
-    if not ok:
-        return False, "Couldn't reach GitHub. Check your internet connection.\n" + out
-    _, prefix = git("rev-parse", "--show-prefix")
-    if not git("cat-file", "-e", f"origin/{branch}:{prefix}spiral_tool.py")[0]:
-        return False, f"The branch {branch} doesn't have the spiral-cone tool in it, so I can't switch to it."
-    _, cur = git("rev-parse", "--abbrev-ref", "HEAD")
-    ok, ahead = git("rev-list", "--count", f"origin/{branch}..HEAD")
-    if cur == branch and ok and ahead.isdigit() and int(ahead) > 0:
-        return False, "This copy has changes that aren't on GitHub, so I won't overwrite them."
-    ok, out = git("checkout", "-B", branch, f"origin/{branch}")
-    if not ok:
-        return False, f"Couldn't switch to {branch}.\n" + out
-    pip = subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "-r", os.path.join(HERE, "requirements.txt")],
-                         capture_output=True, text=True)
-    if pip.returncode != 0:
-        out += "\n(The library check failed: " + pip.stderr.strip()[-300:] + ")"
-    return True, out
+def refresh_code():
+    """Pull newer changes from GitHub if that is safe, install any new libraries. The caller then restarts the
+    tool so whatever is in the folder (pulled, or edited here) is what runs."""
+    log = []
+    ok, branch = git("rev-parse", "--abbrev-ref", "HEAD")
+    if ok and branch != "HEAD":
+        fetched, _ = git("fetch", "--prune", "origin", timeout=30)
+        if not fetched:
+            log.append("Could not reach GitHub, so I used the files already on this computer.")
+        else:
+            has_remote = git("rev-parse", "--verify", "--quiet", f"origin/{branch}")[0]
+            _, behind = git("rev-list", "--count", f"HEAD..origin/{branch}") if has_remote else (False, "0")
+            if has_remote and behind.isdigit() and int(behind) > 0:
+                merged, out = git("merge", "--ff-only", f"origin/{branch}")
+                log.append(f"Pulled {behind} new change(s) from GitHub." if merged else
+                           "GitHub has newer changes but they would clash with changes here, so I left them. " + out[-200:])
+            else:
+                log.append("Nothing new on GitHub.")
+    req = os.path.join(HERE, "requirements.txt")
+    if os.path.exists(req):
+        pip = subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "-r", req], cwd=HERE, capture_output=True, text=True)
+        if pip.returncode != 0:
+            log.append("(The library check failed: " + pip.stderr.strip()[-200:] + ")")
+    return True, " ".join(log)
 
 
 def restart_soon():
@@ -171,8 +160,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = urlparse(self.path).path
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
-        if path == "/api/update":
-            ok, log = update_code(body.get("branch"))
+        if path == "/api/refresh":
+            ok, log = refresh_code()
             self.send(200, json.dumps({"ok": ok, "log": log}), "application/json")
             if ok:
                 restart_soon()
@@ -195,13 +184,14 @@ PAGE = r"""<!doctype html>
   @media (prefers-color-scheme: dark) { :root { --bg:#1b1a19; --card:#262523; --ink:#eee; --mute:#a59f96; --line:#3a3835; --accent:#e5694e; --blue:#6aa7e8; } }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui, sans-serif; }
-  header { padding:14px 20px; border-bottom:1px solid var(--line); }
+  header { padding:10px 20px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  header button { width:auto; margin:0; padding:5px 12px; }
   header h1 { margin:0; font-size:18px; } header p { margin:2px 0 0; color:var(--mute); font-size:13px; }
   main { display:grid; grid-template-columns: 330px 1fr; gap:16px; padding:16px; max-width:1500px; margin:0 auto; }
   @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
   .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
   .card h2 { margin:0 0 8px; font-size:15px; }
-  .field { margin:10px 0; } .field label { display:flex; justify-content:space-between; font-weight:600; font-size:13px; }
+  .field { margin:8px 0; } .field label { display:flex; justify-content:space-between; font-weight:600; font-size:13px; }
   .field input[type=number] { width:78px; font:inherit; padding:2px 4px; border:1px solid var(--line); border-radius:5px; background:var(--bg); color:var(--ink); }
   .field input[type=range] { width:100%; accent-color:var(--accent); }
   .field small { color:var(--mute); display:block; line-height:1.3; }
@@ -214,25 +204,25 @@ PAGE = r"""<!doctype html>
   .status { font-size:13px; color:var(--mute); white-space:pre-wrap; font-family:ui-monospace, monospace; max-height:150px; overflow:auto; margin-top:6px; }
   .stale img { opacity:.35; } a { color:var(--blue); } .err { color:#c0392b; }
   .reset { background:none; border:none; color:var(--mute); text-decoration:underline; font-weight:400; width:auto; padding:0; margin:8px 0 0; }
+  .sticky { position:sticky; top:0; z-index:5; }
   .derived { font-size:13px; color:var(--mute); }
 </style></head><body>
-<header><h1>Spiral-cone polyp tool</h1><p>Change a setting and the flat pattern, 3D sketch and checks redraw. Download the SVG for the laser.</p></header>
+<header><h1>Cone worm</h1><span class="derived">Spiral-cone polyp pattern. Sizes in millimetres. Type them, press Rebuild, download the SVG for the laser.</span>
+  <span id="ver" class="derived" style="margin-left:auto"></span>
+  <button id="refresh-btn" title="Load the newest version of the tool (anything Claude changed or pushed)">Refresh tool</button>
+  <span id="refresh-msg" class="derived"></span></header>
 <main>
   <div>
-    <div class="card" style="margin-bottom:16px"><h2>Version</h2>
-      <div id="version-text" class="derived">Checking GitHub...</div>
-      <div class="field" style="margin-bottom:0"><select id="branch-select" style="width:100%;font:inherit;padding:4px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink)"></select></div>
-      <label class="field" style="display:flex;gap:8px;align-items:center;font-weight:600;font-size:13px;margin:8px 0 0"><input type="checkbox" id="auto" checked> Open the newest version automatically</label>
-      <button id="update-btn" class="secondary">Get latest changes</button>
-      <div class="status" id="update-log"></div></div>
-    <div class="card"><h2>Cone and ruffle</h2><div id="fields"></div>
+    <div class="card sticky"><div id="dirty" class="warn" style="display:none">Sizing changed. Press Rebuild.</div>
+      <button id="rebuild">Rebuild</button>
       <button class="reset" id="reset">Reset to the starting values</button></div>
+    <div id="sections"></div>
   </div>
   <div class="results">
     <div class="card" id="card"><h2>Pattern <span id="busy" class="derived"></span></h2>
       <div id="warnings"></div>
       <img id="pic" alt="">
-      <p><a id="svg" href="#" download>Download SVG (true size, for the laser)</a></p>
+      <p><a id="svg" href="#" download>Download SVG (true size in mm, for the laser)</a></p>
       <pre id="text"></pre></div>
   </div>
 </main>
@@ -240,55 +230,50 @@ PAGE = r"""<!doctype html>
 const META = __META__;
 const $ = id => document.getElementById(id);
 const vals = {...META.defaults};
-let timer = null, seq = 0;
-for (const [name, label, unit, lo, hi, step, help] of META.fields) {
+let seq = 0;
+const secs = {};
+for (const [sec, name, label, unit, lo, hi, step] of META.fields) {
+  if (!secs[sec]) { const c = document.createElement('div'); c.className = 'card'; c.style.marginTop = '12px'; c.innerHTML = `<h2>${sec}</h2>`; $('sections').appendChild(c); secs[sec] = c; }
   const d = document.createElement('div'); d.className = 'field';
-  d.innerHTML = `<label>${label}<span><input type="number" id="n-${name}" min="${lo}" max="${hi}" step="${step}"> ${unit}</span></label>
-    <input type="range" id="r-${name}" min="${lo}" max="${hi}" step="${step}"><small>${help}</small>`;
-  $('fields').appendChild(d);
-  const n = d.querySelector('input[type=number]'), r = d.querySelector('input[type=range]');
-  const set = v => { vals[name] = parseFloat(v); n.value = +(+v).toFixed(3); r.value = v; schedule(); };
-  n.oninput = () => { if (n.value !== '') set(n.value); }; r.oninput = () => set(r.value);
-  n.value = +(+vals[name]).toFixed(3); r.value = vals[name];
+  d.innerHTML = `<label>${label}<span><input type="number" id="n-${name}" min="${lo}" max="${hi}" step="${step}"> ${unit}</span></label>`;
+  secs[sec].appendChild(d);
+  const n = d.querySelector('input');
+  n.value = +(+vals[name]).toFixed(3);
+  n.oninput = () => { if (n.value !== '') { vals[name] = parseFloat(n.value); dirty(true); } };
+  n.onkeydown = e => { if (e.key === 'Enter') run(); };
 }
-function sync() { for (const [name] of META.fields) { $('n-' + name).value = +(+vals[name]).toFixed(3); $('r-' + name).value = vals[name]; } }
-$('reset').onclick = () => { Object.assign(vals, META.defaults); sync(); schedule(); };
-function schedule() { clearTimeout(timer); $('card').classList.add('stale'); timer = setTimeout(run, 500); }
+function dirty(on) { $('dirty').style.display = on ? 'block' : 'none'; $('card').classList.toggle('stale', on); }
+function sync() { for (const [name] of META.fields) $('n-' + name).value = +(+vals[name]).toFixed(3); }
+$('reset').onclick = () => { Object.assign(vals, META.defaults); sync(); run(); };
+$('rebuild').onclick = () => run();
 async function run() {
-  const me = ++seq; $('busy').textContent = 'updating...';
+  const me = ++seq; $('busy').textContent = 'building...';
   const r = await fetch('/api/run', {method: 'POST', body: JSON.stringify({params: vals})}).then(x => x.json()).catch(() => ({error: 'Lost the connection to the tool.'}));
   if (me !== seq) return;
-  $('busy').textContent = ''; $('card').classList.remove('stale');
+  $('busy').textContent = ''; dirty(false);
   if (r.error) { $('warnings').innerHTML = '<div class="warn err">' + r.error + '</div>'; return; }
   $('warnings').innerHTML = r.warnings.map(w => '<div class="warn">' + w + '</div>').join('');
   $('pic').src = '/out/' + r.key + '/spiral-cone.png';
   $('svg').href = '/out/' + r.key + '/spiral-cone.svg?dl=1';
   $('text').textContent = r.text;
 }
-let auto = true; try { auto = localStorage.getItem('auto') !== '0'; } catch (e) {}
-$('auto').checked = auto;
-$('auto').onchange = () => { try { localStorage.setItem('auto', $('auto').checked ? '1' : '0'); } catch (e) {} };
-async function doUpdate(branch) {
-  $('update-btn').disabled = true; $('update-log').textContent = 'Getting ' + branch + '...';
-  const r = await fetch('/api/update', {method: 'POST', body: JSON.stringify({branch})}).then(x => x.json()).catch(() => ({ok: false, log: 'Lost the connection.'}));
-  $('update-log').textContent = r.log; $('update-btn').disabled = false;
-  if (!r.ok) return;
-  $('update-log').textContent += '\nRestarting...';
-  for (let i = 0; i < 40; i++) { await new Promise(s => setTimeout(s, 1000)); try { const x = await fetch('/api/version'); if (x.ok) { location.reload(); return; } } catch (e) {} }
-}
-async function loadVersion() {
-  let v; try { v = await fetch('/api/version').then(x => x.json()); } catch (e) { return false; }
-  if (!v.git) { $('version-text').textContent = 'Not running from a git copy, so no updates here.'; return true; }
-  const target = v.newest || v.branch;
-  const stale = v.online && (target !== v.branch || v.behind > 0);
-  $('version-text').innerHTML = `Branch <b>${v.branch}</b>, ${v.sha}, ${v.date}<br>${v.subject}` +
-    (v.online ? (stale ? `<br><b>A newer version is available (${target}).</b>` : '<br>This is the newest version.') : '<br>Offline: could not reach GitHub.');
-  $('branch-select').innerHTML = v.branches.map(b => `<option ${b.name === v.branch ? 'selected' : ''}>${b.name}</option>`).join('');
-  if (stale && $('auto').checked && !v.dirty && !window.__tried) { window.__tried = true; doUpdate(target); }
-  return true;
-}
-$('update-btn').onclick = () => doUpdate($('branch-select').value);
-loadVersion(); run();
+fetch('/api/version').then(r => r.json()).then(v => {
+  if (v.git) $('ver').textContent = 'branch ' + v.branch + ' · ' + v.date + ' · ' + v.subject + (v.edited ? ' · (edited here, not saved to git)' : '');
+}).catch(() => {});
+$('refresh-btn').onclick = async () => {
+  const btn = $('refresh-btn'), msg = $('refresh-msg');
+  btn.disabled = true; msg.textContent = 'Refreshing...';
+  const r = await fetch('/api/refresh', {method: 'POST', body: '{}'}).then(x => x.json()).catch(() => ({ok: false, log: 'Lost the connection.'}));
+  if (!r.ok) { msg.textContent = r.log; btn.disabled = false; return; }
+  msg.textContent = (r.log || '') + ' Restarting...';
+  await new Promise(res => setTimeout(res, 2000));
+  for (let i = 0; i < 60; i++) {
+    try { const v = await fetch('/api/version', {cache: 'no-store'}); if (v.ok) { location.reload(); return; } } catch (e) {}
+    await new Promise(res => setTimeout(res, 500));
+  }
+  msg.textContent = 'The tool did not come back. Close the window and open it again.'; btn.disabled = false;
+};
+run();
 </script></body></html>
 """
 
