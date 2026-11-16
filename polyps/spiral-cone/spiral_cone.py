@@ -4,10 +4,10 @@ What it makes (all in inches):
   1. CONE STRIP   one long curved strip of woven nylon. Wound in a spiral it becomes the cone, cuff included.
                   The seam winds up the cone (tighter toward the tip), then runs out into a straight seam
                   for the last STRAIGHT_LENGTH inches. The open end of the cuff has no seam allowance.
-  2. FRILL        a single-layer fin sewn into the spiral seam (0.5 in allowance on the sewn edge only, the
-                  other edge is free). It starts FRILL_START inches up the cone and ends where the spiral
-                  ends. Woven fabric does not stretch, so the frill is cut as a flared, curved strip (its free
-                  edge is longer than its sewn edge), in as few pieces as fit flat without overlapping.
+  2. FRILL        ONE long straight strip sewn into the spiral seam: a solid seam allowance along the sewn edge
+                  (0.5 in), and the part that stands out on the outside is slit into FRINGE_WIDTH (0.25 in) strands,
+                  so nothing scrunches when the fabric will not stretch. It starts FRILL_START inches up the cone
+                  and ends where the spiral ends.
   3. (optional)   a separate straight cuff band, with CUFF_IN_STRIP = 0.
 Alignment tabs: 0.5 in squares sticking out of the cut edges at matching places along the seam (both cone
 edges and the frill) and along the straight seam. Tack the tabs together, then sew.
@@ -25,9 +25,6 @@ How the flat shapes are found
   the cone becomes a spiral curve on that flat fan. The seam goes round theta(z) = 2 pi * integral dz / pitch(z);
   over the last TRANSITION inches before the straight seam the winding fades to zero so the seam turns smoothly
   straight. The strip is what lies between one turn of the seam and the next turn above it.
-  The frill stands out from the cone at right angles to its surface. A strip standing out from a curve flattens
-  into a strip around a plane curve whose curvature is the cone's normal curvature along the seam:
-  kappa = cos(half angle) * cos^2(psi) / r, where psi is the angle between the seam and the circumference.
 """
 import argparse
 import math
@@ -42,14 +39,14 @@ from shapely.ops import unary_union
 # ----------------------------------------------------------------------------- settings (inches)
 LENGTH = 10.0               # cone height above the cuff line (the straight seam part included)
 BASE_DIAMETER = 130 / 25.4  # 130 mm, measured at the cuff line (the top of the cuff = the tube fit)
-TIP_DIAMETER = 1.0          # ASSUMED, not decided. The open top, where the string is anchored.
+TIP_DIAMETER = 0.0          # 0 = the cone comes to a point (Remy, 2026-11-16). The string is anchored at the point.
 PITCH_BASE = 3.0            # ASSUMED. Height gained per turn at the bottom of the cone
 PITCH_TIP = 2.0             # ASSUMED. Same where the spiral ends (smaller = tighter wind toward the tip)
 PITCH_CURVE = 1.0           # 1 = pitch changes evenly with height; >1 stays open longer, then tightens late
 STRAIGHT_LENGTH = 2.0       # the last this-many inches of the cone have a straight seam (Remy)
 TRANSITION = 2.0            # the spiral fades into the straight seam over this length (0 = sharp corner)
 SEAM = 0.5                  # seam allowance (every edge except the open end of the cuff)
-RUFFLE_WIDTH = 3.0          # cut width of the frill strip: 0.5 in allowance + (width - seam) standing out
+RUFFLE_WIDTH = 3.0          # cut width of the frill strip: solid 0.5 in seam allowance + (width - seam) of fringe standing out
 FRILL_START = 3.0           # where the frill starts, in inches up the axis from the cuff line (Remy)
 CUFF_HEIGHT = 2.0           # finished height of the cuff
 CUFF_IN_STRIP = 1           # 1 = cuff is the bottom of the cone strip. 0 = separate straight cuff band
@@ -57,11 +54,11 @@ HEM = 1.0                   # only for the separate cuff band: extra at its open
 FABRIC_WIDTH = 58.0         # ASSUMED usable width of the fabric
 TAB_SIZE = 0.5              # alignment tabs are this-size squares (Remy: 0.5 in)
 TAB_SPACING = 5.0           # about one tab every this many inches of seam
-MAX_FRILL_TURN = 270.0      # a frill piece turns at most this many degrees, so it lies flat without overlapping itself
+FRINGE_WIDTH = 0.25         # the standing-out part of the frill is slit into strands this wide (Remy: 1/4 in)
 
 NAMES = ["LENGTH", "BASE_DIAMETER", "TIP_DIAMETER", "PITCH_BASE", "PITCH_TIP", "PITCH_CURVE", "STRAIGHT_LENGTH",
          "TRANSITION", "SEAM", "RUFFLE_WIDTH", "FRILL_START", "CUFF_HEIGHT", "CUFF_IN_STRIP", "HEM",
-         "FABRIC_WIDTH", "TAB_SIZE", "TAB_SPACING", "MAX_FRILL_TURN"]
+         "FABRIC_WIDTH", "TAB_SIZE", "TAB_SPACING", "FRINGE_WIDTH"]
 
 
 def settings():
@@ -94,8 +91,8 @@ class Cone:
         self.Ls = LENGTH - STRAIGHT_LENGTH               # where the spiral ends
         self.r0 = BASE_DIAMETER / 2
         self.r1 = TIP_DIAMETER / 2
-        if self.r1 >= self.r0 - 1e-3:
-            raise SystemExit("The tip must be narrower than the base (TIP_DIAMETER < BASE_DIAMETER).")
+        if self.r1 < 0 or self.r1 >= self.r0 - 1e-3:
+            raise SystemExit("The tip must be narrower than the base (0 <= TIP_DIAMETER < BASE_DIAMETER).")
         if PITCH_TIP <= 0 or PITCH_BASE <= 0:
             raise SystemExit("Pitch must be above zero.")
         if STRAIGHT_LENGTH < 0 or self.Ls <= 0.5:
@@ -172,19 +169,6 @@ class Cone:
         top2 = self.flat(th2, self.L + 0 * th2)                         # the tip opening: one full turn
         top = np.vstack([top1, [self.flat(self.theta_c, self.L)[0]], top2])
         return np.vstack([bottom, top[::-1]])
-
-    def frill_curve(self, n=1500):
-        """The flat frill: plane curve with the cone's normal curvature along the seam."""
-        s = np.linspace(self.s_f0, self.s_total, n)
-        z = np.interp(s, self.s, self.zg)
-        w = np.interp(s, self.s, self.w)
-        r = self.radius(z)
-        a = (r * 2 * math.pi * w) ** 2
-        cos2psi = a / (a + 1 / self.cosg ** 2)
-        kappa = self.cosg / r * cos2psi
-        phi = cumtrapz(kappa, s)
-        c = np.column_stack([cumtrapz(np.cos(phi), s), cumtrapz(np.sin(phi), s)])
-        return s - self.s_f0, c, phi, kappa
 
 
 def tab_square(p, t, n, off, size):
@@ -267,61 +251,30 @@ def build():
     for p, txt in labels:
         cone.add("label", [p], txt)
     pieces = [cone]
-    # --- the frill, flat, in pieces that do not overlap themselves
-    F = RUFFLE_WIDTH - SEAM
-    sl, cc, phi, kappa = c.frill_curve()
-    tl, nl = np.column_stack([np.cos(phi), np.sin(phi)]), np.column_stack([-np.sin(phi), np.cos(phi)])
-    free = cc - F * nl
-    allow = cc + SEAM * nl
-    Rmin = 1 / kappa.max()
-    if Rmin < SEAM + 0.05:
-        warn.append(f"The frill's seam allowance would cross the middle of its own curve (tightest curve radius "
-                    f"{Rmin:.2f} in, allowance {SEAM:g} in). Use a smaller allowance or a looser tip pitch.")
-    total_turn = float(phi[-1])
-    mids = [(a + b) / 2 for a, b in zip(rel[:-1], rel[1:])]
-    start_n = max(1, math.ceil(total_turn / math.radians(MAX_FRILL_TURN)))
-    for nseg in range(start_n, start_n + 8):               # use more pieces until every piece lies flat
-        cuts = [0.0, frill_len]
-        for k in range(1, nseg):
-            ideal = float(np.interp(k * total_turn / nseg, phi, sl))
-            if mids:
-                cuts.append(min(mids, key=lambda m: abs(m - ideal)))
-        cuts = sorted(set(round(x, 6) for x in cuts))
-        frills, ok = [], True
-        for k in range(len(cuts) - 1):
-            a, b = cuts[k], cuts[k + 1]
-            idx = np.where((sl >= a - 1e-9) & (sl <= b + 1e-9))[0]
-            poly = Polygon(np.vstack([free[idx], allow[idx][::-1]]))
-            if not poly.is_valid:
-                ok = False
-                break
-            sq, lab = [], []
-            for i, r_ in enumerate(rel_all, start=1):
-                if a <= r_ <= b:
-                    j = int(np.argmin(abs(sl - r_)))
-                    sq.append(tab_square(allow[j], tl[j], nl[j], 0.0, TAB_SIZE))
-                    lab.append((allow[j] + nl[j] * h, str(i)))
-            fcut = unary_union([poly] + sq)
-            if fcut.geom_type != "Polygon":
-                fcut = max(fcut.geoms, key=lambda g: g.area)
-            pc = Piece(f"frill{k + 1}")
-            pc.add("cut", np.array(fcut.exterior.coords))
-            pc.add("sew", cc[idx])
-            for p, txt in lab:
-                pc.add("label", [p], txt)
-            pc.turn, pc.length = math.degrees(phi[idx[-1]] - phi[idx[0]]), b - a
-            rect = np.array(fcut.minimum_rotated_rectangle.exterior.coords)      # long side horizontal, at the origin
-            e = max((rect[i + 1] - rect[i] for i in range(2)), key=lambda v: np.hypot(*v))
-            ang = math.atan2(e[1], e[0])
-            pc.items = [(kk, rotate(pp, ang), tt) for kk, pp, tt in pc.items]
-            lo = np.min(pc.items[0][1], axis=0)
-            pc.items = [(kk, pp - lo, tt) for kk, pp, tt in pc.items]
-            pc.w, pc.h = np.max(pc.items[0][1], axis=0)
-            frills.append(pc)
-        if ok:
-            break
-    else:
-        warn.append("The frill could not be cut into pieces that lie flat. Try a smaller frill width or a looser tip pitch.")
+    # --- the frill: one long straight strip, solid along the seam, fringe on the free part
+    F = RUFFLE_WIDTH - SEAM                                # fringe length (the part that stands out)
+    W = RUFFLE_WIDTH
+    n_slits = max(1, round(frill_len / FRINGE_WIDTH))
+    strand = frill_len / n_slits
+    rect = Polygon([[0, 0], [frill_len, 0], [frill_len, W], [0, W]])
+    tabs = []
+    labs = []
+    for i, r_ in enumerate(rel_all, start=1):
+        if 0 <= r_ <= frill_len:
+            tabs.append(tab_square(np.array([r_, 0.0]), np.array([1.0, 0.0]), np.array([0.0, -1.0]), 0.0, TAB_SIZE))
+            labs.append((np.array([r_, -h]), str(i)))
+    fcut = unary_union([rect] + tabs)
+    shift = np.array([0.0, TAB_SIZE])                      # tabs hang below the strip, so lift everything
+    pc = Piece("frill")
+    pc.add("cut", np.array(fcut.exterior.coords) + shift)
+    pc.add("sew", np.array([[0, SEAM], [frill_len, SEAM]]) + shift)
+    for k in range(1, n_slits):                            # slits from the sew line out to the free edge
+        x = k * strand
+        pc.add("cut", np.array([[x, SEAM], [x, W]]) + shift)
+    for p, txt in labs:
+        pc.add("label", [p + shift], txt)
+    pc.w, pc.h = frill_len, W + TAB_SIZE
+    frills = [pc]
     pieces += frills
     circ = math.pi * BASE_DIAMETER
     if not CUFF_IN_STRIP:                                   # separate cuff band
@@ -340,18 +293,16 @@ def build():
     r_end = float(c.radius(c.Ls))
     if F > r_end:
         warn.append(f"The frill stands out {F:.2f} in, more than the cone's radius ({r_end:.2f} in) where the spiral ends, "
-                    "so frill from opposite sides of the cone will push into each other there.")
-    bad = [p.name for p in frills if p.w > FABRIC_WIDTH]
-    if bad:
-        warn.append(f"Frill piece(s) {', '.join(bad)} are wider than the fabric.")
+                    "so frill from opposite sides of the cone will overlap there (soft fringe, so it may be fine).")
+    if frill_len > FABRIC_WIDTH * 4:
+        warn.append("The frill strip is very long.")
     d_bottom = 2 * float(c.radius(c.zmin))
     if CUFF_IN_STRIP and d_bottom - BASE_DIAMETER > 0.25:
         warn.append(f"The cuff is part of the cone, so it flares: {BASE_DIAMETER:.2f} in across at the cuff line (the tube fit) "
                     f"and {d_bottom:.2f} in at the open end. CUFF_IN_STRIP = 0 gives a straight separate band.")
     z0 = float(np.interp(0.0, c.zg, c.thg))
     info = dict(pieces=len(pieces), turns=c.theta_end / (2 * math.pi), seam_total=c.s_total, frill_len=frill_len,
-                frill_turn=math.degrees(total_turn),
-                frill_pieces=[(p.name, p.w, p.h, p.turn, p.length) for p in frills], F=F, Rmin=Rmin,
+                n_slits=n_slits, strand=strand, F=F, frill_w=W,
                 straight=S, tab_count=len(rel_all), strip_tight=sides[0] + 2 * SEAM, strip_long=sides[1] + 2 * SEAM,
                 bbox=(cb[2] - cb[0], cb[3] - cb[1]), half_angle=math.degrees(math.asin(c.sing)),
                 tip_circ=math.pi * TIP_DIAMETER, d_bottom=d_bottom, circ=circ,
@@ -370,17 +321,15 @@ def report(info):
           f"  Straight seam                   {info['straight']:.1f} in",
           f"  Cone strip, cut size            bounding box {info['bbox'][0]:.1f} x {info['bbox'][1]:.1f} in, "
           f"tightest rectangle {info['strip_tight']:.1f} x {info['strip_long']:.1f} in",
-          f"  Frill                           {len(info['frill_pieces'])} piece(s); stands out {info['F']:.2f} in, "
-          f"{RUFFLE_WIDTH:g} in cut width, curves through {info['frill_turn']:.0f} deg in all, tightest curve radius {info['Rmin']:.2f} in"]
-    for name, w, h, turn, ln in info["frill_pieces"]:
-        L.append(f"    {name}: {ln:.1f} in of seam, {w:.1f} x {h:.1f} in, turns {turn:.0f} deg")
+          f"  Frill                           one strip {info['frill_len']:.1f} x {info['frill_w']:.1f} in; solid {SEAM:g} in seam allowance, "
+          f"{info['F']:.2f} in of fringe slit into {info['n_slits']} strands {info['strand']:.3f} in wide"]
     L.append("  Cuff                            " + (
         f"part of the cone strip: {BASE_DIAMETER:.2f} in across at the cuff line, {info['d_bottom']:.2f} in at the open end, "
         f"{CUFF_HEIGHT:g} in tall, no seam allowance on the open end" if CUFF_IN_STRIP
         else f"separate band, ring {info['circ']:.1f} in around"))
     L += [f"  Alignment tabs                  {TAB_SIZE:g} in squares: {info['tab_count']} numbered tabs along the spiral seam "
           f"(on both cone edges, and on the frill where it covers), S1.. on the straight seam",
-          f"  Tip opening, circumference      {info['tip_circ']:.1f} in",
+          f"  Tip                             " + ("a point (seam allowance still goes round it)" if TIP_DIAMETER <= 0 else f"open, circumference {info['tip_circ']:.1f} in"),
           f"  Pieces to cut                   {info['pieces']}", ""]
     L += ["Checks:"] + (["  " + w for w in info["warnings"]] or ["  none"])
     return "\n".join(L)
@@ -404,8 +353,8 @@ def layout(cut, pieces):
 
 
 def title(name):
-    return {"cone": "CONE STRIP (cut 1)", "cuff": "CUFF BAND (cut 1)"}.get(
-        name, name.replace("frill", "FRILL PIECE ") + " (cut 1, sew along the blue line)")
+    return {"cone": "CONE STRIP (cut 1)", "cuff": "CUFF BAND (cut 1)",
+            "frill": "FRILL STRIP (cut 1). Sew along the blue line; the slits make the fringe"}[name]
 
 
 def write_svg(path, cut, pieces):
@@ -454,7 +403,7 @@ def draw_png(path, c, outline, cut, pieces, info):
             ax.fill(o[:, 0] + dx, o[:, 1] + dy, color="#dbe7f5", zorder=0)
             ax.text(cut.bounds[0] + dx + 0.3, cut.bounds[1] + dy + 0.8, "CONE STRIP", fontsize=9, color="#444")
         else:
-            ax.text(dx, dy - 0.4, title(p.name).split(" (")[0], fontsize=8, color="#444")
+            ax.text(dx, dy - 0.4, title(p.name), fontsize=8, color="#444")
     ax.set_aspect("equal"); ax.invert_yaxis(); ax.grid(alpha=.2); ax.set_xlabel("in")
     ax.set_title("Flat pieces. Red = cut, blue dashed = sew, numbered squares = alignment tabs that go together", fontsize=10)
     a3 = fig.add_subplot(gs[0, 1], projection="3d")
@@ -480,7 +429,7 @@ def draw_png(path, c, outline, cut, pieces, info):
     a3.set_box_aspect((1, 1, (c.L - c.zmin) / (2 * m)))
     a3.view_init(18, -60)
     a3.set_title(f"Finished cone: {info['turns']:.1f} turns, then a straight seam for the last {info['straight']:g} in.\n"
-                 f"Blue = seam, red lines = frill ({F:.1f} in out, from {FRILL_START:g} in up to the end of the spiral)", fontsize=9)
+                 f"Blue = seam, red lines = frill fringe ({F:.1f} in out, from {FRILL_START:g} in up to the end of the spiral)", fontsize=9)
     fig.tight_layout()
     fig.savefig(path, dpi=100)
     plt.close(fig)

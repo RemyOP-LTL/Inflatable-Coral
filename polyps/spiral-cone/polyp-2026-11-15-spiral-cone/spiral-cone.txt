@@ -3,7 +3,7 @@ SPIRAL-CONE POLYP: flat pattern numbers (inches; 1 in = 25.4 mm)
 Settings:
   LENGTH           10
   BASE_DIAMETER    5.11811
-  TIP_DIAMETER     1
+  TIP_DIAMETER     0
   PITCH_BASE       3
   PITCH_TIP        2
   PITCH_CURVE      1
@@ -18,24 +18,21 @@ Settings:
   FABRIC_WIDTH     58
   TAB_SIZE         0.5
   TAB_SPACING      5
-  MAX_FRILL_TURN   270
+  FRINGE_WIDTH     0.25
 
 Results:
-  Cone half-angle                 11.6 deg
+  Cone half-angle                 14.4 deg
   Turns of the spiral seam        3.43 (cuff included)
   Height gained per turn          2.82 in at the cuff line (the PITCH settings are the rate at one exact height)
-  Spiral seam length              44.3 in; the frill covers the last 17.1 in of it
+  Spiral seam length              41.5 in; the frill covers the last 14.7 in of it
   Straight seam                   2.0 in
-  Cone strip, cut size            bounding box 24.1 x 26.7 in, tightest rectangle 20.6 x 25.3 in
-  Frill                           3 piece(s); stands out 2.50 in, 3 in cut width, curves through 563 deg in all, tightest curve radius 1.43 in
-    frill1: 6.3 in of seam, 8.9 x 5.0 in, turns 187 deg
-    frill2: 4.0 in of seam, 6.7 x 4.9 in, turns 137 deg
-    frill3: 6.8 in of seam, 7.9 x 6.5 in, turns 239 deg
-  Cuff                            part of the cone strip: 5.12 in across at the cuff line, 5.94 in at the open end, 2 in tall, no seam allowance on the open end
-  Alignment tabs                  0.5 in squares: 11 numbered tabs along the spiral seam (on both cone edges, and on the frill where it covers), S1.. on the straight seam
-  Tip opening, circumference      3.1 in
-  Pieces to cut                   4
+  Cone strip, cut size            bounding box 20.6 x 22.8 in, tightest rectangle 18.4 x 21.9 in
+  Frill                           one strip 14.7 x 3.0 in; solid 0.5 in seam allowance, 2.50 in of fringe slit into 59 strands 0.249 in wide
+  Cuff                            part of the cone strip: 5.12 in across at the cuff line, 6.14 in at the open end, 2 in tall, no seam allowance on the open end
+  Alignment tabs                  0.5 in squares: 10 numbered tabs along the spiral seam (on both cone edges, and on the frill where it covers), S1.. on the straight seam
+  Tip                             a point (seam allowance still goes round it)
+  Pieces to cut                   2
 
 Checks:
-  The frill stands out 2.50 in, more than the cone's radius (0.91 in) where the spiral ends, so frill from opposite sides of the cone will push into each other there.
-  The cuff is part of the cone, so it flares: 5.12 in across at the cuff line (the tube fit) and 5.94 in at the open end. CUFF_IN_STRIP = 0 gives a straight separate band.
+  The frill stands out 2.50 in, more than the cone's radius (0.51 in) where the spiral ends, so frill from opposite sides of the cone will overlap there (soft fringe, so it may be fine).
+  The cuff is part of the cone, so it flares: 5.12 in across at the cuff line (the tube fit) and 6.14 in at the open end. CUFF_IN_STRIP = 0 gives a straight separate band.
