@@ -1,5 +1,7 @@
 # polyps/spiral-cone/
 
+**Decision 2026-11-16 (Remy): this is its own tool, the "cone worm pattern simulator". It is NOT to be merged into the polyp tool or `main`. Remy is moving to a new session and working locally. Start with `HANDOFF.md`, which has the full summary.**
+
 ## Purpose
 A second polyp design, started 2026-11-15 on branch `polyp-2026-11-15-spiral-cone`. It sits beside the 5-finger design in `../fabric-pattern/` (not changed). Remy's 5-finger prototype did not work as hoped and had too many pieces and seams in tight spaces to sew at the scale of dozens of polyps. Cutting is not the problem (laser).
 
@@ -16,7 +18,7 @@ A second polyp design, started 2026-11-15 on branch `polyp-2026-11-15-spiral-con
 - `spiral_cone.py`: makes the flat pattern from settings. Writes `<name>.svg` (true size, inches, laser: red cut, blue sew, grey dotted cuff line), `<name>.png` (flat pieces and a 3D sketch), `<name>.txt` (numbers and checks). `python3 spiral_cone.py --out folder`; change settings with `CONE="LENGTH=12,PITCH_TIP=3" python3 ...`. Needs numpy, matplotlib, shapely only.
 - `spiral_tool.py`: browser page with a field for every setting, port **8820** (http://127.0.0.1:8820/), with the same Version card and Get latest changes button as the polyp tool. `install-mac.sh`: one-time Mac setup (launchd agent `com.coral.spiraltool`). Tested here in a headless browser and with the Mac-only commands stubbed; not run on a real Mac yet.
 - `polyp-2026-11-15-spiral-cone/`: the latest outputs, default settings. `snapshot.html`: the link page for Remy.
-- It does not use the cloth simulation. `spiral_tool.py` imports `polyp_tool.py` from `../fabric-pattern/` for its git/version helpers, so both folders must be present.
+- It does not use the cloth simulation. `spiral_tool.py` optionally imports `polyp_tool.py` from `../fabric-pattern/` for the version card; without it (a stand-alone copy of this folder) everything else works. Tested stand-alone 2026-11-16.
 
 ## How the geometry works
 A cone unrolls flat exactly, like a paper party hat. A seam winding up the cone becomes a spiral curve on the flat fan. The seam goes round theta(z) = 2 pi * integral of dz / pitch(z); over the last `TRANSITION` inches before the straight part the winding rate fades to zero, so the seam turns smoothly straight. The strip is the region between one turn of the seam and the next turn above it, starting as a thin wedge at the open end of the cuff and ending at the straight seam: its top edge on the last turn is the tip opening (one full turn), and the two straight edges are the two radial edges that meet in the straight seam.

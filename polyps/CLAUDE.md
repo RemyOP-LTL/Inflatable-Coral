@@ -6,7 +6,7 @@ Inflatable polyps. One sits in each pentagon panel of the skin.
 ## Sub-folders
 - `air/` — blowers, ducting and pressure (a separate workstream).
 - `fabric-pattern/` — the sewn nylon pattern, including string channels (5-finger design).
-- `spiral-cone/` — a second design, started 2026-11-15: one long strip wound in a spiral into a cone, with a spiral ruffle, a cuff, and one string down the axis. Fewer pieces and seams than the 5-finger design. Pattern tool on port 8820. See its CLAUDE.md.
+- `spiral-cone/` — a second design, started 2026-11-15: one long strip wound in a spiral into a cone, with a spiral ruffle, a cuff, and one string down the axis. Fewer pieces and seams than the 5-finger design. Pattern tool on port 8820. Kept as its own tool, not merged into the polyp tool (Remy, 2026-11-16). See its `HANDOFF.md` and `CLAUDE.md`.
 - `motor/` — the motor that winds the string.
 - `electronics/` — custom board with motor controllers and LEDs; controller, power.
 

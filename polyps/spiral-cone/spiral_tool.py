@@ -67,8 +67,11 @@ def run_pattern(params):
 
 
 # --- version card, shared with the polyp tool (same repo, same git commands)
-sys.path.insert(0, os.path.join(HERE, "..", "fabric-pattern"))
-import polyp_tool as PT
+try:                                        # only needed for the "Get latest changes" version card
+    sys.path.insert(0, os.path.join(HERE, "..", "fabric-pattern"))
+    import polyp_tool as PT
+except ImportError:                         # stand-alone copy of this folder: no version card, everything else works
+    PT = None
 
 
 def git(*args, timeout=60):
@@ -82,7 +85,7 @@ def git(*args, timeout=60):
 
 def version():
     """Version info for the page: which branch we are on, and which branches have this tool (newest first)."""
-    v = PT.version_info()
+    v = PT.version_info() if PT else {"git": False}
     if not v.get("git"):
         return v
     _, prefix = git("rev-parse", "--show-prefix")
@@ -94,6 +97,8 @@ def version():
 
 def update_code(branch):
     """Switch to `branch` and bring it up to date, like the polyp tool's button."""
+    if PT is None:
+        return False, "This copy is stand-alone (not inside the Coral repo), so there is nothing to update."
     if not re.fullmatch(r"[A-Za-z0-9._/-]+", branch or ""):
         return False, "That branch name isn't valid."
     ok, out = git("status", "--porcelain", "--untracked-files=no")
