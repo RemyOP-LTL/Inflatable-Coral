@@ -51,7 +51,7 @@ def refs():
 def bundles(ref):
     if not REF_OK.match(ref):
         return []
-    ok, out = git("ls-tree", "-r", "--name-only", ref)
+    ok, out = git("ls-tree", "-r", "--full-tree", "--name-only", ref)
     res = []
     for p in (out.decode() if ok else "").splitlines():
         base = os.path.basename(p)
@@ -70,6 +70,22 @@ def bundle(ref, path):
 def fetch():
     ok, out = git("fetch", "--prune", "--tags", "origin", timeout=90)
     return ok, out.decode(errors="replace")
+
+
+def update_self():
+    """Bring THIS copy of the workbench up to date on the branch it is on (it never switches branch)."""
+    ok, out = git("status", "--porcelain", "--untracked-files=no")
+    if out.strip():
+        return False, "Files in this copy were edited on this computer, so I won't overwrite them."
+    ok, out = git("pull", "--ff-only", timeout=90)
+    return ok, out.decode(errors="replace")
+
+
+def restart_soon():
+    def go():
+        import time; time.sleep(1.0)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    threading.Thread(target=go, daemon=True).start()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -105,6 +121,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/fetch":
             ok, log = fetch()
             return self.send(200, json.dumps({"ok": ok, "log": log}))
+        if self.path == "/api/update-self":
+            ok, log = update_self()
+            self.send(200, json.dumps({"ok": ok, "log": log}))
+            if ok:
+                restart_soon()
+            return
         self.send(404, "not found", "text/plain")
 
 

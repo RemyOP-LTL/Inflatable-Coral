@@ -17,5 +17,9 @@ Dimensions, materials, and mounting points that all parts must agree on. Check h
 ## Conflicts to resolve (deferred by Remy, 2026-10-30: build general, scalable tools first; match sizes later)
 - The polyp tube (5 in) needs a hole of at least about 5 in. The current hex57 layout has about 5 in pentagons with a 3.75 in hole. See `skin/CLAUDE.md`.
 
+## File formats (2026-11-16)
+`FORMATS.md` defines the saved-design files that the parts hand to the workbench: skin `layout.json` (the existing hex57 file is the contract as is) and the new polyp `polyp.json`. Decided with Remy 2026-11-16; reason in `../workbench/CLAUDE.md`.
+
 ## Next
+- Skin/frame and spiral-cone sessions: follow `FORMATS.md`; tell the workbench session if a field is missing.
 - Record overall size and mounting points as they are decided.

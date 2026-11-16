@@ -49,7 +49,8 @@ table{border-collapse:collapse;width:100%}td{padding:2px 0;vertical-align:top}td
       <select id="ref"></select>
       <label>Design in that version</label>
       <select id="bundle"></select>
-      <button class="b" id="fetch">Refresh from GitHub</button>
+      <button class="b" id="fetch">Refresh list from GitHub</button>
+      <button class="b" id="upself">Update the workbench itself</button>
     </div>
     <div id="info"></div>
   </div>
@@ -72,7 +73,7 @@ const Source = BAKED ? {
   load: (ref, path) => fetch('/api/bundle?ref=' + encodeURIComponent(ref) + '&path=' + encodeURIComponent(path)).then(r => { if (!r.ok) throw new Error('not found'); return r.json(); }),
 };
 $('mode').textContent = BAKED ? 'Snapshot: ' + (BAKED.built || '') : 'Live from git';
-if (BAKED) $('fetch').style.display = 'none';
+if (BAKED) { $('fetch').style.display = 'none'; $('upself').style.display = 'none'; }
 
 // ---------- three.js setup (z is up, as in the CAD files) ----------
 const view = $('view');
@@ -195,6 +196,11 @@ $('fetch').onclick = async () => {
   const keep = {ref: $('ref').value, b: $('bundle').value}; await init();
   if ([...$('ref').options].some(o => o.value === keep.ref)) $('ref').value = keep.ref;
   await fillBundles(tab); setMsg(r.ok ? 'Up to date.' : 'Could not reach GitHub: ' + r.log);
+};
+
+$('upself').onclick = async () => {
+  setMsg('Updating the workbench ...'); const r = await fetch('/api/update-self', {method: 'POST'}).then(x => x.json()).catch(() => ({ok: false, log: 'Lost the connection.'}));
+  if (r.ok) { setMsg('Updated. Reloading ...'); setTimeout(() => location.reload(), 2500); } else setMsg('Not updated: ' + r.log);
 };
 
 // ---------- drawing each tab ----------
