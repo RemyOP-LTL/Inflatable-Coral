@@ -21,6 +21,8 @@ To run it from Terminal (Mac): `pip3 install numpy scipy matplotlib`, then in `s
 To run it on any shape from a mesh file: `python3 hex57_mesh.py meshes/lumpy_dome.obj` (or your own OBJ/STL; add `--units mm` if it is in millimetres), then open `layouts/<name>/viewer.html`. See the last section of `hex57/README.md`.
 
 ## Status
+**Hand-off for a new session: `skin/skin-2026-11-12-geodesic-frame/HANDOFF.md` (2026-11-16, plain language; Remy now works locally on his Mac).**
+
 Layout prototype exists, outside Fusion. Nothing built in Fusion 360 yet. At default settings on the test tube: 58 pentagons, about 23 % coverage, about 5 in across, no two touching; shapes about 0.27 in out of flat on average.
 The layout now works on any surface given as a mesh (2026-11-02). Tried on the tube as a mesh (76 pentagons, 24 %), a 48 in dome (44 pentagons, 25 %, 0.04 in out of flat) and a lumpy dome (47 pentagons, 25 %, 0.22 in out of flat). Not tried on a real Fusion export yet.
 
