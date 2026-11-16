@@ -76,6 +76,7 @@ class Frame:
         self.loose = [tuple(e) for e in part["loose"]]
         self.loose_id = {frozenset(e): i + 1 for i, e in enumerate(self.loose)}
         self.spine_spokes = {frozenset(e) for e in part.get("spine_spokes", [])}
+        self.edge_spokes = {frozenset(e) for e in part.get("edge_spokes", [])}
         self._ccw = {}
 
     # ---- helpers -------------------------------------------------------------------------

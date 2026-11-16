@@ -40,7 +40,7 @@ class Surface:
         return X - ((X - p) * n).sum(1)[:, None] * n
 
 
-def equalize(layout, mesh_path, length=None, iters=600, plate_scale=1.0, log=print, anchor=0.05, lam=3.0, round_w=0.5, tree_w=0.3):
+def equalize(layout, mesh_path, length=None, iters=600, plate_scale=1.0, log=print, anchor=0.05, lam=3.0, round_w=0.5, tree_w=0.3, band_w=30.0):
     V = np.array(layout["vertices"], float)
     polys = layout["polygons"]
     surf = Surface(mesh_path)
@@ -59,7 +59,7 @@ def equalize(layout, mesh_path, length=None, iters=600, plate_scale=1.0, log=pri
     part = layout.get("partition")
     if part:                                                     # Remy: only the LOOSE spokes must be equal
         S = np.array([sorted(e) for e in part["loose"]])
-        T_ = np.array([sorted(e) for e in list(part["tree"]) + list(part.get("spine_spokes", []))]).reshape(-1, 2)
+        T_ = np.array([sorted(e) for e in list(part["tree"])]).reshape(-1, 2)
     else:                                                        # every spoke equal
         S = np.array([sorted(e) for e in spoke_edges]); T_ = np.zeros((0, 2), int)
     L0 = np.linalg.norm(V[S[:, 0]] - V[S[:, 1]], axis=1)
@@ -105,12 +105,13 @@ def equalize(layout, mesh_path, length=None, iters=600, plate_scale=1.0, log=pri
     X0 = start.copy()
     for rnd in range(12):
         _, k = surf.tree.query(V); P0, N0 = surf.pts[k], surf.nrm[k]
+        onmesh = (np.linalg.norm(V - P0, axis=1) < 1.5).astype(float)       # nodes in the extra rows past the open edges are not on the mesh: leave them free
         def res(x):
             X = x.reshape(-1, 3)
-            return np.concatenate([(np.linalg.norm(X[B] - X[A], axis=1) - T) * W, lam * ((X - P0) * N0).sum(1), anchor * np.linalg.norm(X - X0, axis=1), 30.0 * np.linalg.norm(X[band] - X0[band], axis=1)])
+            return np.concatenate([(np.linalg.norm(X[B] - X[A], axis=1) - T) * W, lam * onmesh * ((X - P0) * N0).sum(1), anchor * np.linalg.norm(X - X0, axis=1), band_w * np.linalg.norm(X[band] - X0[band], axis=1)])
         sol = least_squares(res, V.ravel(), jac_sparsity=pat.tocsr(), method="trf", max_nfev=25)
         V = sol.x.reshape(-1, 3)
-        V = surf.snap(V) if rnd == 11 else V
+        V = np.where((np.linalg.norm(V - P0, axis=1) < 1.5)[:, None], surf.snap(V), V) if rnd == 11 else V
         sl = np.linalg.norm(V[S[:, 0]] - V[S[:, 1]], axis=1)
         log(f"  round {rnd + 1:2d}: spoke length {sl.mean():.3f} in, spread {sl.std() / sl.mean() * 100:.2f} %, min {sl.min():.2f}, max {sl.max():.2f}")
     sl = np.linalg.norm(V[S[:, 0]] - V[S[:, 1]], axis=1)

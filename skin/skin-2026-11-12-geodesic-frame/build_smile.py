@@ -3,6 +3,7 @@
 Layout -> finished skin layout. One command for the whole chain.
 
 With the spine (the bent tube stood up as a smile):
+  0. the spine is a curve stored in the surface file (spinecurve.py); no curve, no spine
   1. clip_spine.py   the spine comes first: cut the pattern by the spine strip, so no spoke lies on or crosses it
   2. partition.py    pentagon + its five corner spokes = one part; spokes off the spine's edge = spine spokes; the rest are loose
   3. equalize.py     make the loose spokes one length
@@ -26,18 +27,44 @@ def _loose_report(res):
                 parts=len(res["partition"]["plates"]), spine_spokes=len(res["partition"].get("spine_spokes", [])))
 
 
+def load_curve(mesh_path):
+    """The spine curve stored in the surface file, as a SpineCurve, or None."""
+    import spinecurve
+    pts = spinecurve.read_curve(mesh_path)
+    return spinecurve.SpineCurve(pts, equalize.Surface(mesh_path)) if pts is not None else None
+
+
+def drop_extension(layout):
+    """Ignore the extra rows past the open edges of the surface (Remy, 2026-11-16): keep only the shapes on the surface. Spokes along
+    the edge simply end at their nodes with their usual ends."""
+    info = layout["polygon_info"]
+    keep = [i for i, x in enumerate(info) if not x.get("end")]
+    used = sorted({v for i in keep for v in layout["polygons"][i]})
+    remap = {v: i for i, v in enumerate(used)}
+    res = dict(layout)
+    res["vertices"] = [layout["vertices"][v] for v in used]
+    res["polygons"] = [[remap[v] for v in layout["polygons"][i]] for i in keep]
+    res["polygon_info"] = [info[i] for i in keep]
+    return res
+
+
 def build(layout, mesh_path, width=4.0, log=print):
     import clip_spine, spine
-    lay, _ = clip_spine.clip(layout, width)
-    lay["partition"] = partition.partition(lay, lay["clip"]["band"])
+    layout = drop_extension(layout)
+    curve = load_curve(mesh_path)
+    if curve is None:
+        return build_plain(layout, mesh_path, log)
+    lay, _ = clip_spine.clip(layout, curve, width)
+    lay["partition"] = partition.partition(lay, lay["clip"]["band"], lay["clip"].get("edge", ()))
     eq = equalize.equalize(lay, mesh_path, anchor=0.02, round_w=0.05, tree_w=0.1, log=lambda *a: None)
-    res, rep = spine.make(eq, width)
+    res, rep = spine.make(eq, curve, width)
     rep.update(_loose_report(res))
     res["equalized"] = dict(eq["equalized"], **{k: rep[k] for k in ("loose_mean", "loose_min", "loose_max", "loose_spread_pct")})
     return res, rep
 
 
 def build_plain(layout, mesh_path, log=print):
+    layout = drop_extension(layout) if any(x.get('end') for x in layout['polygon_info']) else layout
     lay = dict(layout, partition=partition.partition(layout, ()))
     eq = equalize.equalize(lay, mesh_path, anchor=0.02, round_w=0.05, tree_w=0.1, log=lambda *a: None)
     rep = _loose_report(eq)
@@ -54,8 +81,7 @@ def main():
     a = ap.parse_args()
     lay = json.load(open(a.layout))
     name = os.path.basename(lay["params"]["MESH_FILE"])
-    base = os.path.join(os.path.dirname(HERE), "hex57")
-    mesh = a.mesh or next(p for p in (os.path.join(base, d, name) for d in ("meshes", "uploads")) if os.path.isfile(p))
+    mesh = a.mesh or next(p for p in (os.path.join(HERE, "shapes", name), os.path.join(HERE, "shapes", "uploads", name)) if os.path.isfile(p))
     res, rep = (build_plain(lay, mesh) if a.no_spine else build(lay, mesh, a.width))
     os.makedirs(a.out, exist_ok=True)
     json.dump(res, open(os.path.join(a.out, "layout.json"), "w"))

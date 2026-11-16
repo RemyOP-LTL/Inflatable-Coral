@@ -13,6 +13,7 @@ Everything on the left (rings, spoke width, circle size, plate style) updates at
 Uses only what Python ships with, plus numpy (and numpy/scipy/matplotlib for making a new layout).
 """
 import json
+import math
 import os
 import re
 import subprocess
@@ -28,50 +29,161 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import frame as F                                                    # noqa: E402
+import geom                                                          # noqa: E402
+import patches as PT                                                 # noqa: E402
 
 HEX57 = os.path.join(os.path.dirname(HERE), "hex57")
-MESH_DIRS = (("example", os.path.join(HEX57, "meshes")), ("yours", os.path.join(HEX57, "uploads")))
+SHAPES = os.path.join(HERE, "shapes")
+MESH_DIRS = (("example", SHAPES), ("yours", os.path.join(SHAPES, "uploads")))
 LAYOUT_DIRS = (os.path.join(HERE, "layouts"), os.path.join(HERE, "runs"))
 RUNS = os.path.join(HERE, "runs")
 PORT = int(os.environ.get("FRAME_TOOL_PORT", 8790))     # skin tools own 8760-8799 (skin_app 8765.., this tool 8790); polyps own 8800 and up
 VENDOR = os.environ.get("FRAME_VENDOR_DIR", "")         # optional local copy of the 3D library (for offline testing)
 CDN = "https://cdn.jsdelivr.net/npm/three@0.128.0/"
 
-jobs, lock, cache = {}, threading.Lock(), {}
+lock, cache = threading.Lock(), {}
+CACHE = os.path.join(HERE, "cache")                       # layouts made for a shape at a sizing; git-ignored
+BUILD = threading.Lock()                                  # one layout at a time (they use a whole processor core)
+DEFAULT = dict(pd=100 / 25.4, po=10 / 25.4, spine=4.0, pc=25.0)    # polyp hole 100 mm, pentagon offset 10 mm, spine 4 in, pentagon coverage 25 %
 
 
-def layout_files():
-    """Layouts on disk. The tube comes first (the main test shape), then the dome, then the rest."""
+def shape_files():
+    """The surfaces: files in shapes/ (tube first, then dome) and shapes/uploads/."""
     out = []
-    for base in LAYOUT_DIRS:
-        if os.path.isdir(base):
-            for d in sorted(os.listdir(base)):
-                p = os.path.join(base, d, "layout.json")
-                if os.path.isfile(p):
-                    out.append((d, p))
-    rank = lambda n: (0 if n.startswith("smile") else 1 if n.startswith("dome") else 2, n)
-    out.sort(key=lambda t: rank(t[0]))
+    for kind, folder in MESH_DIRS:
+        if os.path.isdir(folder):
+            for f in sorted(os.listdir(folder)):
+                if f.lower().endswith((".obj", ".stl")):
+                    out.append(dict(id=os.path.splitext(f)[0], label=os.path.splitext(f)[0], path=os.path.join(folder, f), kind=kind))
+    out.sort(key=lambda m: (0 if m["id"] == "tube" else 1 if m["id"] == "dome" else 2, m["id"]))
     return out
 
 
-def get_frame(lid):
-    paths = dict(layout_files())
-    if lid not in paths:
+def pent_size(hole, offset):
+    """Pentagon from the polyp hole and the offset (radial gap between the hole and the circle through the pentagon's corners):
+    circumradius, side (this is also the spoke spacing), and the rim hex57 wants (plastic between hole and the side, may be < 0)."""
+    Rc = hole / 2 + offset
+    return Rc, 2 * Rc * math.sin(math.pi / 5), Rc * math.cos(math.pi / 5) - hole / 2
+
+
+def ensure_raw(sh, hole, offset, spine, cov):
+    """hex57's layout for this surface at this sizing, made once and kept in cache/."""
+    import spinecurve
+    d = os.path.join(CACHE, sh["id"], f"h{round(hole * 1000)}-o{round(offset * 1000)}-c{round(cov * 10)}")
+    raw = os.path.join(d, "raw.json")
+    if not os.path.isfile(raw):
+        Rc, side, rim = pent_size(hole, offset)
+        has_curve = spinecurve.read_curve(sh["path"]) is not None
+        os.makedirs(d, exist_ok=True)
+        cmd = [sys.executable, "-u", os.path.join(HERE if has_curve else HEX57, "spine_layout.py" if has_curve else "hex57_mesh.py"), sh["path"],
+               "--out", d, "--edge", f"{side:.4f}", "--hole-diameter", f"{hole:.4f}", "--hole-rim", f"{rim:.4f}", "--coverage", f"{max(0.05, min(cov, 60.0)) / 100:.4f}"]
+        env = dict(os.environ, PYTHONIOENCODING="utf-8", SPINE_KEEP_OUT=f"{spine / 2 + 1.7 + Rc + 0.8:.2f}")
+        r = subprocess.run(cmd, cwd=HERE if has_curve else HEX57, capture_output=True, text=True, env=env)
+        if r.returncode != 0 or not os.path.isfile(os.path.join(d, "layout.json")):
+            raise ValueError("The layout could not be made for this surface and sizing:\n" + (r.stdout + r.stderr)[-600:])
+        os.replace(os.path.join(d, "layout.json"), raw)
+        for junk in ("viewer.html", "coverage"):
+            p = os.path.join(d, junk)
+            if os.path.isdir(p):
+                import shutil
+                shutil.rmtree(p, ignore_errors=True)
+            elif os.path.isfile(p):
+                os.remove(p)
+        for f in os.listdir(d):
+            if f.startswith("preview_"):
+                os.remove(os.path.join(d, f))
+    return json.load(open(raw))
+
+
+def get_frame(lid, hole=None, offset=None, spine=None, cov=None):
+    """The frame for a shape at a sizing: polyp hole diameter, pentagon offset and spine width (inches). Made on first use
+    (a layout takes about 20 s, the cut and equalising a few more) and kept."""
+    sh = next((s_ for s_ in shape_files() if s_["id"] == lid), None)
+    if sh is None:
         return None
-    mt = os.path.getmtime(paths[lid])
-    if lid not in cache or cache[lid][0] != mt:
-        cache[lid] = (mt, F.Frame(paths[lid]))
-    return cache[lid][1]
+    hole, offset, spine, cov = hole or DEFAULT["pd"], offset or DEFAULT["po"], spine or DEFAULT["spine"], cov or DEFAULT["pc"]
+    import spinecurve
+    has_curve = spinecurve.read_curve(sh["path"]) is not None
+    key = (lid, round(hole, 4), round(offset, 4), round(spine, 3) if has_curve else 0, round(cov, 1), os.path.getmtime(sh["path"]))
+    if key not in cache:
+        with BUILD:
+            if key not in cache:
+                import build_smile
+                raw = ensure_raw(sh, hole, offset, spine, cov)
+                res, _ = build_smile.build(raw, sh["path"], spine)
+                res["display_name"] = sh["label"]
+                if len(cache) > 6:
+                    cache.clear()
+                cache[key] = F.Frame(res)
+    return cache[key]
 
 
-def label_for(lid, fr):
-    if fr.layout.get("display_name"):
-        return fr.layout["display_name"]
-    if lid.startswith("smile") or fr.spine:
-        return "tube"
-    if lid.startswith("dome"):
-        return "dome"
-    return os.path.splitext(os.path.basename(str(fr.params.get("MESH_FILE") or lid)))[0]
+def mesh_path(fr):
+    name = os.path.basename(str(fr.params.get("MESH_FILE") or ""))
+    for d in (SHAPES, os.path.join(SHAPES, "uploads")):
+        if os.path.isfile(os.path.join(d, name)):
+            return os.path.join(d, name)
+    return None
+
+
+CONFIGS = os.path.join(HERE, "saved_configs.json")
+
+
+def read_configs():
+    try:
+        return json.load(open(CONFIGS))
+    except (OSError, ValueError):
+        return {}
+
+
+def sizing(q):
+    """Polyp hole, pentagon offset, spine width (inches) and pentagon coverage (percent) from a request."""
+    return fnum(q, "pd", DEFAULT["pd"]), fnum(q, "po", DEFAULT["po"]), fnum(q, "spine", DEFAULT["spine"]), fnum(q, "pc", DEFAULT["pc"])
+
+
+def fnum(q, k, d):
+    try:
+        return float(q.get(k, [d])[0])
+    except (TypeError, ValueError):
+        return d
+
+
+_pcache = {}
+
+
+def patcher(lid, sz, w, D, f, maxp=5):
+    """(frame, Patcher, patches) for these settings; patches are grown once and kept."""
+    fr = get_frame(lid, *sz)
+    key = (lid, id(fr), round(w, 4), round(D, 4), round(f, 4), maxp)
+    if key not in _pcache:
+        if len(_pcache) > 12:
+            _pcache.clear()
+        pt = PT.Patcher(fr, w, D, f, maxp)
+        _pcache[key] = (fr, pt, pt.partition([p["id"] for p in fr.pentagons() if p["ok"]]))
+    return _pcache[key]
+
+
+def spine_outline(fr, w, D, f, hole):
+    """The spine piece's outline: the strip (with its lobes) plus the spine spokes, blended into the edge with radius f."""
+    shape, holes, folds = geom.spine_shape(fr.spine, w, D, f)
+    return dict(outline=geom.coords(shape.simplify(0.02)), holes=holes, folds=folds, hole=hole, length=fr.spine["length"], area=round(shape.area, 1))
+
+
+_curves = {}
+
+
+def curve_for(fr):
+    p = mesh_path(fr)
+    if p and p not in _curves:
+        import build_smile
+        _curves[p] = build_smile.load_curve(p)
+    return _curves.get(p)
+
+
+def loose_template(L, w, D, f, hole):
+    a, b = (0.0, 0.0), (float(L), 0.0)
+    sh = geom.spoke_shape(a, b, w, D, f)
+    return dict(poly=geom.coords(sh), folds=[[[round(x, 3), round(y, 3)] for x, y in s] for s in geom.fold_segments(a, b, w, D)], L=L, hole=hole)
 
 
 def frame_payload(fr, rings):
@@ -88,7 +200,7 @@ def frame_payload(fr, rings):
         if e in plate_edges or fr.hidden(e):
             continue
         a, b = sorted(e)
-        edges.append([a, b, 1 if all(fr.end[p] for p in ps) else (2 if e in fr.loose_id else (3 if e in fr.spine_spokes else 0))])
+        edges.append([a, b, 1 if all(fr.end[p] for p in ps) else (2 if e in fr.loose_id else (3 if e in fr.spine_spokes else (4 if e in fr.edge_spokes else 0)))])
     pents = fr.pentagons(rings)
     usable = {q["id"]: q["ok"] for q in pents}
     for p, s_ in enumerate(fr.sides):
@@ -111,37 +223,16 @@ def frame_payload(fr, rings):
         spine = dict(width=sp["width"], length=sp["outline_length"], hole=sp["hole"], bumps=sp["attach"], outline=sp["outline"], mesh=sp["mesh"],
                      tabs=sp.get("tabs", []), partial=sum(bool(i.get("partial")) for i in fr.info))
     return dict(vertices=V, normals=N, edges=edges, pentagons=pents, plates=plates, summary=summary, hole=fr.hole_diameter, spine=spine,
-                equalized=fr.layout.get("equalized"), loose_lengths=loose_lengths,
+                equalized=fr.layout.get("equalized"), loose_lengths=loose_lengths, edge_d=[t["d"] for t in (fr.spine or {}).get("edges", [])], spine_width=(fr.spine or {}).get("width"),
                 params={k: fr.params.get(k) for k in ("EDGE", "MESH_FILE", "HOLE_DIAMETER", "PENT_ACROSS")})
 
 
-def patch_payload(fr, pent, rings):
-    """One flattened patch as plain numbers. The page (patch_draw.js) spreads the free ends apart and draws it."""
-    pt = fr.flatten(pent, rings)
-    d = F.patch_data(fr, pt)
-    d["vertices"] = sorted(pt["pos"])
-    d["spokes"] = [[a, b] for a, b in pt["solid"]]
-    d["cut_pairs"] = [[c["own"], c["target"]] for c in pt["cuts"]]
-    d["end_nodes"] = sorted({e["node"] for e in pt["ends"]})
-    return d
-
-
-# ---- making a new layout (runs the existing hex57_mesh.py) ----------------------------------------
-def mesh_files():
-    out = []
-    for kind, folder in MESH_DIRS:
-        if os.path.isdir(folder):
-            for f in sorted(os.listdir(folder)):
-                if f.lower().endswith((".obj", ".stl")):
-                    out.append(dict(name=f, kind=kind, path=f"{kind}/{f}"))
-    out.sort(key=lambda m: (0 if m["name"].startswith("tube") else 1 if m["name"].startswith("dome") else 2, m["name"]))
-    return out
-
-
 def convert_step(data, name):
-    """STEP bytes -> an OBJ surface in inches saved in hex57/uploads. Returns (path, size text) or raises ValueError."""
+    """STEP bytes -> an OBJ surface in inches saved in shapes/uploads, with the spine curve from the file if it has one.
+    Returns (path, size text, curve note). Raises ValueError with a plain message."""
     import io
     import cascadio
+    import step_curve
     import trimesh
     try:
         glb = cascadio.load(data, "step", tol_linear=0.002, tol_relative=True)
@@ -150,96 +241,22 @@ def convert_step(data, name):
         raise ValueError(f"I could not read that STEP file ({e}). Export the surface or solid as STEP (AP214 or AP203) from Fusion 360 and try again.")
     if len(mesh.faces) == 0:
         raise ValueError("That STEP file has no surface in it.")
-    mesh.apply_scale(39.3700787)                          # the converter writes metres
-    size = mesh.extents
+    mesh.apply_scale(39.3700787)                          # the converter writes metres and keeps the file's axes
+    curve, note = step_curve.find_curve(data.decode("utf-8", "ignore"))
     uploads = dict(MESH_DIRS)["yours"]
     os.makedirs(uploads, exist_ok=True)
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", name) or "shape"
     path = os.path.join(uploads, safe + ".obj")
-    mesh.export(path)
-    return path, " x ".join(f"{x:.1f}" for x in sorted(size, reverse=True)) + " in"
-
-
-def start_job(p):
-    kind, _, f = p.get("mesh", "").partition("/")
-    folder = dict(MESH_DIRS).get(kind)
-    mesh = p.get("mesh_abs") or os.path.join(folder or "", os.path.basename(f))
-    if (not folder and not p.get("mesh_abs")) or not os.path.isfile(mesh):
-        return dict(error="Pick a shape first.")
-    display = p.get("name")
-    try:
-        edge = float(p["edge"])
-    except (KeyError, ValueError):
-        return dict(error="Hub spacing must be a number.")
-    with lock:
-        if any(j["state"] == "running" for j in jobs.values()):
-            return dict(error="A layout is already being made. Wait for it to finish.")
-        base = re.sub(r"[^A-Za-z0-9_.-]", "_", display or os.path.splitext(os.path.basename(mesh))[0])
-        lid = base if display else f"{base}-edge{edge:g}"
-        n = 1
-        while os.path.exists(os.path.join(RUNS, lid)) or lid in dict(layout_files()):
-            n += 1
-            lid = f"{base}-{n}" if display else f"{base}-edge{edge:g}-{n}"
-        out = os.path.join(RUNS, lid)
-        os.makedirs(out, exist_ok=True)
-        cmd = [sys.executable, "-u", os.path.join(HEX57, "hex57_mesh.py"), mesh, "--out", out, "--edge", str(edge)]
-        if p.get("flip"):
-            cmd.append("--flip")
-        proc = subprocess.Popen(cmd, cwd=HEX57, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                env=dict(os.environ, PYTHONIOENCODING="utf-8"))
-        jobs[lid] = dict(proc=proc, log=[], state="running", started=time.time(), out=out, mesh=mesh, display=display, edge=edge)
-    threading.Thread(target=watch_job, args=(lid,), daemon=True).start()
-    return dict(ok=True, id=lid)
-
-
-def watch_job(lid):
-    job = jobs[lid]
-    for line in job["proc"].stdout:
-        job["log"].append(line.rstrip())
-    code = job["proc"].wait()
-    with lock:
-        if code == 0 and os.path.isfile(os.path.join(job["out"], "layout.json")):
-            for junk in ("viewer.html", "coverage"):                # the frame tool only needs layout.json
-                path = os.path.join(job["out"], junk)
-                if os.path.isdir(path):
-                    import shutil
-                    shutil.rmtree(path, ignore_errors=True)
-                elif os.path.isfile(path):
-                    os.remove(path)
-            try:                                              # same finishing steps the built-in shapes get (loose spokes made one length)
-                import build_smile
-                lp = os.path.join(job["out"], "layout.json")
-                lay = json.load(open(lp))
-                job["log"].append("making the loose spokes one length...")
-                res, rep = build_smile.build_plain(lay, job["mesh"])
-                if job.get("display"):
-                    res["display_name"] = job["display"]
-                json.dump(res, open(lp, "w"))
-                job["log"].append(f"loose spokes: {rep['loose_spokes']}, spread {rep['loose_spread_pct']:.1f} %")
-                job["state"] = "done"
-            except Exception as e:                        # the layout itself is fine; keep it, say what failed
-                job["log"].append(f"The finishing step failed ({e}); the plain layout is kept.")
-                job["state"] = "done"
-        else:
-            job["state"] = "failed"
-            job["log"].append(f"The run stopped with an error (code {code}). The lines above say why.")
-
-
-def progress(log):
-    t = "\n".join(log)
-    if "making the loose spokes" in t:
-        return "Making the loose spokes one length"
-    if "Wrote layout.json" in t:
-        return "Finishing"
-    if "target " in t:
-        return "Measuring (last step)"
-    if "adapted:" in t:
-        return "Adding pentagons"
-    if "start:" in t:
-        return "Fitting hexagons to the shape"
-    if "reading" in t:
-        return "Reading the shape file"
-    return "Starting"
+    with open(path, "w") as f:
+        f.write(f"# {name}, inches. Converted from STEP.\n")
+        if curve is not None:
+            for p in curve:
+                f.write("# spine %.4f %.4f %.4f\n" % tuple(p))
+        for p in mesh.vertices:
+            f.write("v %.5f %.5f %.5f\n" % tuple(p))
+        for t in mesh.faces:
+            f.write("f %d %d %d\n" % tuple(t + 1))
+    return path, " x ".join(f"{x:.1f}" for x in sorted(mesh.extents, reverse=True)) + " in", note
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -275,33 +292,53 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(302); self.send_header("Location", url); self.end_headers()
                 return
             if path == "/api/layouts":
-                out = []
-                for lid, p in layout_files():
-                    fr = get_frame(lid)
-                    out.append(dict(id=lid, label=label_for(lid, fr)))
-                return self.send(dict(layouts=out, meshes=mesh_files()))
+                return self.send(dict(layouts=[dict(id=m["id"], label=m["label"]) for m in shape_files()],
+                                      defaults=dict(pd=DEFAULT["pd"], po=DEFAULT["po"], spine=DEFAULT["spine"], pc=DEFAULT["pc"])))
             if path == "/api/frame":
-                fr = get_frame(q["layout"][0])
+                try:
+                    fr = get_frame(q["layout"][0], *sizing(q))
+                except ValueError as e:
+                    return self.send(dict(error=str(e)))
                 if fr is None:
-                    return self.send(dict(error="No such layout"), code=404)
-                return self.send(frame_payload(fr, int(q.get("rings", ["1"])[0])))
-            if path == "/api/patch":
-                fr = get_frame(q["layout"][0])
-                if fr is None:
-                    return self.send(dict(error="No such layout"), code=404)
-                return self.send(patch_payload(fr, int(q["pent"][0]), int(q.get("rings", ["1"])[0])))
+                    return self.send(dict(error="No such shape"), code=404)
+                out = frame_payload(fr, 1)
+                out["has_spine"] = bool(fr.spine)
+                return self.send(out)
+            if path == "/api/mesh3d":
+                import mesh3d
+                w_, D_, f_ = fnum(q, "w", 1.25), fnum(q, "d", 1.25), fnum(q, "f", 0.5)
+                fr, pt, res = patcher(q["layout"][0], sizing(q), w_, D_, f_, int(fnum(q, "mp", 5)))
+                return self.send(mesh3d.build(fr, curve_for(fr), w_, D_, f_, fr.hole_diameter, pt, res))
+            if path in ("/api/patches", "/api/patch", "/api/spine_outline", "/api/loose"):
+                lid, sz = q["layout"][0], sizing(q)
+                w, D, f, hole = fnum(q, "w", 1.25), fnum(q, "d", 1.25), fnum(q, "f", 0.5), fnum(q, "hole", 0.25)
+                fr, pt, res = patcher(lid, sz, w, D, f, int(fnum(q, "mp", 5)))
+                if path == "/api/patches":
+                    return self.send(dict(patches=[dict(id=i, plates=p["order"], parts=len(p["order"]), fits=pt.payload(p)["size"]) for i, p in enumerate(res)]))
+                if path == "/api/patch":
+                    pent = int(q["pent"][0])
+                    for p in res:
+                        if pent in p["T"]:
+                            return self.send(pt.payload(p))
+                    return self.send(dict(error="That pentagon is not in any patch."))
+                if path == "/api/spine_outline":
+                    return self.send(spine_outline(fr, w, D, f, hole) if fr.spine else dict(error="No spine"))
+                Ls = [float(x) for x in q.get("Ls", [""])[0].split(",") if x]
+                if Ls:
+                    return self.send(dict(items=[loose_template(L, w, D, f, hole) for L in Ls]))
+                return self.send(loose_template(fnum(q, "L", 4.6), w, D, f, hole))
+            if path == "/api/configs":
+                return self.send(dict(configs=read_configs()))
             if path == "/api/version":
                 return self.send(version_info())
             if path == "/patch_draw.js":
                 return self.send(open(os.path.join(HERE, "patch_draw.js"), "rb").read(), "application/javascript")
-            if path == "/api/state":
-                job = jobs.get(q.get("job", [""])[0])
-                if not job:
-                    return self.send(dict(state="idle"))
-                return self.send(dict(state=job["state"], log=job["log"][-60:], progress=progress(job["log"]),
-                                      seconds=round(time.time() - job["started"])))
         except (KeyError, ValueError, IndexError) as e:
             return self.send(dict(error=f"Bad request: {e}"), code=400)
+        except Exception as e:                              # never drop the connection: tell the page what went wrong
+            import traceback
+            traceback.print_exc()
+            return self.send(dict(error=f"The tool hit a problem: {type(e).__name__}: {e}"), code=500)
         self.send("Not found", "text/plain", 404)
 
     def do_POST(self):
@@ -311,18 +348,32 @@ class Handler(BaseHTTPRequestHandler):
             if ok:
                 restart_soon()
             return self.send(dict(ok=ok, log=log))
+        if urlparse(self.path).path in ("/api/configs/save", "/api/configs/delete"):
+            q = parse_qs(urlparse(self.path).query)
+            name = (q.get("name", [""])[0] or "").strip()[:80]
+            if not name:
+                return self.send(dict(error="Give the setup a name."))
+            body = self.rfile.read(n)
+            cfg = read_configs()
+            if urlparse(self.path).path.endswith("save"):
+                try:
+                    cfg[name] = json.loads(body or b"{}")
+                except ValueError:
+                    return self.send(dict(error="Could not read the setup."))
+            else:
+                cfg.pop(name, None)
+            tmp = CONFIGS + ".tmp"
+            json.dump(cfg, open(tmp, "w"), indent=1)
+            os.replace(tmp, CONFIGS)
+            return self.send(dict(ok=True))
         if urlparse(self.path).path == "/api/upload":
             q = parse_qs(urlparse(self.path).query)
             name = (q.get("name", ["shape"])[0] or "shape")[:60]
             try:
-                path, size = convert_step(self.rfile.read(n), name)
-                r = start_job(dict(mesh_abs=path, edge=q.get("edge", ["5"])[0], name=name))
+                path, size, note = convert_step(self.rfile.read(n), name)
             except ValueError as e:
                 return self.send(dict(error=str(e)))
-            r["size"] = size
-            return self.send(r)
-        if urlparse(self.path).path == "/api/run":
-            return self.send(start_job(json.loads(self.rfile.read(n) or b"{}")))
+            return self.send(dict(ok=True, id=os.path.splitext(os.path.basename(path))[0], size=size, curve=note))
         self.send("Not found", "text/plain", 404)
 
 

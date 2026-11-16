@@ -21,25 +21,15 @@ import spine as S
 NEAR = 9.0           # only cells with a corner this close (inches, across) to the spine line are looked at
 
 
-def strip_polygon(width=4.0, length=None):
-    """The spine strip in (sigma, u) inches: a `width` band with a gentle wave on both edges (the live edge)."""
-    length = length if length is not None else (S.R - S.r) * (S.A_HI - S.A_LO)
-    return S.organic_outline([], length, width)
+def strip_polygon(curve, width=4.0):
+    """The spine strip in (sigma, u) inches: exactly the length of the curve (the surface), flush with both ends."""
+    return S.organic_outline(float(curve.length), width, x0=0.0)
 
 
-def to_tube(sigma, u):
-    """(sigma, u) -> a point on the tube, in the layout's own (original) coordinates."""
-    a = S.A_LO + sigma / (S.R - S.r)
-    th = math.pi + u / S.r
-    N = np.array([-math.cos(a), 0, math.sin(a)]); B = np.array([0, -1.0, 0]); c = S.C + S.R * N
-    return c + S.r * (math.cos(th) * N + math.sin(th) * B)
-
-
-def clip(layout, width=4.0):
+def _clip(layout, strip, width, curve):
     V0 = np.array(layout["vertices"], float)
-    st = np.array([S.station(p) for p in V0])
-    su = st[:, [3, 2]]
-    strip = strip_polygon(width)
+    sg0, u0, dist0 = curve.station(V0)
+    su = np.stack([sg0, u0], 1)
     boundary = strip.exterior
     inside = np.array([strip.contains(Point(*p)) for p in su])
     polys, info = layout["polygons"], layout["polygon_info"]
@@ -52,13 +42,13 @@ def clip(layout, width=4.0):
         key = (round(pt[0], 3), round(pt[1], 3))
         if key not in newkey:
             newkey[key] = len(verts)
-            verts.append(tuple(to_tube(*pt)))
+            verts.append(tuple(curve.to3d(pt[0], pt[1])[0]))
         return newkey[key]
 
     out_polys, out_info, band = [], [], set()
     for p, inf in zip(polys, info):
         ring = su[p]
-        if np.abs(ring[:, 1]).min() > NEAR or np.ptp(ring[:, 1]) > 14:      # far from the spine, or wraps round the seam
+        if dist0[p].min() > NEAR:                                           # far from the spine
             out_polys.append(list(p)); out_info.append(dict(inf)); continue
         P = Polygon(ring)
         if not P.is_valid:
@@ -96,4 +86,38 @@ def clip(layout, width=4.0):
     res["polygons"] = [[remap[v] for v in p] for p in out_polys]
     res["polygon_info"] = out_info
     res["clip"] = dict(width=width, band=sorted(remap[v] for v in band), nodes_removed=int(len(V0) - len([v for v in used if v < len(V0)])))
+    return res, strip
+
+
+def stubs(res, curve):
+    """Spine spokes of a clipped layout: (edge node, far node, edge point (sigma,u), far point, length in the surface)."""
+    V = np.array(res["vertices"], float)
+    band = set(res["clip"]["band"])
+    sg, uu, _ = curve.station(V)
+    su = {v: (float(sg[v]), float(uu[v])) for v in range(len(V))}
+    out, seen = [], set()
+    for p in res["polygons"]:
+        for a, b in zip(p, p[1:] + p[:1]):
+            if (a in band) != (b in band) and frozenset((a, b)) not in seen:
+                seen.add(frozenset((a, b)))
+                e, n = (a, b) if a in band else (b, a)
+                out.append((e, n, su[e], su[n], float(np.linalg.norm(V[e] - V[n]))))
+    return out
+
+
+TAB_MAX = 1.5        # a spine spoke up to this long (inches, edge of the spine to its node) stays a tab of the spine
+
+
+def clip(layout, curve, width=4.0, tab_max=TAB_MAX):
+    """Cut the layout by the spine strip. Spokes from the spine's edge to a node that are short stay as tabs of the spine piece;
+    longer ones would form peninsulas, so they become ordinary spokes ('edge spokes') from their node to the spine's edge, with their
+    tip overlapping the spine, as spokes coming off the neighbouring patches."""
+    strip = strip_polygon(curve, width)
+    res, _ = _clip(layout, strip, width, curve)
+    st = stubs(res, curve)
+    res["clip"]["outline"] = [[round(x, 3), round(y, 3)] for x, y in strip.exterior.coords]
+    res["clip"]["edge"] = [[int(e), int(n)] for e, n, E, N, d in st if d > tab_max]
+    res["clip"]["tab_max"] = tab_max
+    res["clip"]["long_stubs"] = 0
+    res["clip"]["stub_max"] = round(max([d for *_, d in st if d <= tab_max] or [0.0]), 2)
     return res, strip

@@ -3,7 +3,7 @@
 Layout built AROUND the spine: the same hex57 layout, but no new pentagon may be placed where its plate would touch
 the spine. (The only change to hex57's method is one extra test in add_pair; everything else is hex57 unchanged.)
 
-Run:  python3 spine_layout.py ../hex57/meshes/tube.obj --edge 5 --out layouts/_sources/tube-clear5
+Run:  python3 spine_layout.py shapes/tube.obj --edge 5 --out layouts/_sources/tube-clear5
 Takes about 40 s. Then:  python3 build_smile.py layouts/_sources/tube-clear5/layout.json --out layouts/smile-tube-clear
 """
 import os, sys
@@ -18,13 +18,19 @@ for flag, var in (("--edge", "HEX57_EDGE"), ("--pent-ratio", "HEX57_PENT_RATIO")
         os.environ[var] = sys.argv[sys.argv.index(flag) + 1]
 import hex57_layout as H                                          # noqa: E402
 import hex57_mesh as M                                            # noqa: E402
-import spine                                                      # noqa: E402
+import spinecurve, equalize                                      # noqa: E402
 
-KEEP_OUT = float(os.environ.get("SPINE_KEEP_OUT", 2.0 + 0.75 + 5.0 + 0.3))     # spine half width + bump margin + pentagon radius + slack
+_CURVE = None
+
+KEEP_OUT = float(os.environ.get("SPINE_KEEP_OUT", 9.2))     # no new pentagon centre closer than this to the spine curve (half spine + lobes + pentagon radius)
 
 
 def too_close(p):
-    return abs(spine.station(np.asarray(p))[2]) < KEEP_OUT
+    global _CURVE
+    if _CURVE is None:
+        mesh = next(a for a in sys.argv[1:] if a.lower().endswith((".obj", ".stl")))
+        _CURVE = spinecurve.SpineCurve(spinecurve.read_curve(mesh), equalize.Surface(mesh))
+    return abs(_CURVE.station(np.asarray(p))[1][0]) < KEEP_OUT
 
 
 def add_pair(mesh, rng, size, min_angle):
