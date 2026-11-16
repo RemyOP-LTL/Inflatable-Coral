@@ -18,6 +18,8 @@ The skin is a frame of **spokes** (plastic strips, 1.25 in wide, with a half cir
 - Plain notes and exact rebuild commands are in `skin/CLAUDE.md` (sections "Update 3", "4", "5").
 
 ## How Remy runs it on his Mac (no cloud needed)
+**Now (2026-11-16): the Coral Frame Tool app** (`install-app.sh` made it, in ~/Applications): its own window, Refresh tool button, no browser. See `START-HERE.md` at the repo root. The older double-click steps below still work as a fallback.
+
 1. In Finder open the repo folder, then `skin/skin-2026-11-12-geodesic-frame/`.
 2. Double-click `Start Frame Tool.command`. It opens the tool in his browser at http://127.0.0.1:8790/.
 3. One-time setup: the tool needs Python with `numpy`, `scipy`, `matplotlib` and `shapely` (`requirements.txt` in this folder). If double-clicking fails, the session should install them for him and say what it is doing.

@@ -37,7 +37,10 @@
 </style>
 </head>
 <body>
-<header><h1>Frame tool</h1><span>Spokes with round ends, pentagons as solid plates, loose spokes riveted at both ends, spine along the inside of the curve.</span></header>
+<header><h1>Frame tool</h1><span>Spokes with round ends, pentagons as solid plates, loose spokes riveted at both ends, spine along the inside of the curve.</span>
+  <span id="ver" style="margin-left:auto"></span>
+  <button id="refresh-btn" title="Load the newest version of the tool (anything Claude changed or pushed)">Refresh tool</button>
+  <span id="refresh-msg"></span></header>
 <div class="wrap">
   <div>
     <div class="card">
@@ -308,6 +311,24 @@ $('run').onclick = async () => {
 };
 $('sw').value = store.get('sw3', '1.25'); $('rh').value = store.get('rh3', '0.25'); $('cl').value = store.get('cl3', '0.125'); labels();
 loadLayouts();
+
+// --- version label and Refresh button (restarts the tool from the files on disk, then reloads this page) ---
+fetch('/api/version').then(r => r.json()).then(v => {
+  if (v.git) document.getElementById('ver').textContent = 'branch ' + v.branch + ' · ' + v.date + ' · ' + v.subject + (v.edited ? ' · (edited here, not saved to git)' : '');
+}).catch(() => {});
+document.getElementById('refresh-btn').onclick = async () => {
+  const btn = document.getElementById('refresh-btn'), msg = document.getElementById('refresh-msg');
+  btn.disabled = true; msg.textContent = 'Refreshing...';
+  const r = await fetch('/api/refresh', {method: 'POST', body: '{}'}).then(x => x.json()).catch(() => ({ok: false, log: 'Lost the connection.'}));
+  if (!r.ok) { msg.textContent = r.log; btn.disabled = false; return; }
+  msg.textContent = (r.log || '') + ' Restarting...';
+  await new Promise(res => setTimeout(res, 2000));
+  for (let i = 0; i < 60; i++) {
+    try { const v = await fetch('/api/version', {cache: 'no-store'}); if (v.ok) { location.reload(); return; } } catch (e) {}
+    await new Promise(res => setTimeout(res, 500));
+  }
+  msg.textContent = 'The tool did not come back. Close the window and open it again.'; btn.disabled = false;
+};
 </script>
 </body>
 </html>

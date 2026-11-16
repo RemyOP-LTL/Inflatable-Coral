@@ -3,7 +3,7 @@
 The geodesic-frame tool in a browser window.
 
 Double-click "Start Frame Tool.command" (Mac), or run:  python3 frame_app.py
-Then open  http://127.0.0.1:8820/   (only your own computer can see it).
+Then open  http://127.0.0.1:8790/   (only your own computer can see it).
 
 What it shows: the skin as a frame (hubs at the polygon corners, 1 in spokes, 1.5 in circles, pentagons as
 solid plates), in 3D, and one pentagon patch laid flat with the spokes that come up short marked in red.
@@ -248,6 +248,8 @@ class Handler(BaseHTTPRequestHandler):
                 if fr is None:
                     return self.send(dict(error="No such layout"), code=404)
                 return self.send(patch_payload(fr, int(q["pent"][0]), int(q.get("rings", ["1"])[0])))
+            if path == "/api/version":
+                return self.send(version_info())
             if path == "/patch_draw.js":
                 return self.send(open(os.path.join(HERE, "patch_draw.js"), "rb").read(), "application/javascript")
             if path == "/api/state":
@@ -262,9 +264,69 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length", 0))
+        if urlparse(self.path).path == "/api/refresh":
+            ok, log = refresh_code()
+            if ok:
+                restart_soon()
+            return self.send(dict(ok=ok, log=log))
         if urlparse(self.path).path == "/api/run":
             return self.send(start_job(json.loads(self.rfile.read(n) or b"{}")))
         self.send("Not found", "text/plain", 404)
+
+
+def git(*args, timeout=60):
+    """Run a git command in this folder. Returns (ok, text)."""
+    try:
+        r = subprocess.run(["git", *args], cwd=HERE, capture_output=True, text=True, timeout=timeout)
+        return r.returncode == 0, (r.stdout + r.stderr).strip()
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return False, str(e)
+
+
+def version_info():
+    """Which branch and last change this copy is on (shown in the window's top bar)."""
+    ok, branch = git("rev-parse", "--abbrev-ref", "HEAD")
+    if not ok:
+        return dict(git=False)
+    _, line = git("log", "-1", "--format=%h|%cs|%s")
+    sha, date, subject = (line.split("|", 2) + ["", "", ""])[:3]
+    _, dirty = git("status", "--porcelain", "--untracked-files=no")
+    return dict(git=True, branch=branch, sha=sha, date=date, subject=subject, edited=bool(dirty))
+
+
+def refresh_code():
+    """Pick up the newest version: pull from GitHub if that is safe, then the caller restarts the tool so
+    whatever is in the folder (pulled, or edited here by Claude) is what runs."""
+    log = []
+    ok, branch = git("rev-parse", "--abbrev-ref", "HEAD")
+    if ok and branch != "HEAD":
+        fetched, msg = git("fetch", "--prune", "origin", timeout=30)
+        if not fetched:
+            log.append("Could not reach GitHub, so I used the files already on this computer.")
+        else:
+            has_remote = git("rev-parse", "--verify", "--quiet", f"origin/{branch}")[0]
+            _, behind = git("rev-list", "--count", f"HEAD..origin/{branch}") if has_remote else (False, "0")
+            if has_remote and behind.isdigit() and int(behind) > 0:
+                merged, out = git("merge", "--ff-only", f"origin/{branch}")
+                log.append(f"Pulled {behind} new change(s) from GitHub." if merged else
+                           "GitHub has newer changes but they would clash with changes here, so I left them. " + out[-200:])
+            else:
+                log.append("Nothing new on GitHub.")
+    req = os.path.join(HERE, "requirements.txt")
+    if os.path.exists(req):
+        pip = subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "-r", req],
+                             cwd=HERE, capture_output=True, text=True)
+        if pip.returncode != 0:
+            log.append("(The library check failed: " + pip.stderr.strip()[-200:] + ")")
+    return True, " ".join(log)
+
+
+def restart_soon():
+    """Start again from the files on disk in a moment, after the reply has gone out."""
+    def go():
+        time.sleep(1.0)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    threading.Thread(target=go, daemon=True).start()
 
 
 PAGE = open(os.path.join(HERE, "frame_page.html"), encoding="utf-8").read() if os.path.exists(
