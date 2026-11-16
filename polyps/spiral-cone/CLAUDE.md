@@ -66,3 +66,12 @@ Seam edge lengths bottom and top: 41.521 in both. Open-end arc 19.295 in = pi x 
 - Defaults were rounded to tidy metric numbers, so the design moved a little: length 250 (was 254), pitch 75 / 50 (was 76.2 / 50.8), straight seam and blend 50, seam allowance 12 (12.7), frill width 75 and start 75 (76.2), cuff 50, fabric 1470, tabs 12 mm every 125, fringe 6 mm (6.35, so 62 strands not 59). Check that the maths is unchanged: with the exact old values converted (254, 76.2, ...) the new code gives the same seam length, strip size, turns and tab count as the inch version.
 - Page inputs are in four sections: **Cone shape** (length, cuff line diameter, tip diameter, cuff height, cuff in strip), **Seam** (pitch base/end/curve, straight seam length, blend, seam allowance, fabric width), **Frill** (start, strip width, fringe width), **Tabs** (size, spacing). No descriptions. Rebuild / reset sit in a sticky box at the top of the column.
 - Hard-coded small numbers in `spiral_cone.py` (tab clearance, edge sampling, layout gaps, SVG line widths, fonts) were converted to mm as well.
+
+## Round 6 page changes (2026-11-16)
+- Fabric width is the one setting in **inches** (default 58 in); converted to mm before the pattern runs. Flat-pattern PNG shows mm (bottom/left) and inches (top/right).
+- Page no longer shows the settings list (it stays in the `.txt` file) or the design warnings at the top of the Pattern tile (only rebuild errors show there; the "Checks" list is still at the end of the numbers).
+- Rebuild is greyed out when the boxes match what was last built. No "Sizing changed" banner.
+- "Cuff in the strip" became **Separate cuff** (No/Yes switch; Yes = `CUFF_IN_STRIP=0`).
+- New setting **Frill ends at (distance from tip)**, `FRILL_END_FROM_TIP`, mm along the axis. Interpretation (confirm with Remy): it sets where the frill ENDS, measured from the tip; the start is still measured from the cuff line. Default 50 = the straight-seam length, so the default pattern is unchanged. It cannot be smaller than the straight seam length (the frill does not run along the straight seam) and the frill must be at least 12 mm long.
+- **Snapshots**: the sticky top tile has a name box + Save and a "Load a snapshot..." menu. Saved as small JSON files in `snapshots/` (git-ignored, so not backed up on GitHub). Same name overwrites. Loading fills the boxes and rebuilds.
+- The sticky tile (Rebuild, reset, save, load) is meant to be reused in the other tools.

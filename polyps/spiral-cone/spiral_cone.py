@@ -48,16 +48,17 @@ TRANSITION = 50.0           # the spiral fades into the straight seam over this 
 SEAM = 12.0                 # seam allowance (every edge except the open end of the cuff)
 RUFFLE_WIDTH = 75.0         # cut width of the frill strip: solid seam allowance + (width - seam) of fringe standing out
 FRILL_START = 75.0          # where the frill starts, in mm up the axis from the cuff line (Remy)
+FRILL_END_FROM_TIP = 50.0   # where the frill ends: this many mm from the tip, measured along the axis (must be at least STRAIGHT_LENGTH)
 CUFF_HEIGHT = 50.0          # finished height of the cuff
 CUFF_IN_STRIP = 1           # 1 = cuff is the bottom of the cone strip. 0 = separate straight cuff band
 HEM = 25.0                  # only for the separate cuff band: extra at its open end
-FABRIC_WIDTH = 1470.0       # ASSUMED usable width of the fabric
+FABRIC_WIDTH = 1473.2       # ASSUMED usable width of the fabric: 58 in (the one thing Remy buys in inches; the tool shows it in inches)
 TAB_SIZE = 12.0             # alignment tabs are this-size squares
 TAB_SPACING = 125.0         # about one tab every this many mm of seam
 FRINGE_WIDTH = 6.0          # the standing-out part of the frill is slit into strands this wide
 
 NAMES = ["LENGTH", "BASE_DIAMETER", "TIP_DIAMETER", "PITCH_BASE", "PITCH_TIP", "PITCH_CURVE", "STRAIGHT_LENGTH",
-         "TRANSITION", "SEAM", "RUFFLE_WIDTH", "FRILL_START", "CUFF_HEIGHT", "CUFF_IN_STRIP", "HEM",
+         "TRANSITION", "SEAM", "RUFFLE_WIDTH", "FRILL_START", "FRILL_END_FROM_TIP", "CUFF_HEIGHT", "CUFF_IN_STRIP", "HEM",
          "FABRIC_WIDTH", "TAB_SIZE", "TAB_SPACING", "FRINGE_WIDTH"]
 
 
@@ -100,6 +101,11 @@ class Cone:
         if not (0 <= FRILL_START < self.Ls - 12):
             raise SystemExit("The frill must start above the cuff line and below the end of the spiral "
                              f"(FRILL_START between 0 and {self.Ls - 12:g}).")
+        if FRILL_END_FROM_TIP < STRAIGHT_LENGTH - 1e-6:
+            raise SystemExit(f"The frill cannot run into the straight seam: 'Frill ends from tip' must be at least the straight seam length ({STRAIGHT_LENGTH:g} mm).")
+        self.z_f1 = LENGTH - FRILL_END_FROM_TIP               # height where the frill ends
+        if self.z_f1 - FRILL_START < 12:
+            raise SystemExit("The frill is too short: it must start at least 12 mm below where it ends. Lower 'Frill starts at' or 'Frill ends from tip'.")
         self.zmin = -CUFF_HEIGHT if CUFF_IN_STRIP else 0.0
         self.slant = math.hypot(self.L, self.r0 - self.r1)
         self.sing = (self.r0 - self.r1) / self.slant       # sin of the cone's half angle
@@ -119,6 +125,7 @@ class Cone:
         self.s = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(P, axis=0).T))])
         self.s_f0 = float(np.interp(FRILL_START, self.zg, self.s))
         self.s_total = float(self.s[-1])
+        self.s_f1 = float(np.interp(self.z_f1, self.zg, self.s))   # seam length where the frill ends
 
     def radius(self, z):
         return self.r0 + (self.r1 - self.r0) * np.asarray(z) / self.L
@@ -213,7 +220,7 @@ def build():
     if CUFF_IN_STRIP:                                     # no seam allowance on the open end of the cuff
         body = body.intersection(Point(0, 0).buffer(c.rho_bottom, 256))
     # --- alignment tabs along the spiral seam, positions measured from where the frill starts (rel)
-    frill_len = c.s_total - c.s_f0
+    frill_len = c.s_f1 - c.s_f0
     h = TAB_SIZE / 2
     rel = tab_positions(h, frill_len - 3 * h, TAB_SPACING)                       # on the frill (clear of the straight-seam tabs)
     below_hi = c.s_f0 - 1.5 * TAB_SIZE                                           # plain seam below the frill
@@ -289,8 +296,8 @@ def build():
     sides = sorted([math.hypot(xs[1] - xs[0], ys[1] - ys[0]), math.hypot(xs[2] - xs[1], ys[2] - ys[1])])
     cb = cut.bounds
     if sides[0] + 2 * SEAM > FABRIC_WIDTH:
-        warn.append(f"The cone strip is {sides[0] + 2 * SEAM:.0f} mm across (tightest fit) and does not fit the {FABRIC_WIDTH:.0f} mm fabric.")
-    r_end = float(c.radius(c.Ls))
+        warn.append(f"The cone strip is {sides[0] + 2 * SEAM:.0f} mm across (tightest fit) and does not fit the {FABRIC_WIDTH / 25.4:.0f} in ({FABRIC_WIDTH:.0f} mm) fabric.")
+    r_end = float(c.radius(c.z_f1))
     if F > r_end:
         warn.append(f"The frill stands out {F:.0f} mm, more than the cone's radius ({r_end:.0f} mm) where the spiral ends, "
                     "so frill from opposite sides of the cone will overlap there (soft fringe, so it may be fine).")
@@ -317,7 +324,7 @@ def report(info):
           f"  Cone half-angle                 {info['half_angle']:.1f} deg",
           f"  Turns of the spiral seam        {info['turns']:.2f} (cuff included)",
           f"  Height gained per turn          {info['gain0']:.0f} mm at the cuff line (the PITCH settings are the rate at one exact height)",
-          f"  Spiral seam length              {info['seam_total']:.0f} mm; the frill covers the last {info['frill_len']:.0f} mm of it",
+          f"  Spiral seam length              {info['seam_total']:.0f} mm; the frill covers {info['frill_len']:.0f} mm of it",
           f"  Straight seam                   {info['straight']:.0f} mm",
           f"  Cone strip, cut size            bounding box {info['bbox'][0]:.0f} x {info['bbox'][1]:.0f} mm, "
           f"tightest rectangle {info['strip_tight']:.0f} x {info['strip_long']:.0f} mm",
@@ -404,7 +411,9 @@ def draw_png(path, c, outline, cut, pieces, info):
             ax.text(cut.bounds[0] + dx + 8, cut.bounds[1] + dy + 20, "CONE STRIP", fontsize=9, color="#444")
         else:
             ax.text(dx, dy - 10, title(p.name), fontsize=8, color="#444")
-    ax.set_aspect("equal"); ax.invert_yaxis(); ax.grid(alpha=.2); ax.set_xlabel("mm")
+    ax.set_aspect("equal"); ax.invert_yaxis(); ax.grid(alpha=.2); ax.set_xlabel("mm"); ax.set_ylabel("mm")
+    sx = ax.secondary_xaxis("top", functions=(lambda v: v / 25.4, lambda v: v * 25.4)); sx.set_xlabel("inches")
+    sy = ax.secondary_yaxis("right", functions=(lambda v: v / 25.4, lambda v: v * 25.4)); sy.set_ylabel("inches")
     ax.set_title("Flat pieces. Red = cut, blue dashed = sew, numbered squares = alignment tabs that go together", fontsize=10)
     a3 = fig.add_subplot(gs[0, 1], projection="3d")
     zz = np.linspace(c.zmin, c.L, 40); tt = np.linspace(0, 2 * math.pi, 60)
@@ -418,7 +427,7 @@ def draw_png(path, c, outline, cut, pieces, info):
     a3.plot(rs * math.cos(c.theta_end), rs * math.sin(c.theta_end), zs, color="#1d4ed8", lw=2)   # the straight seam
     F = info["F"]
     for k in range(0, len(th), 40):
-        if z[k] < FRILL_START:
+        if z[k] < FRILL_START or z[k] > c.z_f1:
             continue
         n = np.array([c.cosg * math.cos(th[k]), c.cosg * math.sin(th[k]), c.sing])
         p0 = np.array([r[k] * math.cos(th[k]), r[k] * math.sin(th[k]), z[k]])
@@ -429,7 +438,7 @@ def draw_png(path, c, outline, cut, pieces, info):
     a3.set_box_aspect((1, 1, (c.L - c.zmin) / (2 * m)))
     a3.view_init(18, -60)
     a3.set_title(f"Finished cone: {info['turns']:.1f} turns, then a straight seam for the last {info['straight']:.0f} mm.\n"
-                 f"Blue = seam, red lines = frill fringe ({F:.0f} mm out, from {FRILL_START:g} mm up to the end of the spiral)", fontsize=9)
+                 f"Blue = seam, red lines = frill fringe ({F:.0f} mm out, from {FRILL_START:g} mm up to {FRILL_END_FROM_TIP:g} mm from the tip)", fontsize=9)
     fig.tight_layout()
     fig.savefig(path, dpi=100)
     plt.close(fig)

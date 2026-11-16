@@ -17,7 +17,7 @@ import threading
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -25,27 +25,30 @@ OUT = os.path.join(HERE, "tool-output")
 PORT = int(os.environ.get("SPIRAL_TOOL_PORT", 8820))   # polyp tool 8800, skin tool 8765+; each tool has its own block
 import spiral_cone as S
 
-# (section, setting, label, unit, min, max, step)  -- all lengths in millimetres
+# (section, setting, label, unit, min, max, step)  -- all lengths in millimetres, except the fabric width (inches)
 FIELDS = [
     ("Cone shape", "LENGTH", "Cone length", "mm", 100, 800, 5),
     ("Cone shape", "BASE_DIAMETER", "Cuff line diameter", "mm", 50, 300, 1),
     ("Cone shape", "TIP_DIAMETER", "Tip diameter", "mm", 0, 150, 5),
     ("Cone shape", "CUFF_HEIGHT", "Cuff height", "mm", 25, 125, 5),
-    ("Cone shape", "CUFF_IN_STRIP", "Cuff in the strip (1 yes, 0 no)", "", 0, 1, 1),
+    ("Cone shape", "CUFF_IN_STRIP", "Separate cuff", "toggle", 0, 1, 1),
     ("Seam", "PITCH_BASE", "Pitch at the base", "mm", 10, 200, 1),
     ("Seam", "PITCH_TIP", "Pitch at the end of the spiral", "mm", 10, 200, 1),
     ("Seam", "PITCH_CURVE", "Pitch curve", "", 0.3, 3, 0.1),
     ("Seam", "STRAIGHT_LENGTH", "Straight seam length", "mm", 0, 150, 5),
     ("Seam", "TRANSITION", "Spiral to straight blend", "mm", 0, 150, 5),
     ("Seam", "SEAM", "Seam allowance", "mm", 6, 25, 1),
-    ("Seam", "FABRIC_WIDTH", "Fabric width (fit check)", "mm", 500, 3000, 10),
+    ("Seam", "FABRIC_WIDTH", "Fabric width (fit check)", "in", 20, 120, 1),
     ("Frill", "FRILL_START", "Frill starts at (up from cuff line)", "mm", 0, 225, 5),
+    ("Frill", "FRILL_END_FROM_TIP", "Frill ends at (distance from tip)", "mm", 0, 300, 5),
     ("Frill", "RUFFLE_WIDTH", "Frill strip width (cut)", "mm", 25, 150, 1),
     ("Frill", "FRINGE_WIDTH", "Fringe strip width", "mm", 3, 25, 0.5),
     ("Tabs", "TAB_SIZE", "Tab size", "mm", 6, 25, 1),
     ("Tabs", "TAB_SPACING", "Tab spacing", "mm", 50, 300, 5),
 ]
 DEFAULTS = {k: getattr(S, k) for k in S.NAMES}
+PAGE_DEFAULTS = dict(DEFAULTS, FABRIC_WIDTH=round(DEFAULTS["FABRIC_WIDTH"] / 25.4, 3))   # the page shows fabric width in inches
+SNAPS = os.path.join(HERE, "snapshots")
 LOCK = threading.Lock()
 
 
@@ -53,17 +56,51 @@ def run_pattern(params):
     """Make the pattern for these settings. Returns (folder name, result dict)."""
     clean = {}
     for _sec, name, *_ in FIELDS:
-        v = float(params.get(name, DEFAULTS[name]))
+        v = float(params.get(name, PAGE_DEFAULTS[name]))
         if not (v == v) or abs(v) > 1e4:
             raise ValueError(f"{name} is not a sensible number")
-        clean[name] = v
+        clean[name] = v * 25.4 if name == "FABRIC_WIDTH" else v     # the page gives inches, the pattern works in mm
     key = hashlib.sha1(json.dumps(clean, sort_keys=True).encode()).hexdigest()[:12]
     folder = os.path.join(OUT, key)
     with LOCK:                                   # the script keeps its settings in module variables
         for k, v in {**DEFAULTS, **clean}.items():
             setattr(S, k, v)
         info, text = S.make(folder, "spiral-cone")
-    return key, {"text": text, "warnings": info["warnings"], "seam": info["seam_total"], "turns": info["turns"]}
+    shown = text[:text.index("\nSettings:")] + "\n" + text[text.index("Results:"):]      # the settings stay in the .txt file, not on the page
+    return key, {"text": shown, "warnings": info["warnings"], "seam": info["seam_total"], "turns": info["turns"]}
+
+
+# --- saved snapshots (named sets of sizes, kept as small files in the snapshots/ folder)
+def snap_names():
+    if not os.path.isdir(SNAPS):
+        return []
+    files = [f for f in os.listdir(SNAPS) if f.endswith(".json")]
+    files.sort(key=lambda f: os.path.getmtime(os.path.join(SNAPS, f)), reverse=True)
+    return [f[:-5] for f in files]
+
+
+def snap_clean(name):
+    name = re.sub(r"[^A-Za-z0-9 _.()-]", "-", (name or "").strip())[:60].strip(" .")
+    return name or time.strftime("snapshot %Y-%m-%d %H-%M-%S")
+
+
+def snap_save(name, params):
+    name = snap_clean(name)
+    values = {}
+    for _sec, k, *_ in FIELDS:
+        values[k] = float(params.get(k, PAGE_DEFAULTS[k]))
+    os.makedirs(SNAPS, exist_ok=True)
+    with open(os.path.join(SNAPS, name + ".json"), "w") as f:
+        json.dump({"name": name, "saved": time.strftime("%Y-%m-%d %H:%M"), "params": values}, f, indent=1)
+    return name
+
+
+def snap_load(name):
+    name = snap_clean(name)
+    path = os.path.join(SNAPS, name + ".json")
+    if not os.path.isfile(path):
+        return None
+    return json.load(open(path))["params"]
 
 
 # --- version label and Refresh (same as the skin tool's)
@@ -139,10 +176,15 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/":
-            meta = dict(fields=FIELDS, defaults=DEFAULTS)
+            meta = dict(fields=FIELDS, defaults=PAGE_DEFAULTS)
             self.send(200, PAGE.replace("__META__", json.dumps(meta)), "text/html; charset=utf-8")
         elif path == "/api/version":
             self.send(200, json.dumps(version()), "application/json")
+        elif path == "/api/snapshots":
+            self.send(200, json.dumps(snap_names()), "application/json")
+        elif path == "/api/snapshot":
+            p = snap_load(parse_qs(urlparse(self.path).query).get("name", [""])[0])
+            self.send(200 if p else 404, json.dumps(p or {"error": "No such snapshot."}), "application/json")
         elif path.startswith("/out/"):
             parts = path.split("/")[2:]
             ok = len(parts) == 2 and re.fullmatch(r"[0-9a-f]{12}", parts[0]) and parts[1].startswith("spiral-cone.")
@@ -165,6 +207,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200, json.dumps({"ok": ok, "log": log}), "application/json")
             if ok:
                 restart_soon()
+        elif path == "/api/snapshot":
+            name = snap_save(body.get("name"), body.get("params", {}))
+            self.send(200, json.dumps({"name": name, "names": snap_names()}), "application/json")
         elif path == "/api/run":
             try:
                 key, res = run_pattern(body.get("params", {}))
@@ -205,6 +250,10 @@ PAGE = r"""<!doctype html>
   .stale img { opacity:.35; } a { color:var(--blue); } .err { color:#c0392b; }
   .reset { background:none; border:none; color:var(--mute); text-decoration:underline; font-weight:400; width:auto; padding:0; margin:8px 0 0; }
   .sticky { position:sticky; top:0; z-index:5; }
+  button:disabled { opacity:.4; cursor:default; }
+  .row { display:flex; gap:6px; margin-top:8px; } .row input { flex:1; min-width:0; font:inherit; padding:4px 6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); } .row button { width:auto; margin:0; }
+  #load { width:100%; margin-top:8px; font:inherit; padding:5px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
+  .sw { display:inline-flex; align-items:center; gap:6px; font-weight:400; } .sw input { position:absolute; opacity:0; } .sw .track { width:36px; height:20px; border-radius:10px; background:var(--line); position:relative; transition:.15s; } .sw .track::after { content:''; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:.15s; } .sw input:checked + .track { background:var(--accent); } .sw input:checked + .track::after { left:18px; }
   .derived { font-size:13px; color:var(--mute); }
 </style></head><body>
 <header><h1>Cone worm</h1><span class="derived">Spiral-cone polyp pattern. Sizes in millimetres. Type them, press Rebuild, download the SVG for the laser.</span>
@@ -213,9 +262,12 @@ PAGE = r"""<!doctype html>
   <span id="refresh-msg" class="derived"></span></header>
 <main>
   <div>
-    <div class="card sticky"><div id="dirty" class="warn" style="display:none">Sizing changed. Press Rebuild.</div>
-      <button id="rebuild">Rebuild</button>
-      <button class="reset" id="reset">Reset to the starting values</button></div>
+    <div class="card sticky">
+      <button id="rebuild" disabled>Rebuild</button>
+      <button class="reset" id="reset">Reset to the starting values</button>
+      <div class="row"><input type="text" id="snapname" placeholder="Snapshot name (optional)" maxlength="60"><button id="save" class="secondary">Save</button></div>
+      <select id="load"><option value="">Load a snapshot...</option></select>
+      <div id="snapmsg" class="derived"></div></div>
     <div id="sections"></div>
   </div>
   <div class="results">
@@ -232,27 +284,61 @@ const $ = id => document.getElementById(id);
 const vals = {...META.defaults};
 let seq = 0;
 const secs = {};
+let built = '';
+function refreshBtn() { $('rebuild').disabled = JSON.stringify(vals) === built; }
 for (const [sec, name, label, unit, lo, hi, step] of META.fields) {
   if (!secs[sec]) { const c = document.createElement('div'); c.className = 'card'; c.style.marginTop = '12px'; c.innerHTML = `<h2>${sec}</h2>`; $('sections').appendChild(c); secs[sec] = c; }
   const d = document.createElement('div'); d.className = 'field';
+  if (unit === 'toggle') {          // Separate cuff: Yes = the cuff is its own band (CUFF_IN_STRIP = 0)
+    d.innerHTML = `<label>${label}<span class="sw"><span id="t-${name}-txt"></span><input type="checkbox" id="n-${name}"><span class="track"></span></span></label>`;
+    secs[sec].appendChild(d);
+    const cb = d.querySelector('input');
+    const show = () => { cb.checked = vals[name] === 0; $('t-' + name + '-txt').textContent = cb.checked ? 'Yes' : 'No'; };
+    show();
+    cb.onchange = () => { vals[name] = cb.checked ? 0 : 1; show(); refreshBtn(); };
+    continue;
+  }
   d.innerHTML = `<label>${label}<span><input type="number" id="n-${name}" min="${lo}" max="${hi}" step="${step}"> ${unit}</span></label>`;
   secs[sec].appendChild(d);
   const n = d.querySelector('input');
   n.value = +(+vals[name]).toFixed(3);
-  n.oninput = () => { if (n.value !== '') { vals[name] = parseFloat(n.value); dirty(true); } };
-  n.onkeydown = e => { if (e.key === 'Enter') run(); };
+  n.oninput = () => { if (n.value !== '') { vals[name] = parseFloat(n.value); refreshBtn(); } };
+  n.onkeydown = e => { if (e.key === 'Enter' && !$('rebuild').disabled) run(); };
 }
-function dirty(on) { $('dirty').style.display = on ? 'block' : 'none'; $('card').classList.toggle('stale', on); }
-function sync() { for (const [name] of META.fields) $('n-' + name).value = +(+vals[name]).toFixed(3); }
+function sync() {
+  for (const [, name, , unit] of META.fields) {
+    const el = $('n-' + name);
+    if (unit === 'toggle') { el.checked = vals[name] === 0; $('t-' + name + '-txt').textContent = el.checked ? 'Yes' : 'No'; }
+    else el.value = +(+vals[name]).toFixed(3);
+  }
+}
 $('reset').onclick = () => { Object.assign(vals, META.defaults); sync(); run(); };
 $('rebuild').onclick = () => run();
+async function loadSnaps(select) {
+  const names = await fetch('/api/snapshots').then(r => r.json()).catch(() => []);
+  $('load').innerHTML = '<option value="">Load a snapshot...</option>' + names.map(n => `<option>${n.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</option>`).join('');
+  if (select) $('load').value = select;
+}
+$('save').onclick = async () => {
+  const r = await fetch('/api/snapshot', {method: 'POST', body: JSON.stringify({name: $('snapname').value, params: vals})}).then(x => x.json()).catch(() => null);
+  if (!r) { $('snapmsg').textContent = 'Could not save.'; return; }
+  $('snapmsg').textContent = 'Saved "' + r.name + '".'; $('snapname').value = ''; loadSnaps(r.name);
+};
+$('load').onchange = async () => {
+  const name = $('load').value; if (!name) return;
+  const p = await fetch('/api/snapshot?name=' + encodeURIComponent(name)).then(x => x.ok ? x.json() : null).catch(() => null);
+  if (!p) { $('snapmsg').textContent = 'Could not load "' + name + '".'; return; }
+  Object.assign(vals, META.defaults, p); sync(); $('snapmsg').textContent = 'Loaded "' + name + '".'; run();
+};
+loadSnaps();
 async function run() {
-  const me = ++seq; $('busy').textContent = 'building...';
+  const me = ++seq, sent = JSON.stringify(vals); $('busy').textContent = 'building...'; $('rebuild').disabled = true;
   const r = await fetch('/api/run', {method: 'POST', body: JSON.stringify({params: vals})}).then(x => x.json()).catch(() => ({error: 'Lost the connection to the tool.'}));
   if (me !== seq) return;
-  $('busy').textContent = ''; dirty(false);
-  if (r.error) { $('warnings').innerHTML = '<div class="warn err">' + r.error + '</div>'; return; }
-  $('warnings').innerHTML = r.warnings.map(w => '<div class="warn">' + w + '</div>').join('');
+  $('busy').textContent = '';
+  if (r.error) { $('warnings').innerHTML = '<div class="warn err">' + r.error + '</div>'; refreshBtn(); return; }
+  $('warnings').innerHTML = ''; $('card').classList.remove('stale');
+  built = sent; refreshBtn();
   $('pic').src = '/out/' + r.key + '/spiral-cone.png';
   $('svg').href = '/out/' + r.key + '/spiral-cone.svg?dl=1';
   $('text').textContent = r.text;
