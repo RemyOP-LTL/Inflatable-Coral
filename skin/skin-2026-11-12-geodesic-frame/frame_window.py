@@ -12,6 +12,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 
@@ -41,15 +42,25 @@ def wait_until_up(url, seconds=60):
 def main():
     port = free_port()
     env = dict(os.environ, FRAME_NO_BROWSER="1", FRAME_TOOL_PORT=str(port))
-    server = subprocess.Popen([sys.executable, os.path.join(HERE, "frame_app.py")], cwd=HERE, env=env)
+    start = lambda: subprocess.Popen([sys.executable, os.path.join(HERE, "frame_app.py")], cwd=HERE, env=env)
+    box = {"server": start(), "closing": False}
     url = f"http://127.0.0.1:{port}/"
+
+    def watchdog():                                   # if the tool behind the window ever stops, start it again
+        while not box["closing"]:
+            time.sleep(1.5)
+            if box["server"].poll() is not None and not box["closing"]:
+                box["server"] = start()
+    threading.Thread(target=watchdog, daemon=True).start()
+    server = box["server"]
     try:
         if not wait_until_up(url):
             sys.exit("The tool did not start. Please tell Claude.")
         webview.create_window("Coral Frame Tool", url, width=1400, height=900, min_size=(900, 600))
         webview.start()
     finally:
-        server.terminate()
+        box["closing"] = True
+        box["server"].terminate()
 
 
 if __name__ == "__main__":

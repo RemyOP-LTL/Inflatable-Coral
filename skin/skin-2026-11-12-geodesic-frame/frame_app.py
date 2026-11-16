@@ -65,11 +65,13 @@ def get_frame(lid):
 
 
 def label_for(lid, fr):
-    p = fr.params
-    mesh = os.path.splitext(os.path.basename(str(p.get("MESH_FILE") or lid)))[0]
-    if fr.spine:
-        return f"Smile tube, {fr.spine['width']:g} in spine with a live edge, layout built around it"
-    return f"{mesh}, spoke spacing about {p.get('EDGE', '?')} in"
+    if fr.layout.get("display_name"):
+        return fr.layout["display_name"]
+    if lid.startswith("smile") or fr.spine:
+        return "tube"
+    if lid.startswith("dome"):
+        return "dome"
+    return os.path.splitext(os.path.basename(str(fr.params.get("MESH_FILE") or lid)))[0]
 
 
 def frame_payload(fr, rings):
@@ -86,7 +88,7 @@ def frame_payload(fr, rings):
         if e in plate_edges or fr.hidden(e):
             continue
         a, b = sorted(e)
-        edges.append([a, b, 1 if all(fr.end[p] for p in ps) else (2 if e in fr.loose_id else 0)])
+        edges.append([a, b, 1 if all(fr.end[p] for p in ps) else (2 if e in fr.loose_id else (3 if e in fr.spine_spokes else 0))])
     pents = fr.pentagons(rings)
     usable = {q["id"]: q["ok"] for q in pents}
     for p, s_ in enumerate(fr.sides):
@@ -98,6 +100,7 @@ def frame_payload(fr, rings):
     interior = {v for p in range(len(fr.polys)) if not fr.end[p] for v in fr.polys[p]}
     L = [float(np.linalg.norm(fr.V[a] - fr.V[b])) for a, b, f_ in edges if f_ == 2 and a in interior and b in interior]
     Tr = [float(np.linalg.norm(fr.V[a] - fr.V[b])) for a, b, f_ in edges if f_ == 0 and a in interior and b in interior]
+    loose_lengths = [round(l, 3) for l in L]
     summary = dict(pentagons=len(pents), usable=sum(q["ok"] for q in pents), on_spine=sum(q["spine"] for q in pents),
                    loose=len(L), loose_mean=float(np.mean(L)) if L else 0.0, loose_min=float(min(L)) if L else 0.0,
                    loose_max=float(max(L)) if L else 0.0, loose_std_pct=float(np.std(L) / np.mean(L) * 100) if L else 0.0,
@@ -105,9 +108,10 @@ def frame_payload(fr, rings):
     spine = None
     if fr.spine:
         sp = fr.spine
-        spine = dict(width=sp["width"], length=sp["outline_length"], hole=sp["hole"], bumps=sp["attach"], outline=sp["outline"], mesh=sp["mesh"])
+        spine = dict(width=sp["width"], length=sp["outline_length"], hole=sp["hole"], bumps=sp["attach"], outline=sp["outline"], mesh=sp["mesh"],
+                     tabs=sp.get("tabs", []), partial=sum(bool(i.get("partial")) for i in fr.info))
     return dict(vertices=V, normals=N, edges=edges, pentagons=pents, plates=plates, summary=summary, hole=fr.hole_diameter, spine=spine,
-                equalized=fr.layout.get("equalized"),
+                equalized=fr.layout.get("equalized"), loose_lengths=loose_lengths,
                 params={k: fr.params.get(k) for k in ("EDGE", "MESH_FILE", "HOLE_DIAMETER", "PENT_ACROSS")})
 
 
@@ -134,12 +138,35 @@ def mesh_files():
     return out
 
 
+def convert_step(data, name):
+    """STEP bytes -> an OBJ surface in inches saved in hex57/uploads. Returns (path, size text) or raises ValueError."""
+    import io
+    import cascadio
+    import trimesh
+    try:
+        glb = cascadio.load(data, "step", tol_linear=0.002, tol_relative=True)
+        mesh = trimesh.load(io.BytesIO(glb), file_type="glb", force="mesh")
+    except Exception as e:
+        raise ValueError(f"I could not read that STEP file ({e}). Export the surface or solid as STEP (AP214 or AP203) from Fusion 360 and try again.")
+    if len(mesh.faces) == 0:
+        raise ValueError("That STEP file has no surface in it.")
+    mesh.apply_scale(39.3700787)                          # the converter writes metres
+    size = mesh.extents
+    uploads = dict(MESH_DIRS)["yours"]
+    os.makedirs(uploads, exist_ok=True)
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", name) or "shape"
+    path = os.path.join(uploads, safe + ".obj")
+    mesh.export(path)
+    return path, " x ".join(f"{x:.1f}" for x in sorted(size, reverse=True)) + " in"
+
+
 def start_job(p):
     kind, _, f = p.get("mesh", "").partition("/")
     folder = dict(MESH_DIRS).get(kind)
-    mesh = os.path.join(folder or "", os.path.basename(f))
-    if not folder or not os.path.isfile(mesh):
+    mesh = p.get("mesh_abs") or os.path.join(folder or "", os.path.basename(f))
+    if (not folder and not p.get("mesh_abs")) or not os.path.isfile(mesh):
         return dict(error="Pick a shape first.")
+    display = p.get("name")
     try:
         edge = float(p["edge"])
     except (KeyError, ValueError):
@@ -147,12 +174,12 @@ def start_job(p):
     with lock:
         if any(j["state"] == "running" for j in jobs.values()):
             return dict(error="A layout is already being made. Wait for it to finish.")
-        base = re.sub(r"[^A-Za-z0-9_.-]", "_", os.path.splitext(os.path.basename(mesh))[0])
-        lid = f"{base}-edge{edge:g}"
+        base = re.sub(r"[^A-Za-z0-9_.-]", "_", display or os.path.splitext(os.path.basename(mesh))[0])
+        lid = base if display else f"{base}-edge{edge:g}"
         n = 1
         while os.path.exists(os.path.join(RUNS, lid)) or lid in dict(layout_files()):
             n += 1
-            lid = f"{base}-edge{edge:g}-{n}"
+            lid = f"{base}-{n}" if display else f"{base}-edge{edge:g}-{n}"
         out = os.path.join(RUNS, lid)
         os.makedirs(out, exist_ok=True)
         cmd = [sys.executable, "-u", os.path.join(HEX57, "hex57_mesh.py"), mesh, "--out", out, "--edge", str(edge)]
@@ -160,7 +187,7 @@ def start_job(p):
             cmd.append("--flip")
         proc = subprocess.Popen(cmd, cwd=HEX57, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                 env=dict(os.environ, PYTHONIOENCODING="utf-8"))
-        jobs[lid] = dict(proc=proc, log=[], state="running", started=time.time(), out=out)
+        jobs[lid] = dict(proc=proc, log=[], state="running", started=time.time(), out=out, mesh=mesh, display=display, edge=edge)
     threading.Thread(target=watch_job, args=(lid,), daemon=True).start()
     return dict(ok=True, id=lid)
 
@@ -179,7 +206,20 @@ def watch_job(lid):
                     shutil.rmtree(path, ignore_errors=True)
                 elif os.path.isfile(path):
                     os.remove(path)
-            job["state"] = "done"
+            try:                                              # same finishing steps the built-in shapes get (loose spokes made one length)
+                import build_smile
+                lp = os.path.join(job["out"], "layout.json")
+                lay = json.load(open(lp))
+                job["log"].append("making the loose spokes one length...")
+                res, rep = build_smile.build_plain(lay, job["mesh"])
+                if job.get("display"):
+                    res["display_name"] = job["display"]
+                json.dump(res, open(lp, "w"))
+                job["log"].append(f"loose spokes: {rep['loose_spokes']}, spread {rep['loose_spread_pct']:.1f} %")
+                job["state"] = "done"
+            except Exception as e:                        # the layout itself is fine; keep it, say what failed
+                job["log"].append(f"The finishing step failed ({e}); the plain layout is kept.")
+                job["state"] = "done"
         else:
             job["state"] = "failed"
             job["log"].append(f"The run stopped with an error (code {code}). The lines above say why.")
@@ -187,8 +227,10 @@ def watch_job(lid):
 
 def progress(log):
     t = "\n".join(log)
+    if "making the loose spokes" in t:
+        return "Making the loose spokes one length"
     if "Wrote layout.json" in t:
-        return "Done"
+        return "Finishing"
     if "target " in t:
         return "Measuring (last step)"
     if "adapted:" in t:
@@ -269,6 +311,16 @@ class Handler(BaseHTTPRequestHandler):
             if ok:
                 restart_soon()
             return self.send(dict(ok=ok, log=log))
+        if urlparse(self.path).path == "/api/upload":
+            q = parse_qs(urlparse(self.path).query)
+            name = (q.get("name", ["shape"])[0] or "shape")[:60]
+            try:
+                path, size = convert_step(self.rfile.read(n), name)
+                r = start_job(dict(mesh_abs=path, edge=q.get("edge", ["5"])[0], name=name))
+            except ValueError as e:
+                return self.send(dict(error=str(e)))
+            r["size"] = size
+            return self.send(r)
         if urlparse(self.path).path == "/api/run":
             return self.send(start_job(json.loads(self.rfile.read(n) or b"{}")))
         self.send("Not found", "text/plain", 404)

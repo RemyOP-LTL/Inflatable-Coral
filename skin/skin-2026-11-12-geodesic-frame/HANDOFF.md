@@ -1,5 +1,7 @@
 # Hand-off: the geodesic-frame skin (read this first in a new session)
 
+**Update 2026-11-16 (later): the structure below has changed. Parts are now a pentagon plus its five corner spokes only; the spine is cut into the pattern first (no spoke crosses it; spine spokes are tabs of the spine piece); shapes are named tube and dome; STEP upload exists. See `skin/CLAUDE.md`, "Update 6". Loose spokes are no longer nested in windows; they are cut in bulk.**
+
 Written 2026-11-16. Remy is a mechanical engineer, very good at CAD, new to coding and git. Explain in plain language, no jargon, one recommended path, and say what a script does before asking him to run it. Remy now wants to work **locally on his Mac**, so everything lives in his repo folder and no cloud link is needed.
 
 ## The idea in one paragraph
