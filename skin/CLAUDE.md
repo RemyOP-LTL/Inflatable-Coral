@@ -58,8 +58,13 @@ Words now (Remy): there is no hub. A **spoke** is a strip with a half circle at 
 ### Update 4 (2026-11-16): one link, nothing to run
 Remy was confused about where things run and wants one click after every change. `snapshot.html` (built by `make_snapshot.py`) is now the **whole frame tool as one page**: 3D tube, flat sections, spine, all layouts and every part baked in (same code as the local tool), published as the Artifact link. After every change: run `python3 make_snapshot.py`, republish `snapshot.html`, give Remy the link. The Mac tool (`Start Frame Tool.command`, port 8790) is optional now (only needed for "Make a new layout" and SVG download). The 3D library loads from the internet (jsdelivr); tested here with a local copy.
 
+### Update 5 (2026-11-16): spine B chosen, live edge
+- **Remy chose B** (layout built around the spine). `layouts/smile-tube` is now B; version A moved to `layouts/_sources/smile-tube-cut-through` (not listed).
+- **Live edge (Remy):** the spine outline flows organically out to every attachment point (16 on the tube) and eases back to about 4 in between, with a gentle wave of its own (`spine.organic_outline`: 4 in strip plus a swelling round each attachment, closing and opening smoothing, then triangulated so it can be drawn on the curved tube). Width: 3.6 to 6.4 in, mean 4.5; every attachment end plus rim sits inside. The old round bumps are gone. Needs the `shapely` library, but only when building layouts (`build_smile.py`), not for the page or the tool.
+- Rebuild: `python3 build_smile.py layouts/_sources/tube-clear5/layout.json --out layouts/smile-tube` (the `tube-clear5` layout comes from `spine_layout.py`, see Update 3).
+
 ## Next (frame concept)
-- Remy to choose between spine versions A and B, and to approve the port ranges in the root `CLAUDE.md`.
+- Remy to approve the port ranges in the root `CLAUDE.md`.
 - Make the spine its own flat part with its attached spokes, nest all loose spokes (all one length) for the 4 x 8 ft sheet in bulk, check part sizes against the sheet.
 - Better cells: the equalising leaves some skewed cells; a layout generator that builds toward equal loose spokes would fix that.
 - Union each patch into one cut outline, nest on the sheet, then into Fusion (SVG import is the quick route).

@@ -49,7 +49,7 @@ def layout_files():
                 p = os.path.join(base, d, "layout.json")
                 if os.path.isfile(p):
                     out.append((d, p))
-    rank = lambda n: (0 if n == "smile-tube" else 1 if n.startswith("smile") else 2 if n.startswith("dome") else 3, n)
+    rank = lambda n: (0 if n.startswith("smile") else 1 if n.startswith("dome") else 2, n)
     out.sort(key=lambda t: rank(t[0]))
     return out
 
@@ -68,9 +68,7 @@ def label_for(lid, fr):
     p = fr.params
     mesh = os.path.splitext(os.path.basename(str(p.get("MESH_FILE") or lid)))[0]
     if fr.spine:
-        lost = len((fr.layout.get("partition") or {}).get("lost", []))
-        how = "layout built around the spine" if "clear" in lid else "spine cut through the layout"
-        return f"Smile tube, {fr.spine['width']:g} in spine: {how}" + ("" if "clear" in lid else f" ({lost} polygons lost)")
+        return f"Smile tube, {fr.spine['width']:g} in spine with a live edge, layout built around it"
     return f"{mesh}, spoke spacing about {p.get('EDGE', '?')} in"
 
 
@@ -107,7 +105,7 @@ def frame_payload(fr, rings):
     spine = None
     if fr.spine:
         sp = fr.spine
-        spine = dict(width=sp["width"], length=sp["length"], bump_radius=sp["bump_radius"], hole=sp["hole"], bumps=sp["bumps"], strip=sp["strip"])
+        spine = dict(width=sp["width"], length=sp["outline_length"], hole=sp["hole"], bumps=sp["attach"], outline=sp["outline"], mesh=sp["mesh"])
     return dict(vertices=V, normals=N, edges=edges, pentagons=pents, plates=plates, summary=summary, hole=fr.hole_diameter, spine=spine,
                 equalized=fr.layout.get("equalized"),
                 params={k: fr.params.get(k) for k in ("EDGE", "MESH_FILE", "HOLE_DIAMETER", "PENT_ACROSS")})

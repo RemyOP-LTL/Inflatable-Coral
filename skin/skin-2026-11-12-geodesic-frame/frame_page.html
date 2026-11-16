@@ -180,23 +180,17 @@ function build3d() {
     const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color:COL.plate, side:THREE.DoubleSide }));
     mesh.userData = { id:p.id, ok:p.ok, centre:c.clone() }; g.add(mesh); R.pentMeshes.push(mesh);
   });
-  // spine: a 4 in strip along the inside of the curve, with a round bump and a rivet hole at each connection
+  // spine: the live-edge shape, drawn on the curved tube, with a rivet hole at every attachment
   R.spineMeshes = [];
   if (f.spine) {
-    const pos = [], st = f.spine.strip;
-    const lift = (p, q) => { return p; };
-    for (let i = 0; i < st.length - 1; i++) {
-      const A = new THREE.Vector3(...st[i][0]), B = new THREE.Vector3(...st[i][1]), C = new THREE.Vector3(...st[i + 1][0]), D = new THREE.Vector3(...st[i + 1][1]);
-      const up = new THREE.Vector3(0, 0, T * 0.5);
-      [[A, B, D], [A, D, C]].forEach(tr => tr.forEach(v => { const q = v.clone().add(up); pos.push(q.x, q.y, q.z); }));
-    }
+    const pts = f.spine.mesh.pts, pos = [], lift = new THREE.Vector3(0, 0, T * 0.5);
+    f.spine.mesh.tris.forEach(t => t.forEach(i => { const q = new THREE.Vector3(...pts[i]).add(lift); pos.push(q.x, q.y, q.z); }));
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.computeVertexNormals();
     const strip = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color:COL.spine, side:THREE.DoubleSide })); g.add(strip); R.spineMeshes.push(strip);
-    const bumpGeo = new THREE.CylinderGeometry(f.spine.bump_radius, f.spine.bump_radius, T, 24).rotateX(Math.PI / 2);
     const holeGeo = new THREE.CylinderGeometry(f.spine.hole / 2, f.spine.hole / 2, T * 1.2, 12).rotateX(Math.PI / 2);
     f.spine.bumps.forEach(b => {
       const nn = Nn[b.node], ex = Math.abs(nn.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0); const [e1, e2, ez] = basis(ex, nn);
-      [[bumpGeo, COL.spine], [holeGeo, 0x222222]].forEach(([geo_, col]) => { const mm = new THREE.Mesh(geo_, new THREE.MeshLambertMaterial({ color:col })); mm.setRotationFromMatrix(new THREE.Matrix4().makeBasis(e1, e2, ez)); mm.position.copy(V[b.node]).add(ez.clone().multiplyScalar(T / 2 + (col === 0x222222 ? 0.02 : 0))); g.add(mm); R.spineMeshes.push(mm); });
+      const mm = new THREE.Mesh(holeGeo, new THREE.MeshLambertMaterial({ color:0x222222 })); mm.setRotationFromMatrix(new THREE.Matrix4().makeBasis(e1, e2, ez)); mm.position.copy(V[b.node]).add(ez.clone().multiplyScalar(T * 0.6)); g.add(mm); R.spineMeshes.push(mm);
     });
   }
   R.scene.add(g);
@@ -256,9 +250,9 @@ async function loadFrame() {
   S.pent = usable.length ? (usable.some(p => p.id === S.pent) ? S.pent : usable[Math.floor(usable.length / 2)].id) : null;
   $('pent').value = S.pent;
   $('spineCard').style.display = f.spine ? '' : 'none';
-  if (f.spine) { S.spineB = { width:f.spine.width, length:f.spine.length, bump_radius:f.spine.bump_radius, hole:f.spine.hole, bumps:f.spine.bumps.filter(b => b.sigma >= -1 && b.sigma <= f.spine.length + 1) };
+  if (f.spine) { S.spineB = { outline:f.spine.outline, hole:f.spine.hole, bumps:f.spine.bumps };
     $('spine').innerHTML = PatchDraw.spineSvg(S.spineB, false);
-    $('spineNote').textContent = `${f.spine.width} in wide, ${fmt(f.spine.length, 1)} in long (measured along its middle), ${S.spineB.bumps.length} bumps, each with a ${f.spine.hole} in rivet hole where a spoke connects. Drawn flat; on the tube it follows the curve.`; }
+    $('spineNote').textContent = `About ${f.spine.width} in wide between attachments, swelling out to reach each of the ${S.spineB.bumps.length} attachment points (each with a ${f.spine.hole} in rivet hole); ${fmt(f.spine.length, 1)} in long. Drawn flat; on the tube it follows the curve.`; }
   build3d();
   await loadPatch(true);
 }

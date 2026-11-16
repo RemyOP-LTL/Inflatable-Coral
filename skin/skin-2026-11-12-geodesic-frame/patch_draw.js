@@ -134,17 +134,16 @@
   }
   const cen2 = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
 
-  /* The spine laid flat, true size: a strip `width` wide and `length` long with a round bump and a rivet hole
-     where each spoke connects. B = { width, length, bump_radius, hole, bumps:[{sigma,u,node}] }  */
+  /* The spine laid flat, true size: the live-edge outline (flowing out to every attachment point) with a rivet hole
+     at each attachment. B = { outline:[[sigma,u]...], hole, bumps:[{sigma,u,node}] }  */
   function spineSvg(B, forFile) {
-    const pad = 2.5, W = B.length + 2 * pad, H = B.width + 2 * pad, X = s => (s + pad).toFixed(3), Y = u => (H / 2 - u).toFixed(3);
-    const ink = '#4a2a63', fill = '#b79ad6';
-    let out = `<rect x="${X(0)}" y="${Y(B.width / 2)}" width="${B.length}" height="${B.width}" fill="${ink}" stroke="${ink}" stroke-width="0.08"/>`;
-    B.bumps.forEach(b => { out += `<circle cx="${X(b.sigma)}" cy="${Y(b.u)}" r="${(B.bump_radius + 0.04).toFixed(3)}" fill="${ink}"/>`; });
-    out += `<rect x="${X(0)}" y="${Y(B.width / 2)}" width="${B.length}" height="${B.width}" fill="${fill}"/>`;
-    B.bumps.forEach(b => { out += `<circle cx="${X(b.sigma)}" cy="${Y(b.u)}" r="${B.bump_radius}" fill="${fill}"/>`; });
+    const xs = B.outline.map(p => p[0]), ys = B.outline.map(p => p[1]), pad = 2.5;
+    const x0 = Math.min(...xs) - pad, x1 = Math.max(...xs) + pad, y0 = Math.min(...ys) - pad, y1 = Math.max(...ys) + pad, W = x1 - x0, H = y1 - y0;
+    const X = s => (s - x0).toFixed(3), Y = u => (y1 - u).toFixed(3);
+    const ink = '#4a2a63', fill = '#b79ad6', pts = B.outline.map(p => X(p[0]) + ',' + Y(p[1])).join(' ');
+    let out = `<polygon points="${pts}" fill="${fill}" stroke="${ink}" stroke-width="0.12" stroke-linejoin="round"/>`;
     B.bumps.forEach(b => { out += `<circle cx="${X(b.sigma)}" cy="${Y(b.u)}" r="${(B.hole / 2).toFixed(3)}" fill="#fff" stroke="${ink}" stroke-width="0.05"/>`; });
-    out += `<line x1="${X(0)}" y1="${Y(-B.width / 2 - 1.4)}" x2="${X(12)}" y2="${Y(-B.width / 2 - 1.4)}" stroke="#222" stroke-width="0.15"/><text x="${X(0)}" y="${Y(-B.width / 2 - 1.0)}" font-size="1" font-family="sans-serif" fill="#222">12 in</text>`;
+    out += `<line x1="${X(x0 + pad)}" y1="${Y(y0 + 1.1)}" x2="${X(x0 + pad + 12)}" y2="${Y(y0 + 1.1)}" stroke="#222" stroke-width="0.15"/><text x="${X(x0 + pad)}" y="${Y(y0 + 1.5)}" font-size="1" font-family="sans-serif" fill="#222">12 in</text>`;
     const size = forFile ? ` width="${W.toFixed(2)}in" height="${H.toFixed(2)}in"` : '';
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W.toFixed(2)} ${H.toFixed(2)}"${size} font-family="sans-serif">${out}</svg>`;
   }
