@@ -13,6 +13,7 @@ Alignment tabs: 12 mm squares sticking out of the cut edges at matching places a
 edges and the frill) and along the straight seam. Tack the tabs together, then sew.
 
 Outputs, in the folder given with --out:
+  <name>.dxf      only the cone-strip and frill cut outlines, true size, millimetres (for the laser)
   <name>.svg      cut lines and sew lines at true size, for the laser (red = cut, blue = sew)
   <name>.png      a picture of the flat pieces and a 3D sketch of the finished cone
   <name>.txt      the numbers and the checks
@@ -392,6 +393,63 @@ def write_svg(path, cut, pieces):
         f.write("\n".join(out))
 
 
+def write_dxf(path, cut, pieces):
+    """Laser file: only the cut outlines of the cone strip and the frill, true size, units = millimetres.
+    Plain ASCII DXF (R12 style), no extra libraries. Layer CUT = outlines, layer SLITS = frill fringe slits.
+    The y axis points up (the SVG one points down), so the cone looks the same as on the page."""
+    by = {p.name: p for p in pieces}
+    cb = cut.bounds
+    fr = by["frill"]
+    fa = [a for k, a, t in fr.items if k == "cut"]
+    gap = 50.0
+    place = {"cone": (-cb[0], -cb[1])}                                  # cone: lower-left corner at (0, 0)
+    place["frill"] = (0.0, (cb[3] - cb[1]) + gap)                       # frill: above it (SVG y), lifted by the gap
+    code = []
+
+    def put(c, v):
+        code.append(f"{c}\n{v}")
+
+    def poly(layer, pts, closed):
+        put(0, "POLYLINE"); put(8, layer); put(66, 1); put(70, 1 if closed else 0)
+        for x, y in pts:
+            put(0, "VERTEX"); put(8, layer); put(10, f"{x:.4f}"); put(20, f"{y:.4f}"); put(30, 0)
+        put(0, "SEQEND"); put(8, layer)
+
+    # flip y so up is up; shift the frill so its lowest point sits above the cone
+    def xf(a, name):
+        dx, dy = place[name]
+        return [(x + dx, -(y + dy)) for x, y in a]
+
+    cone_cut = [a for k, a, t in by["cone"].items if k == "cut"][0]
+    parts = {"cone": [("CUT", cone_cut, True)],
+             "frill": [("CUT" if i == 0 else "SLITS", a, i == 0) for i, a in enumerate(fa)]}
+    allpts = []
+    for name, lst in parts.items():
+        for layer, a, closed in lst:
+            pts = xf(a if not closed else a[:-1] if np.allclose(a[0], a[-1]) else a, name)
+            allpts += pts
+    xs_ = [x for x, y in allpts]; ys_ = [y for x, y in allpts]
+    put(0, "SECTION"); put(2, "HEADER")
+    put(9, "$ACADVER"); put(1, "AC1009")
+    put(9, "$INSUNITS"); put(70, 4)                                     # 4 = millimetres
+    put(9, "$MEASUREMENT"); put(70, 1)                                  # 1 = metric
+    put(9, "$EXTMIN"); put(10, f"{min(xs_):.4f}"); put(20, f"{min(ys_):.4f}"); put(30, 0)
+    put(9, "$EXTMAX"); put(10, f"{max(xs_):.4f}"); put(20, f"{max(ys_):.4f}"); put(30, 0)
+    put(0, "ENDSEC")
+    put(0, "SECTION"); put(2, "TABLES"); put(0, "TABLE"); put(2, "LAYER"); put(70, 2)
+    for nm in ("CUT", "SLITS"):
+        put(0, "LAYER"); put(2, nm); put(70, 0); put(62, 1); put(6, "CONTINUOUS")   # colour 1 = red
+    put(0, "ENDTAB"); put(0, "ENDSEC")
+    put(0, "SECTION"); put(2, "ENTITIES")
+    for name, lst in parts.items():
+        for layer, a, closed in lst:
+            a2 = a[:-1] if closed and np.allclose(a[0], a[-1]) else a
+            poly(layer, xf(a2, name), closed)
+    put(0, "ENDSEC"); put(0, "EOF")
+    with open(path, "w") as f:
+        f.write("\n".join(code) + "\n")
+
+
 def draw_png(path, c, outline, cut, pieces, info):
     fig = plt.figure(figsize=(16, 10))
     gs = fig.add_gridspec(1, 2, width_ratios=[1.3, 1])
@@ -448,6 +506,7 @@ def make(out, name="spiral-cone"):
     os.makedirs(out, exist_ok=True)
     c, outline, cut, pieces, info = build()
     write_svg(os.path.join(out, name + ".svg"), cut, pieces)
+    write_dxf(os.path.join(out, name + ".dxf"), cut, pieces)
     draw_png(os.path.join(out, name + ".png"), c, outline, cut, pieces, info)
     text = report(info)
     with open(os.path.join(out, name + ".txt"), "w") as f:

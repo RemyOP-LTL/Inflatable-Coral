@@ -56,6 +56,7 @@ def main():
     try:
         if not wait_until_up(url):
             sys.exit("The tool did not start. Please tell Claude.")
+        webview.settings["ALLOW_DOWNLOADS"] = True          # without this the window ignores download links
         webview.create_window("Cone Worm", url, width=1400, height=900, min_size=(900, 600))
         webview.start()
     finally:

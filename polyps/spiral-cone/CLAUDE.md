@@ -75,3 +75,10 @@ Seam edge lengths bottom and top: 41.521 in both. Open-end arc 19.295 in = pi x 
 - New setting **Frill ends at (distance from tip)**, `FRILL_END_FROM_TIP`, mm along the axis. Interpretation (confirm with Remy): it sets where the frill ENDS, measured from the tip; the start is still measured from the cuff line. Default 50 = the straight-seam length, so the default pattern is unchanged. It cannot be smaller than the straight seam length (the frill does not run along the straight seam) and the frill must be at least 12 mm long.
 - **Snapshots**: the sticky top tile has a name box + Save and a "Load a snapshot..." menu. Saved as small JSON files in `snapshots/` (git-ignored, so not backed up on GitHub). Same name overwrites. Loading fills the boxes and rebuilds.
 - The sticky tile (Rebuild, reset, save, load) is meant to be reused in the other tools.
+
+## DXF export and forced snapshot naming (2026-11-15)
+- New `<name>.dxf` from `spiral_cone.py`: ONLY the cut outlines of the cone strip and the frill (frill slits on layer SLITS, outlines on layer CUT, both red). No sew lines, labels or cuff band. Plain ASCII DXF (R12 style), no extra library. Units are millimetres (`$INSUNITS` 4), true size, y up; the cone sits at (0,0) and the frill is 50 mm below it.
+- Checked with an independent reader (ezdxf in a scratch venv): units = mm, cone 514.9 x 570.6 mm and frill 372.0 x 87.0 mm (75 mm strip + 12 mm tabs) match the report, areas match the SVG exactly, 61 slits of 63 mm = the fringe length.
+- Page: DXF and SVG download links now open a small "Name this snapshot" box; a name is required, the BUILT values are saved as a snapshot, then the file downloads. Names: `<snapshot>_cone-and-frill-outline_mm.dxf` and `<snapshot>_pattern_mm.svg` (spaces become `_`).
+- `cone_window.py` now sets `webview.settings["ALLOW_DOWNLOADS"] = True`. Without it the Mac window ignored download links, so the old SVG link did nothing in the app. Not tested inside the real window (tested in the browser pane on a spare port).
+- Open: the separate cuff band is not in the DXF (only "frill and spiral" were asked for); say if it should be.

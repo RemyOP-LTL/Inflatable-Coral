@@ -191,8 +191,12 @@ class Handler(BaseHTTPRequestHandler):
             f = os.path.join(OUT, *parts) if ok else None
             if f and os.path.isfile(f):
                 ext = f.rsplit(".", 1)[-1]
-                ctype = {"png": "image/png", "svg": "image/svg+xml", "txt": "text/plain"}.get(ext, "application/octet-stream")
-                extra = {"Content-Disposition": 'attachment; filename="spiral-cone.svg"'} if ext == "svg" and "dl=1" in self.path else None
+                ctype = {"png": "image/png", "svg": "image/svg+xml", "dxf": "application/dxf", "txt": "text/plain"}.get(ext, "application/octet-stream")
+                extra = None
+                if ext in ("svg", "dxf") and "dl=1" in self.path:      # downloads are named after the saved snapshot, with the units
+                    nm = snap_clean(parse_qs(urlparse(self.path).query).get("name", [""])[0]).replace(" ", "_")
+                    kind = "cone-and-frill-outline" if ext == "dxf" else "pattern"
+                    extra = {"Content-Disposition": f'attachment; filename="{nm}_{kind}_mm.{ext}"'}
                 self.send(200, open(f, "rb").read(), ctype, extra)
             else:
                 self.send(404, "not found", "text/plain")
@@ -251,12 +255,13 @@ PAGE = r"""<!doctype html>
   .reset { background:none; border:none; color:var(--mute); text-decoration:underline; font-weight:400; width:auto; padding:0; margin:8px 0 0; }
   .sticky { position:sticky; top:0; z-index:5; }
   button:disabled { opacity:.4; cursor:default; }
+  dialog { border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); padding:16px; max-width:380px; } dialog input[type=text] { width:100%; box-sizing:border-box; font:inherit; padding:6px; margin-top:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
   .row { display:flex; gap:6px; margin-top:8px; } .row input { flex:1; min-width:0; font:inherit; padding:4px 6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); } .row button { width:auto; margin:0; }
   #load { width:100%; margin-top:8px; font:inherit; padding:5px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
   .sw { display:inline-flex; align-items:center; gap:6px; font-weight:400; } .sw input { position:absolute; opacity:0; } .sw .track { width:36px; height:20px; border-radius:10px; background:var(--line); position:relative; transition:.15s; } .sw .track::after { content:''; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:.15s; } .sw input:checked + .track { background:var(--accent); } .sw input:checked + .track::after { left:18px; }
   .derived { font-size:13px; color:var(--mute); }
 </style></head><body>
-<header><h1>Cone worm</h1><span class="derived">Spiral-cone polyp pattern. Sizes in millimetres. Type them, press Rebuild, download the SVG for the laser.</span>
+<header><h1>Cone worm</h1><span class="derived">Spiral-cone polyp pattern. Sizes in millimetres. Type them, press Rebuild, download the DXF for the laser.</span>
   <span id="ver" class="derived" style="margin-left:auto"></span>
   <button id="refresh-btn" title="Load the newest version of the tool (anything Claude changed or pushed)">Refresh tool</button>
   <span id="refresh-msg" class="derived"></span></header>
@@ -274,7 +279,13 @@ PAGE = r"""<!doctype html>
     <div class="card" id="card"><h2>Pattern <span id="busy" class="derived"></span></h2>
       <div id="warnings"></div>
       <img id="pic" alt="">
-      <p><a id="svg" href="#" download>Download SVG (true size in mm, for the laser)</a></p>
+      <p><a id="dxf" href="#">Download DXF (cone strip and frill outlines only, true size in mm)</a><br>
+         <a id="svg" href="#">Download SVG (whole pattern with sew lines, true size in mm)</a></p>
+      <dialog id="dlg"><form method="dialog" id="dlgform"><h2>Name this snapshot</h2>
+        <p class="derived">Every download is saved as a snapshot first, so you can come back to exactly this pattern. The name goes in the file name.</p>
+        <input type="text" id="dlgname" maxlength="60" placeholder="e.g. test cone 1" autocomplete="off">
+        <div id="dlgwarn" class="derived"></div>
+        <div class="row"><button type="submit" id="dlgok" disabled>Save and download</button><button type="button" id="dlgcancel" class="secondary">Cancel</button></div></form></dialog>
       <pre id="text"></pre></div>
   </div>
 </main>
@@ -284,7 +295,7 @@ const $ = id => document.getElementById(id);
 const vals = {...META.defaults};
 let seq = 0;
 const secs = {};
-let built = '';
+let built = '', curKey = '', snapNames = [];
 function refreshBtn() { $('rebuild').disabled = JSON.stringify(vals) === built; }
 for (const [sec, name, label, unit, lo, hi, step] of META.fields) {
   if (!secs[sec]) { const c = document.createElement('div'); c.className = 'card'; c.style.marginTop = '12px'; c.innerHTML = `<h2>${sec}</h2>`; $('sections').appendChild(c); secs[sec] = c; }
@@ -316,6 +327,7 @@ $('reset').onclick = () => { Object.assign(vals, META.defaults); sync(); run(); 
 $('rebuild').onclick = () => run();
 async function loadSnaps(select) {
   const names = await fetch('/api/snapshots').then(r => r.json()).catch(() => []);
+  snapNames = names;
   $('load').innerHTML = '<option value="">Load a snapshot...</option>' + names.map(n => `<option>${n.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</option>`).join('');
   if (select) $('load').value = select;
 }
@@ -340,9 +352,34 @@ async function run() {
   $('warnings').innerHTML = ''; $('card').classList.remove('stale');
   built = sent; refreshBtn();
   $('pic').src = '/out/' + r.key + '/spiral-cone.png';
-  $('svg').href = '/out/' + r.key + '/spiral-cone.svg?dl=1';
+  curKey = r.key;
   $('text').textContent = r.text;
 }
+
+// Downloads: name and save a snapshot of the built pattern first (the name goes into the file name)
+let wantExt = '';
+function askName(ext) {
+  if (!curKey) return;
+  wantExt = ext; $('dlgname').value = ''; $('dlgok').disabled = true; $('dlgwarn').textContent = '';
+  $('dlg').showModal(); $('dlgname').focus();
+}
+$('dxf').onclick = e => { e.preventDefault(); askName('dxf'); };
+$('svg').onclick = e => { e.preventDefault(); askName('svg'); };
+$('dlgcancel').onclick = () => $('dlg').close();
+$('dlgname').oninput = () => {
+  const v = $('dlgname').value.trim(); $('dlgok').disabled = !v;
+  $('dlgwarn').textContent = snapNames.includes(v) ? 'A snapshot with this name exists and will be replaced.' : '';
+};
+$('dlgform').onsubmit = async e => {
+  e.preventDefault();
+  const name = $('dlgname').value.trim(); if (!name) return;
+  const r = await fetch('/api/snapshot', {method: 'POST', body: JSON.stringify({name, params: JSON.parse(built)})}).then(x => x.json()).catch(() => null);
+  if (!r) { $('dlgwarn').textContent = 'Could not save the snapshot, so nothing was downloaded.'; return; }
+  $('dlg').close(); $('snapmsg').textContent = 'Saved "' + r.name + '".'; loadSnaps(r.name);
+  const a = document.createElement('a');
+  a.href = '/out/' + curKey + '/spiral-cone.' + wantExt + '?dl=1&name=' + encodeURIComponent(r.name);
+  document.body.appendChild(a); a.click(); a.remove();
+};
 fetch('/api/version').then(r => r.json()).then(v => {
   if (v.git) $('ver').textContent = 'branch ' + v.branch + ' · ' + v.date + ' · ' + v.subject + (v.edited ? ' · (edited here, not saved to git)' : '');
 }).catch(() => {});
