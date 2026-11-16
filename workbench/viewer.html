@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coral Workbench</title>
+<style>
+:root{--bg:#f6f5f2;--panel:#fff;--ink:#222;--dim:#667;--line:#d9d6cf;--accent:#0b6b6b;--bad:#b3261e;--good:#1b7a3a;--view:#eceae4}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15181a;--panel:#1d2124;--ink:#e6e6e3;--dim:#9aa;--line:#33393d;--accent:#4fc3c3;--bad:#ff8a80;--good:#7fd99a;--view:#101315}}
+:root[data-theme="dark"]{--bg:#15181a;--panel:#1d2124;--ink:#e6e6e3;--dim:#9aa;--line:#33393d;--accent:#4fc3c3;--bad:#ff8a80;--good:#7fd99a;--view:#101315}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,Segoe UI,sans-serif}
+#app{display:flex;flex-direction:column;height:100%}
+header{display:flex;align-items:center;gap:12px;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+header h1{font-size:16px;margin:0 8px 0 0}
+.tab{border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:6px 14px;border-radius:6px;cursor:pointer;font:inherit}
+.tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.sp{flex:1}
+main{flex:1;display:flex;min-height:0}
+#side{width:330px;max-width:42%;overflow:auto;padding:12px 16px;border-right:1px solid var(--line);background:var(--panel)}
+#view{flex:1;position:relative;background:var(--view);min-width:0}
+canvas{display:block;width:100%;height:100%}
+label{display:block;font-size:12px;color:var(--dim);margin:10px 0 3px}
+select,button.b{width:100%;font:inherit;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+button.b{cursor:pointer;margin-top:8px}
+.card{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:12px;font-size:13px}
+.flag{padding:6px 8px;border-radius:6px;margin-top:8px;font-size:13px;border:1px solid}
+.flag.bad{color:var(--bad);border-color:var(--bad)}.flag.good{color:var(--good);border-color:var(--good)}
+.dim{color:var(--dim)}
+table{border-collapse:collapse;width:100%}td{padding:2px 0;vertical-align:top}td:last-child{text-align:right}
+#msg{position:absolute;left:12px;bottom:10px;font-size:12px;color:var(--dim);pointer-events:none}
+@media (max-width:760px){main{flex-direction:column}#side{width:100%;max-width:none;max-height:42%;border-right:0;border-bottom:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<div id="app">
+<header>
+  <h1>Coral Workbench</h1>
+  <button class="tab on" data-tab="skin">Skin</button>
+  <button class="tab" data-tab="polyp">Polyp</button>
+  <button class="tab" data-tab="combined">Combined</button>
+  <span class="sp"></span>
+  <span class="dim" id="mode"></span>
+</header>
+<main>
+  <div id="side">
+    <div id="pickers">
+      <label>Version (branch or tag)</label>
+      <select id="ref"></select>
+      <label>Design in that version</label>
+      <select id="bundle"></select>
+      <button class="b" id="fetch">Refresh from GitHub</button>
+    </div>
+    <div id="info"></div>
+  </div>
+  <div id="view"><div id="msg"></div></div>
+</main>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+// ---------- where bundles come from: live (local server reads git) or baked into this page ----------
+const BAKED = window.WORKBENCH_BAKED || null;
+const $ = id => document.getElementById(id);
+const Source = BAKED ? {
+  refs: async () => ({refs: BAKED.refs, here: ''}),
+  bundles: async ref => BAKED.bundles[ref] || [],
+  load: async (ref, path) => BAKED.data[ref + '::' + path],
+} : {
+  refs: () => fetch('/api/refs').then(r => r.json()),
+  bundles: ref => fetch('/api/bundles?ref=' + encodeURIComponent(ref)).then(r => r.json()),
+  load: (ref, path) => fetch('/api/bundle?ref=' + encodeURIComponent(ref) + '&path=' + encodeURIComponent(path)).then(r => { if (!r.ok) throw new Error('not found'); return r.json(); }),
+};
+$('mode').textContent = BAKED ? 'Snapshot: ' + (BAKED.built || '') : 'Live from git';
+if (BAKED) $('fetch').style.display = 'none';
+
+// ---------- three.js setup (z is up, as in the CAD files) ----------
+const view = $('view');
+const renderer = new THREE.WebGLRenderer({antialias: true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+view.appendChild(renderer.domElement);
+const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 5000);
+camera.up.set(0, 0, 1);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+const scenes = {};
+for (const k of ['skin', 'polyp', 'combined']) {
+  const s = new THREE.Scene();
+  s.add(new THREE.HemisphereLight(0xffffff, 0x777788, 0.85));
+  const d = new THREE.DirectionalLight(0xffffff, 0.6); d.position.set(1, -2, 3); s.add(d);
+  scenes[k] = {scene: s, content: new THREE.Group(), cam: null};
+  s.add(scenes[k].content);
+}
+let tab = 'skin';
+function resize() { const w = view.clientWidth, h = view.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize);
+(function loop() { requestAnimationFrame(loop); controls.update(); renderer.setClearColor(getComputedStyle(document.documentElement).getPropertyValue('--view').trim() || '#eceae4'); renderer.render(scenes[tab].scene, camera); })();
+
+function fit(group, key) {
+  const box = new THREE.Box3().setFromObject(group);
+  if (box.isEmpty()) return;
+  const c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length() / 2 || 10;
+  controls.target.copy(c);
+  camera.position.copy(c).add(new THREE.Vector3(-0.9, -1.4, 0.7).normalize().multiplyScalar(r * 2.4));
+  camera.near = r / 100; camera.far = r * 40; camera.updateProjectionMatrix(); controls.update();
+}
+function clear(g) { while (g.children.length) { const o = g.children.pop(); o.traverse(x => { if (x.geometry && !x.userData.shared) x.geometry.dispose(); }); } }
+
+// ---------- building the pictures from bundle data ----------
+const V = a => new THREE.Vector3(a[0], a[1], a[2]);
+function skinGroup(d, withHoles = true) {
+  const g = new THREE.Group(), pos = [], col = [], lines = [];
+  const C = {5: [0.89, 0.47, 0.35], 6: [0.66, 0.78, 0.80], 7: [0.78, 0.70, 0.86], end: [0.72, 0.72, 0.70]};
+  d.polygons.forEach((poly, i) => {
+    const info = d.polygon_info[i] || {}, cs = poly.map(k => d.vertices[k]);
+    const m = [0, 1, 2].map(j => cs.reduce((s, p) => s + p[j], 0) / cs.length);
+    const c = info.end ? C.end : (C[poly.length] || C[6]);
+    for (let k = 0; k < poly.length; k++) {
+      const a = cs[k], b = cs[(k + 1) % cs.length];
+      pos.push(...a, ...b, ...m); for (let t = 0; t < 3; t++) col.push(...c);
+      lines.push(...a, ...b);
+    }
+  });
+  const fg = new THREE.BufferGeometry();
+  fg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  fg.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); fg.computeVertexNormals();
+  g.add(new THREE.Mesh(fg, new THREE.MeshLambertMaterial({vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1})));
+  const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
+  g.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({color: 0x333333})));
+  if (withHoles) {
+    const R = (d.params && d.params.HOLE_DIAMETER || 0) / 2, hl = [];
+    if (R) pentagons(d).forEach(p => {
+      const n = V(p.normal).normalize(), u = new THREE.Vector3(0, 0, 1).cross(n); if (u.length() < 1e-3) u.set(1, 0, 0); u.normalize();
+      const w = n.clone().cross(u), c = V(p.centre);
+      for (let k = 0; k < 40; k++) for (const t of [k, k + 1]) { const a = t / 40 * Math.PI * 2; hl.push(...c.clone().addScaledVector(u, R * Math.cos(a)).addScaledVector(w, R * Math.sin(a)).toArray()); }
+    });
+    const hg = new THREE.BufferGeometry(); hg.setAttribute('position', new THREE.Float32BufferAttribute(hl, 3));
+    g.add(new THREE.LineSegments(hg, new THREE.LineBasicMaterial({color: 0xc0392b})));
+  }
+  return g;
+}
+const pentagons = d => d.polygon_info.filter(p => p.sides === 5 && !p.end);
+function polypGeometry(d) {
+  const g = new THREE.BufferGeometry(), v = d.mesh.vertices.flat();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  g.setIndex(d.mesh.triangles.flat()); g.computeVertexNormals(); return g;
+}
+const polypMat = () => new THREE.MeshLambertMaterial({color: 0x3aa6a0, side: THREE.DoubleSide});
+
+// ---------- state, pickers ----------
+const S = {skin: null, polyp: null, combined: null};      // {ref, path, data}
+const pick = {skin: {}, polyp: {}};                       // remembered choices per tab
+let refList = [];
+async function init() {
+  const r = await Source.refs(); refList = r.refs;
+  const sel = $('ref'); sel.innerHTML = '';
+  const grp = (label, kind) => { const og = document.createElement('optgroup'); og.label = label;
+    refList.filter(x => x.kind === kind).forEach(x => { const o = document.createElement('option'); o.value = x.ref;
+      o.textContent = x.name + (x.date ? '  (' + x.date + ')' : ''); o.title = x.subject || ''; og.appendChild(o); }); if (og.children.length) sel.appendChild(og); };
+  grp('Branches (newest first)', 'branch'); grp('Tags (kept versions)', 'tag');
+  return r;
+}
+async function fillBundles(kind) {
+  const ref = $('ref').value, list = (await Source.bundles(ref)).filter(b => b.kind === kind);
+  const sel = $('bundle'); sel.innerHTML = '';
+  if (!list.length) { const o = document.createElement('option'); o.textContent = '(no ' + kind + ' designs in this version)'; o.value = ''; sel.appendChild(o); return; }
+  list.forEach(b => { const o = document.createElement('option'); o.value = b.path; o.textContent = b.label; sel.appendChild(o); });
+  const want = pick[kind].path && list.find(b => b.path === pick[kind].path);
+  if (want) sel.value = want.path;
+}
+async function load(kind) {
+  const ref = $('ref').value, path = $('bundle').value; if (!path) { S[kind] = null; draw(); return; }
+  setMsg('Loading ' + path + ' ...');
+  try { const data = await Source.load(ref, path); S[kind] = {ref, path, data, name: (refList.find(x => x.ref === ref) || {}).name || ref}; pick[kind] = {ref, path}; setMsg(''); }
+  catch (e) { S[kind] = null; setMsg('Could not load: ' + e.message); }
+  draw(true);
+}
+const setMsg = t => { $('msg').textContent = t; };
+
+async function showTab(t) {
+  tab = t;
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  $('pickers').style.display = t === 'combined' ? 'none' : '';
+  if (t !== 'combined') {
+    if (pick[t].ref) $('ref').value = pick[t].ref;
+    await fillBundles(t);
+    if (!S[t]) await load(t); else draw(false);
+  } else draw(true);
+}
+document.querySelectorAll('.tab').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+$('ref').onchange = async () => { await fillBundles(tab); await load(tab); };
+$('bundle').onchange = () => load(tab);
+$('fetch').onclick = async () => {
+  setMsg('Asking GitHub for the latest ...'); const r = await fetch('/api/fetch', {method: 'POST'}).then(x => x.json()).catch(() => ({ok: false, log: 'Lost the connection.'}));
+  const keep = {ref: $('ref').value, b: $('bundle').value}; await init();
+  if ([...$('ref').options].some(o => o.value === keep.ref)) $('ref').value = keep.ref;
+  await fillBundles(tab); setMsg(r.ok ? 'Up to date.' : 'Could not reach GitHub: ' + r.log);
+};
+
+// ---------- drawing each tab ----------
+const row = (a, b) => '<tr><td>' + a + '</td><td>' + b + '</td></tr>';
+const label = s => s ? '<b>' + s.name + '</b><br><span class="dim">' + s.path + '</span>' : '<span class="dim">nothing loaded</span>';
+const f1 = x => (+x).toFixed(2);
+function draw(refit) {
+  const sc = scenes[tab], info = $('info'); clear(sc.content);
+  if (tab === 'skin') {
+    const s = S.skin; if (!s) { info.innerHTML = '<div class="card">' + label(null) + '</div>'; return; }
+    sc.content.add(skinGroup(s.data)); const P = s.data.params || {}, pe = pentagons(s.data);
+    info.innerHTML = '<div class="card">' + label(s) + '</div><div class="card"><table>' +
+      row('Pentagons (polyp spots)', pe.length) + row('Panels', s.data.polygons.length) +
+      row('Hole diameter', P.HOLE_DIAMETER ? f1(P.HOLE_DIAMETER) + ' in' : '?') +
+      row('Pentagon across (mean)', pe.length ? f1(pe.reduce((a, p) => a + p.across, 0) / pe.length) + ' in' : '?') +
+      row('Units', s.data.units || '?') + '</table></div>';
+  } else if (tab === 'polyp') {
+    const s = S.polyp; if (!s) { info.innerHTML = '<div class="card">' + label(null) + '</div>'; return; }
+    const g = polypGeometry(s.data); sc.content.add(new THREE.Mesh(g, polypMat()));
+    const z = new THREE.Mesh(new THREE.RingGeometry(s.data.size.footprint_diameter / 2 - 0.05, s.data.size.footprint_diameter / 2, 48), new THREE.MeshBasicMaterial({color: 0xc0392b, side: THREE.DoubleSide})); sc.content.add(z);
+    sc.content.add(new THREE.AxesHelper(3));
+    const z2 = s.data.size; info.innerHTML = '<div class="card">' + label(s) + '</div><div class="card"><table>' +
+      row('Footprint (cuff) diameter', f1(z2.footprint_diameter) + ' in') + row('Height above skin', f1(z2.height) + ' in') +
+      row('Reach (radius at widest)', f1(z2.reach_radius) + ' in') + row('Triangles', s.data.mesh.triangles.length.toLocaleString()) + '</table></div>' +
+      '<div class="card dim">Red ring = where the cuff meets the skin. Axes: red x, green y, blue z (out of the skin).</div>';
+  } else {
+    const sk = S.skin, po = S.polyp;
+    if (!sk || !po) { info.innerHTML = '<div class="card">Load a skin in the Skin tab and a polyp in the Polyp tab first. The Combined tab uses those two.</div>'; return; }
+    const d = sk.data, hole = (d.params || {}).HOLE_DIAMETER, pe = pentagons(d);
+    const mode = (info.querySelector('#fitm') || {value: 'asis'}).value;
+    const s = mode === 'fit' && hole ? hole / po.data.size.footprint_diameter : 1;
+    sc.content.add(skinGroup(d, false));
+    const geo = polypGeometry(po.data); geo.userData = {shared: true};
+    const im = new THREE.InstancedMesh(geo, polypMat(), pe.length), M = new THREE.Matrix4(), Q = new THREE.Quaternion();
+    pe.forEach((p, i) => { Q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), V(p.normal).normalize()); M.compose(V(p.centre), Q, new THREE.Vector3(s, s, s)); im.setMatrixAt(i, M); });
+    sc.content.add(im);
+    let dmin = Infinity; for (let i = 0; i < pe.length; i++) for (let j = i + 1; j < pe.length; j++) dmin = Math.min(dmin, V(pe[i].centre).distanceTo(V(pe[j].centre)));
+    const foot = po.data.size.footprint_diameter * s, reach2 = 2 * po.data.size.reach_radius * s;
+    const flags = [];
+    if (hole) flags.push(foot > hole + 0.01 ? ['bad', 'Does not fit the hole: polyp footprint ' + f1(foot) + ' in, skin hole ' + f1(hole) + ' in (' + Math.round((foot / hole - 1) * 100) + '% too big). Known, matching is deferred.'] : ['good', 'Footprint ' + f1(foot) + ' in fits the ' + f1(hole) + ' in hole.']);
+    else flags.push(['bad', 'This skin has no HOLE_DIAMETER, so fit cannot be checked.']);
+    if (pe.length > 1) flags.push(reach2 > dmin ? ['bad', 'Fingers may overlap neighbours: widest polyp ' + f1(reach2) + ' in across, nearest pentagon centres ' + f1(dmin) + ' in apart.'] : ['good', 'Neighbouring polyps clear each other (' + f1(reach2) + ' in across, ' + f1(dmin) + ' in spacing).']);
+    const keep = mode;
+    info.innerHTML = '<div class="card"><b>Skin</b> ' + label(sk) + '<br><b>Polyp</b> ' + label(po) + '</div>' +
+      '<label>Polyp size</label><select id="fitm"><option value="asis">As designed (1 : 1)</option><option value="fit">Scaled to fit the hole</option></select>' +
+      flags.map(f => '<div class="flag ' + f[0] + '">' + f[1] + '</div>').join('') +
+      '<div class="card dim">' + pe.length + ' polyps placed, one at each pentagon centre, turned to the pentagon normal. Everything in ' + (d.units || 'inch') + '.</div>';
+    $('fitm').value = keep; $('fitm').onchange = () => draw(false);
+  }
+  if (refit) fit(sc.content, tab);
+}
+(async () => {
+  resize(); const r = await init();
+  const pre = (BAKED && BAKED.start) || {};            // baked pages say which version to open first
+  for (const k of ['skin', 'polyp']) { await (async () => {
+    const want = pre[k]; if (want) { pick[k] = want; }
+    else { // first branch (or here) that has this kind of design
+      const order = [...refList].sort((a, b) => (b.ref.endsWith('/' + r.here) ? 1 : 0) - (a.ref.endsWith('/' + r.here) ? 1 : 0));
+      for (const x of order) { const l = (await Source.bundles(x.ref)).filter(b => b.kind === k); if (l.length) { pick[k] = {ref: x.ref, path: l[0].path}; break; } }
+    } if (pick[k].ref) { $('ref').value = pick[k].ref; await fillBundles(k); $('bundle').value = pick[k].path; await load(k); } })(); }
+  await showTab('skin');
+})();
+</script>
+</body>
+</html>
