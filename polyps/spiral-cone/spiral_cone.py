@@ -14,7 +14,7 @@ edges and the frill) and along the straight seam. Tack the tabs together, then s
 
 Outputs, in the folder given with --out:
   <name>-detailed.pdf/.svg/.dxf   every line, tab numbers included, true size in mm
-  <name>-outline.pdf/.svg/.dxf    only the cut lines for the laser (one line per fringe slit), true size in mm
+  <name>-outline.pdf/.svg/.dxf    only the cut lines for the laser (frill = one closed loop doubling back along each slit), true size in mm
   <name>.png (flat pieces + 3D sketch) and <name>-outline.png   the two previews
   <name>.txt      the numbers and the checks
 
@@ -47,6 +47,9 @@ PITCH_CURVE = 1.0           # 1 = pitch changes evenly with height; >1 stays ope
 STRAIGHT_LENGTH = 50.0      # the last this-many mm of the cone have a straight seam (Remy)
 TRANSITION = 50.0           # the spiral fades into the straight seam over this length (0 = sharp corner)
 SEAM = 12.0                 # seam allowance (every edge except the open end of the cuff)
+NOTCH_DEPTH = 8.0           # ASSUMED. V notches cut into the seam allowance along the curved edges so it lies flat round the curve (0 = none)
+NOTCH_SPACING_BASE = 60.0   # ASSUMED. Distance between notches along the seam at the base (cuff) end
+NOTCH_SPACING_TIP = 20.0    # ASSUMED. Same at the tip end of the spiral (closer together where the curve is tighter)
 RUFFLE_WIDTH = 75.0         # cut width of the frill strip: solid seam allowance + (width - seam) of fringe standing out
 FRILL_START = 75.0          # where the frill starts, in mm up the axis from the cuff line (Remy)
 FRILL_END_FROM_TIP = 50.0   # where the frill ends: this many mm from the tip, measured along the axis (must be at least STRAIGHT_LENGTH)
@@ -59,7 +62,7 @@ TAB_SPACING = 125.0         # about one tab every this many mm of seam
 FRINGE_WIDTH = 6.0          # the standing-out part of the frill is slit into strands this wide
 
 NAMES = ["LENGTH", "BASE_DIAMETER", "TIP_DIAMETER", "PITCH_BASE", "PITCH_TIP", "PITCH_CURVE", "STRAIGHT_LENGTH",
-         "TRANSITION", "SEAM", "RUFFLE_WIDTH", "FRILL_START", "FRILL_END_FROM_TIP", "CUFF_HEIGHT", "CUFF_IN_STRIP", "HEM",
+         "TRANSITION", "SEAM", "NOTCH_DEPTH", "NOTCH_SPACING_BASE", "NOTCH_SPACING_TIP", "RUFFLE_WIDTH", "FRILL_START", "FRILL_END_FROM_TIP", "CUFF_HEIGHT", "CUFF_IN_STRIP", "HEM",
          "FABRIC_WIDTH", "TAB_SIZE", "TAB_SPACING", "FRINGE_WIDTH"]
 
 
@@ -246,6 +249,26 @@ def build():
                 squares.append(tab_square(p, t, n, SEAM, TAB_SIZE))
                 labels.append((p + n * (SEAM + h), f"S{j}"))
     cut = unary_union([body] + squares)
+    # --- notches in the seam allowance along the two curved edges: closer together toward the tip
+    n_notches = 0
+    depth = min(NOTCH_DEPTH, SEAM - 2.0)
+    if depth > 0.5:
+        if NOTCH_SPACING_BASE < 3 or NOTCH_SPACING_TIP < 3:
+            raise SystemExit("Notch spacing must be at least 3 mm.")
+        tab_s = [c.s_f0 + x for x in rel_all]
+        half_w = (depth + 2.0) * math.tan(math.radians(25))               # a 50 degree V
+        cutters = []
+        sn = 15.0
+        while sn < c.s_total - 15.0:
+            if all(abs(sn - ts) > 1.2 * TAB_SIZE for ts in tab_s):
+                for top in (False, True):
+                    p, t = c.edge_frame(sn, top)
+                    n = outward(p, t, outline)
+                    cutters.append(Polygon([p + n * (SEAM - depth), p + n * (SEAM + 2.0) - t * half_w, p + n * (SEAM + 2.0) + t * half_w]))
+                n_notches += 2
+            sn += NOTCH_SPACING_BASE + (NOTCH_SPACING_TIP - NOTCH_SPACING_BASE) * min(sn / c.s_total, 1.0)
+        if cutters:
+            cut = cut.difference(unary_union(cutters))
     if cut.geom_type != "Polygon" or len(cut.interiors) > 0:
         warn.append("The cut outline touches itself (the tabs or seam allowance of neighbouring turns meet, probably "
                     "near the tip). Make the tip wider, the pitch looser or the seam allowance smaller.")
@@ -274,11 +297,19 @@ def build():
     fcut = unary_union([rect] + tabs)
     shift = np.array([0.0, TAB_SIZE])                      # tabs hang below the strip, so lift everything
     pc = Piece("frill")
-    pc.add("cut", np.array(fcut.exterior.coords) + shift)
+    ring = [tuple(q) for q in fcut.exterior.coords]
+    loop = []                                              # ONE closed loop: each slit is walked down and back up on the free edge
+    for (xa, ya), (xb, yb) in zip(ring[:-1], ring[1:]):
+        loop.append((xa, ya))
+        if abs(ya - W) < 1e-9 and abs(yb - W) < 1e-9 and xa != xb:
+            ks = [k for k in range(1, n_slits) if min(xa, xb) < k * strand < max(xa, xb)]
+            ks.sort(key=lambda k: abs(k * strand - xa))
+            for k in ks:
+                x = k * strand
+                loop += [(x, W), (x, SEAM), (x, W)]
+    loop.append(ring[-1])
+    pc.add("cut", np.array(loop) + shift)
     pc.add("sew", np.array([[0, SEAM], [frill_len, SEAM]]) + shift)
-    for k in range(1, n_slits):                            # slits from the sew line out to the free edge
-        x = k * strand
-        pc.add("cut", np.array([[x, SEAM], [x, W]]) + shift)
     for p, txt in labs:
         pc.add("label", [p + shift], txt)
     pc.w, pc.h = frill_len, W + TAB_SIZE
@@ -311,7 +342,7 @@ def build():
     z0 = float(np.interp(0.0, c.zg, c.thg))
     info = dict(pieces=len(pieces), turns=c.theta_end / (2 * math.pi), seam_total=c.s_total, frill_len=frill_len,
                 n_slits=n_slits, strand=strand, F=F, frill_w=W,
-                straight=S, tab_count=len(rel_all), strip_tight=sides[0] + 2 * SEAM, strip_long=sides[1] + 2 * SEAM,
+                straight=S, tab_count=len(rel_all), n_notches=n_notches, strip_tight=sides[0] + 2 * SEAM, strip_long=sides[1] + 2 * SEAM,
                 bbox=(cb[2] - cb[0], cb[3] - cb[1]), half_angle=math.degrees(math.asin(c.sing)),
                 tip_circ=math.pi * TIP_DIAMETER, d_bottom=d_bottom, circ=circ,
                 gain0=float(c.Q(z0 + 2 * math.pi) - c.Q(z0)), warnings=warn)
@@ -335,6 +366,9 @@ def report(info):
         f"part of the cone strip: {BASE_DIAMETER:.0f} mm across at the cuff line, {info['d_bottom']:.0f} mm at the open end, "
         f"{CUFF_HEIGHT:g} mm tall, no seam allowance on the open end" if CUFF_IN_STRIP
         else f"separate band, ring {info['circ']:.0f} mm around"))
+    L.append(f"  Seam allowance notches          {info['n_notches']} V notches (depth {min(NOTCH_DEPTH, SEAM - 2.0):g} mm) on the curved edges, "
+             f"every {NOTCH_SPACING_BASE:g} mm at the base closing to every {NOTCH_SPACING_TIP:g} mm at the tip end"
+             if info["n_notches"] else "  Seam allowance notches          none")
     L += [f"  Alignment tabs                  {TAB_SIZE:g} mm squares: {info['tab_count']} numbered tabs along the spiral seam "
           f"(on both cone edges, and on the frill where it covers), S1.. on the straight seam",
           f"  Tip                             " + ("a point (seam allowance still goes round it)" if TIP_DIAMETER <= 0 else f"open, circumference {info['tip_circ']:.0f} mm"),
@@ -367,7 +401,7 @@ def title(name):
 
 def export_items(cut, pieces, detailed):
     """Everything an export file draws, at true size in mm, y pointing down, shifted so the drawing starts 10 mm in
-    from the corner. detailed=False keeps only the cut lines (what the laser follows): outlines and one line per slit.
+    from the corner. detailed=False keeps only the cut lines (what the laser follows): one closed outline per piece (the frill loop doubles back along each slit).
     Returns (items, width, height); items are (kind, points, text) with kind cut / sew / mark / label / title."""
     place, _ = layout(cut, pieces)
     items = []
@@ -433,7 +467,7 @@ def write_pdf(path, cut, pieces, detailed):
 
 def write_dxf(path, cut, pieces, detailed):
     """Laser/CAD file, true size, units = millimetres. Plain ASCII DXF (R12 style), no extra libraries.
-    Layers: CUT (closed outlines), SLITS (one line per fringe slit); detailed adds SEW, MARK, LABELS, TITLES.
+    Layer CUT (one closed outline per piece); detailed adds SEW, MARK, LABELS, TITLES.
     The y axis points up (the SVG/PDF one points down), so it looks the same as on the page."""
     items, w, h = export_items(cut, pieces, detailed)
     code = []
@@ -489,7 +523,7 @@ def draw_png_outline(path, cut, pieces):
     ax.set_xlabel("mm"); ax.set_ylabel("mm")
     sx = ax.secondary_xaxis("top", functions=(lambda v: v / 25.4, lambda v: v * 25.4)); sx.set_xlabel("inches")
     sy = ax.secondary_yaxis("right", functions=(lambda v: v / 25.4, lambda v: v * 25.4)); sy.set_ylabel("inches")
-    ax.set_title("Laser cut view: only the lines the laser follows (every fringe slit is a single line)", fontsize=10)
+    ax.set_title("Laser cut view: only the lines the laser follows (the frill is one closed loop that doubles back along each slit)", fontsize=10)
     fig.tight_layout()
     fig.savefig(path, dpi=100)
     plt.close(fig)

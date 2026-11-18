@@ -39,6 +39,9 @@ FIELDS = [
     ("Seam", "STRAIGHT_LENGTH", "Straight seam length", "mm", 0, 150, 5),
     ("Seam", "TRANSITION", "Spiral to straight blend", "mm", 0, 150, 5),
     ("Seam", "SEAM", "Seam allowance", "mm", 6, 25, 1),
+    ("Seam", "NOTCH_DEPTH", "Seam notch depth (0 = none)", "mm", 0, 25, 1),
+    ("Seam", "NOTCH_SPACING_BASE", "Notch spacing at the base", "mm", 10, 300, 5),
+    ("Seam", "NOTCH_SPACING_TIP", "Notch spacing at the tip end", "mm", 5, 150, 5),
     ("Seam", "FABRIC_WIDTH", "Fabric width (fit check)", "in", 20, 120, 1),
     ("Frill", "FRILL_START", "Frill starts at (up from cuff line)", "mm", 0, 225, 5),
     ("Frill", "FRILL_END_FROM_TIP", "Frill ends at (distance from tip)", "mm", 0, 300, 5),
@@ -420,7 +423,7 @@ async function run() {
 // Downloads: name and save a snapshot of the built pattern first (the name goes into the file name)
 let wantExt = '';
 const HELP = {detailed: 'Exports every line shown (cut, sew, cuff line, numbered tabs), true size in mm, no scales or grid.',
-              outline: 'Exports only the cut lines the laser follows (one line per fringe slit), true size in mm, no scales or grid.'};
+              outline: 'Exports only the cut lines the laser follows (the frill is one closed loop that doubles back along each slit), true size in mm, no scales or grid.'};
 function showView() {
   $('v-detailed').classList.toggle('on', view === 'detailed'); $('v-outline').classList.toggle('on', view === 'outline');
   if (curKey) $('pic').src = '/out/' + curKey + '/spiral-cone' + (view === 'outline' ? '-outline' : '') + '.png';
