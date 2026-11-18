@@ -49,7 +49,6 @@ FIELDS = [
     ("Seam", "SEAM", "Seam allowance", "mm", 6, 25, 1),
     ("Seam", "TUBE_NOTCH_DEPTH", "Tube notch depth (0 = none)", "mm", 0, 25, 0.5),
     ("Seam", "TUBE_NOTCHES_BETWEEN_TABS", "Tube notches between tabs", "", 0, 20, 1),
-    ("Seam", "RING_BEND", "Ring bend (1 = automatic, 0 = straight edges)", "sliderx", 0, 4, 0.1),
     ("Seam", "FABRIC_WIDTH", "Fabric width (fit check)", "mm", 300, 3000, 10),
     ("Tabs", "TAB_SIZE", "Tab size", "mm", 6, 25, 1),
     ("Tabs", "TAB_SPACING", "Tab spacing", "mm", 50, 300, 5),
