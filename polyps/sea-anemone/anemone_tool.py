@@ -44,6 +44,8 @@ FIELDS = [
     ("Seam", "TUBE_NOTCH_DEPTH", "Tube notch depth (0 = none)", "mm", 0, 25, 0.5),
     ("Seam", "TUBE_NOTCHES_BETWEEN_TABS", "Tube notches between tabs", "", 0, 20, 1),
     ("Seam", "FABRIC_WIDTH", "Fabric width (fit check)", "mm", 300, 3000, 10),
+    ("Laser sheet", "LASER_BED_SHORT", "Laser bed, short side (24 in)", "mm", 100, 3000, 0.1),
+    ("Laser sheet", "LASER_BED_LONG", "Laser bed, long side (36 in)", "mm", 100, 4000, 0.1),
     ("Laser sheet", "NEST_GAP", "Space between pieces", "mm", 0, 30, 0.5),
     ("Tabs", "TAB_SIZE", "Tab size", "mm", 6, 25, 1),
     ("Tabs", "FRILL_TAB_LENGTH", "Frill tab length (loops for a hoop)", "mm", 5, 200, 1),

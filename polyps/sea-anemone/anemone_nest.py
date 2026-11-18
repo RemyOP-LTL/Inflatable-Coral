@@ -44,8 +44,10 @@ def _mask(geom, pad):
     return inside.reshape(h, w)
 
 
-def nest(shapes, gap):
-    """shapes: {name: list of closed outline points}. Returns {name: (angle in degrees, tx, ty)}: a point p of that piece
+def nest(shapes, gap, max_box=None):
+    """max_box = (long side, short side) in mm of the laser bed, or None: placements whose group fits in neither orientation are
+    heavily penalised (so a layout that fits the bed is chosen whenever one exists).
+    shapes: {name: list of closed outline points}. Returns {name: (angle in degrees, tx, ty)}: a point p of that piece
     goes to rotate(p, angle about the origin) + (tx, ty)."""
     geoms = {n: _as_geometry(p) for n, p in shapes.items()}
     order = sorted(geoms, key=lambda n: -geoms[n].area)
@@ -56,6 +58,8 @@ def nest(shapes, gap):
     side = max(biggest * 2.3, math.sqrt(total) * 2.2) + 4 * pad
     Hc = Wc = int(math.ceil(side / RES))
     placed = np.zeros((Hc, Wc), dtype=float)
+    if max_box is not None:
+        big, small = (max_box[0] + 2 * pad) / RES, (max_box[1] + 2 * pad) / RES          # the picture of each piece includes about pad of slack on every side
     ext = None                                                   # bounding box of everything placed, in cells: (minx, maxx, miny, maxy)
     result = {}
     for k, name in enumerate(order):
@@ -86,6 +90,9 @@ def nest(shapes, gap):
                 nminy = np.minimum(ext[2], ys); nmaxy = np.maximum(ext[3], ys + h)
             bw, bh = nmaxx - nminx, nmaxy - nminy
             score = bw * bh + 4.0 * (bw + bh) + 0.01 * (ys + xs)            # smallest bounding box; then a little preference for the top-left
+            if max_box is not None:
+                fits = ((bw <= big) & (bh <= small)) | ((bw <= small) & (bh <= big))
+                score = score + 1e9 * (~fits)
             i = int(np.argmin(score))
             if best is None or score[i] < best[0]:
                 best = (float(score[i]), ang, int(xs[i]), int(ys[i]), h, w, m, (int(nminx[i]) if ext is not None else int(xs[i]),

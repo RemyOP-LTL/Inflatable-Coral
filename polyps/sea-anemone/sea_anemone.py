@@ -57,6 +57,8 @@ TUBE_NOTCH_DEPTH = 6.0      # Remy: about 6 mm. V notches in the allowance of th
 TUBE_NOTCHES_BETWEEN_TABS = 3.0   # ASSUMED. How many notches go between each pair of neighbouring ring tabs along those arc edges
 FABRIC_WIDTH = 1470.0       # ASSUMED usable fabric width (about 58 in), for the fit check
 TAB_SIZE = 12.0             # alignment tabs are this-size squares (and the width of the frill tabs)
+LASER_BED_SHORT = 609.6     # laser bed, short side in mm (24 in)
+LASER_BED_LONG = 914.4      # laser bed, long side in mm (36 in)
 NEST_GAP = 3.0             # space between pieces on the laser sheet (Laser cut view and its exports). The Detailed view keeps its own readable layout
 FRILL_TAB_LENGTH = 30.0     # length of the tabs on the frill (2.5 x the normal tab size). Fold them over to make loops for a hoop. Their width is TAB_SIZE
 TABS_LOWER_SEAM = 2.0       # number of alignment tabs along each straight seam edge of the lower cone (the same number on both edges, so they pair up), evenly spaced
@@ -66,7 +68,7 @@ TABS_TOP_RING = 4.0         # number of tabs round the top ring: the top arc of 
 
 NAMES = ["HEIGHT", "DIAMETER_BOTTOM", "DIAMETER_TOP", "MID_HEIGHT", "MID_DIAMETER", "FRILL_STRIP_LENGTH", "FRILL_LENGTH", "FRINGE_WIDTH",
          "FRILL_WAVE", "FRILL_WAVE_LENGTH", "FRILL_BAND", "FRILL_NOTCH_DEPTH", "FRILL_NOTCHES_BETWEEN_TABS", "SEAM", "TUBE_NOTCH_DEPTH", "TUBE_NOTCHES_BETWEEN_TABS",
-         "FABRIC_WIDTH", "NEST_GAP", "TAB_SIZE", "FRILL_TAB_LENGTH", "TABS_LOWER_SEAM", "TABS_MID_RING", "TABS_UPPER_SEAM", "TABS_TOP_RING"]
+         "FABRIC_WIDTH", "LASER_BED_SHORT", "LASER_BED_LONG", "NEST_GAP", "TAB_SIZE", "FRILL_TAB_LENGTH", "TABS_LOWER_SEAM", "TABS_MID_RING", "TABS_UPPER_SEAM", "TABS_TOP_RING"]
 
 
 def settings():
@@ -418,7 +420,13 @@ def build():
                     f"({circ_top:.0f} mm). " + ("It will gather a little." if pct > 0 else "It will leave a gap."))
     if FRILL_NOTCH_DEPTH > SEAM - 1.5 and FRILL_NOTCH_DEPTH > 0:
         warn.append(f"Frill notch depth was cut back to {fdepth:g} mm so at least 1.5 mm of the allowance stays solid.")
-    info = dict(pieces=len(pieces), tube_s=T.S, cones=cones, circ_top=circ_top, circ_bottom=math.pi * DIAMETER_BOTTOM, circ_mid=circ_mid,
+    items_l, lw, lh = export_items(pieces, False)                    # nests the pieces for the laser (cached for the exports)
+    ext_w, ext_h = lw - 20.0, lh - 20.0                              # the drawing itself, without the 10 mm page margin
+    fits_bed = (ext_w <= LASER_BED_LONG - 10 and ext_h <= LASER_BED_SHORT - 10) or (ext_w <= LASER_BED_SHORT - 10 and ext_h <= LASER_BED_LONG - 10)
+    if not fits_bed:
+        warn.append(f"The nested pieces need {ext_w:.0f} x {ext_h:.0f} mm but the laser bed is {LASER_BED_SHORT:g} x {LASER_BED_LONG:g} mm (with 5 mm kept free at the edges): "
+                    "they will not fit in one go. Use a smaller tube, or cut the pieces in two batches.")
+    info = dict(laser_extent=(ext_w, ext_h), fits_bed=fits_bed, pieces=len(pieces), tube_s=T.S, cones=cones, circ_top=circ_top, circ_bottom=math.pi * DIAMETER_BOTTOM, circ_mid=circ_mid,
                 frill_len=Lf, frill_w=W, F=W - y_fringe, n_slits=n_slits, strand=strand,
                 n_tube_notches=n_tube_notches, n_frill_notches=n_fn, notch_w=notch_w, side_tabs=(side_lo, side_up), ring_tabs=n_ring, mid_tabs=n_mid,
                 cap_d=2 * (R_top + SEAM), warnings=warn)
@@ -447,7 +455,9 @@ def report(info):
            f"on the ring seam between the cones and the top edge (none on the straight seams, the open bottom edge or the cap)") if info["n_tube_notches"] else "  Tube seam notches               none",
           f"  Alignment tabs                  {TAB_SIZE:g} mm squares (frill tabs {TAB_SIZE:g} x {FRILL_TAB_LENGTH:g} mm, long enough to fold into loops for a hoop): {info['side_tabs'][0]} (L) and {info['side_tabs'][1]} (U) numbered pairs on the straight seams, "
           f"{info['mid_tabs']} lowercase sets on the ring seam between the cones, {info['ring_tabs']} capital sets (top of the tube, cap, frill)",
-          f"  Pieces to cut                   {info['pieces']}", ""]
+          f"  Pieces to cut                   {info['pieces']}",
+          f"  Laser sheet                     nested pieces need {info['laser_extent'][0]:.0f} x {info['laser_extent'][1]:.0f} mm; bed {LASER_BED_SHORT:g} x {LASER_BED_LONG:g} mm: "
+          + ("fits" if info["fits_bed"] else "DOES NOT FIT"), ""]
     L += ["Checks:"] + (["  " + w for w in info["warnings"]] or ["  none"])
     return "\n".join(L)
 
@@ -485,12 +495,12 @@ def title(name):
 def nest_transforms(pieces):
     """Turn and shift for each piece so they pack close together on the laser sheet (see anemone_nest.py). Cached on the pieces."""
     import anemone_nest
-    key = (NEST_GAP, id(pieces[0]))
+    key = (NEST_GAP, LASER_BED_SHORT, LASER_BED_LONG, id(pieces[0]))
     cached = getattr(pieces[0], "_nest", None)
     if cached and cached[0] == key:
         return cached[1]
     shapes = {p.name: [a for k, a, t in p.items if k == "cut"][0] for p in pieces}
-    tr = anemone_nest.nest(shapes, NEST_GAP)
+    tr = anemone_nest.nest(shapes, NEST_GAP, (LASER_BED_LONG - 10.0, LASER_BED_SHORT - 10.0))
     # check the real outlines really are at least (nearly) the gap apart; if not, give up on nesting
     from shapely.geometry import Polygon as _P
     from shapely.validation import make_valid as _mv
@@ -651,7 +661,13 @@ def draw_preview(path, pieces, detailed):
             ax.text(a[0][0], a[0][1], t, fontsize=8, color="#d0d0d0")
         else:
             ax.plot(a[:, 0], a[:, 1], color=col[k][0], ls=col[k][1], lw=col[k][2])
-    ax.set_xlim(0, w); ax.set_ylim(h, 0)
+    xmax, ymax = w, h
+    if not detailed:                                                   # show the laser bed (dashed) with 5 mm kept free at its edge, turned the way the layout is longer
+        bw_, bh_ = (LASER_BED_LONG, LASER_BED_SHORT) if (w - 20) >= (h - 20) else (LASER_BED_SHORT, LASER_BED_LONG)
+        ax.plot([5, 5 + bw_, 5 + bw_, 5, 5], [5, 5, 5 + bh_, 5 + bh_, 5], color="#8fd18f", ls=(0, (6, 4)), lw=1.0)
+        ax.text(10, 5 + bh_ - 4, f"laser bed {LASER_BED_SHORT:g} x {LASER_BED_LONG:g} mm", fontsize=8, color="#8fd18f", va="bottom")
+        xmax, ymax = max(w, 10 + bw_), max(h, 10 + bh_)
+    ax.set_xlim(0, xmax); ax.set_ylim(ymax, 0)
     _axes(ax)
     fig.tight_layout()
     fig.savefig(path, format="svg", facecolor=BG)
