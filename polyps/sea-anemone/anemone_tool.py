@@ -49,6 +49,7 @@ FIELDS = [
     ("Seam", "SEAM", "Seam allowance", "mm", 6, 25, 1),
     ("Seam", "TUBE_NOTCH_DEPTH", "Tube notch depth (0 = none)", "mm", 0, 25, 0.5),
     ("Seam", "TUBE_NOTCHES_BETWEEN_TABS", "Tube notches between tabs", "", 0, 20, 1),
+    ("Seam", "RING_BEND", "Ring bend (0 = edge follows the cross-section)", "sliderx", 0, 1, 0.05),
     ("Seam", "FABRIC_WIDTH", "Fabric width (fit check)", "mm", 300, 3000, 10),
     ("Tabs", "TAB_SIZE", "Tab size", "mm", 6, 25, 1),
     ("Tabs", "TAB_SPACING", "Tab spacing", "mm", 50, 300, 5),
@@ -377,8 +378,8 @@ function refreshBtn() { $('rebuild').disabled = JSON.stringify(vals) === built; 
 for (const [sec, name, label, unit, lo, hi, step] of META.fields) {
   if (!secs[sec]) { const c = document.createElement('div'); c.className = 'card'; c.style.marginTop = '12px'; c.innerHTML = `<h2>${sec}</h2>`; $('sections').appendChild(c); secs[sec] = c; }
   const d = document.createElement('div'); d.className = 'field';
-  if (unit === 'slider') {          // a slider with its value shown; rebuilds when you let go
-    d.innerHTML = `<label>${label}<span><span id="v-${name}"></span> mm</span></label><input type="range" id="n-${name}" min="${lo}" max="${hi}" step="${step}">`;
+  if (unit === 'slider' || unit === 'sliderx') {          // a slider with its value shown; rebuilds when you let go
+    d.innerHTML = `<label>${label}<span><span id="v-${name}"></span>${unit === 'slider' ? ' mm' : ''}</span></label><input type="range" id="n-${name}" min="${lo}" max="${hi}" step="${step}">`;
     secs[sec].appendChild(d);
     const sl = d.querySelector('input');
     sl.value = vals[name]; $('v-' + name).textContent = vals[name];

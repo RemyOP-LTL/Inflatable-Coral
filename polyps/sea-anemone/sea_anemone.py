@@ -61,6 +61,7 @@ FRILL_NOTCHES_BETWEEN_TABS = 7.0  # ASSUMED. How many notches go between each pa
 SEAM = 12.0                 # seam allowance on every edge
 TUBE_NOTCH_DEPTH = 6.0      # Remy: about 6 mm. V notches in the allowance of the tube: both side edges, the top edge and the bottom edge (0 = none)
 TUBE_NOTCHES_BETWEEN_TABS = 3.0   # ASSUMED. How many notches go between each pair of neighbouring tabs along those edges (the bottom edge has no tabs; it uses the same positions as the top)
+RING_BEND = 0.0            # 0 = the flat side edge has the same shape as the cross-section curve (width = circumference at every height; the edge ends up a little longer than the tube is tall). 1 = bend the rings so the edge is exactly as long as the tube, at the cost of a different edge shape
 FABRIC_WIDTH = 1470.0       # ASSUMED usable fabric width (about 58 in), for the fit check
 TAB_SIZE = 12.0             # alignment tabs are this-size squares
 TAB_SPACING = 125.0         # about one tab every this many mm of seam
@@ -68,7 +69,7 @@ TAB_SPACING = 125.0         # about one tab every this many mm of seam
 NAMES = ["HEIGHT", "DIAMETER_BOTTOM", "DIAMETER_TOP", "LOWER_HEIGHT", "LOWER_DIAMETER", "LOWER_ANGLE", "LOWER_LENGTH",
          "UPPER_FROM_TOP", "UPPER_DIAMETER", "UPPER_ANGLE", "UPPER_LENGTH", "FRILL_STRIP_LENGTH", "FRILL_LENGTH", "FRINGE_WIDTH",
          "FRILL_WAVE", "FRILL_WAVE_LENGTH", "FRILL_BAND", "FRILL_NOTCH_DEPTH", "FRILL_NOTCHES_BETWEEN_TABS", "SEAM", "TUBE_NOTCH_DEPTH", "TUBE_NOTCHES_BETWEEN_TABS",
-         "FABRIC_WIDTH", "TAB_SIZE", "TAB_SPACING"]
+         "RING_BEND", "FABRIC_WIDTH", "TAB_SIZE", "TAB_SPACING"]
 
 
 def settings():
@@ -175,6 +176,7 @@ class Tube:
                         hi = mid
                 self.lam = float((lo + hi) / 2)
                 break
+        self.lam *= float(min(max(RING_BEND, 0.0), 1.0))               # default 0: straight rings, so the edge follows the cross-section shape
 
     def edge_length(self, lam, n=700):
         old = getattr(self, "lam", 1.0)
