@@ -325,9 +325,10 @@ PAGE = r"""<!doctype html>
   #load { width:100%; margin-top:8px; font:inherit; padding:5px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
   .sw { display:inline-flex; align-items:center; gap:6px; font-weight:400; } .sw input { position:absolute; opacity:0; } .sw .track { width:36px; height:20px; border-radius:10px; background:var(--line); position:relative; transition:.15s; } .sw .track::after { content:''; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:.15s; } .sw input:checked + .track { background:var(--accent); } .sw input:checked + .track::after { left:18px; }
   .derived { font-size:13px; color:var(--mute); }
-  #xs { width:100%; height:520px; background:#1c1b1a; border-radius:8px; touch-action:none; margin-top:6px; user-select:none; } #xs text { font:11px system-ui, sans-serif; fill:#aaa; } #xs .pt { cursor:grab; } #xs .hd { cursor:crosshair; }
+  #xs { width:100%; height:520px; background:#1c1b1a; border-radius:8px; touch-action:none; margin-top:6px; user-select:none; } #xs text { font:11px system-ui, sans-serif; fill:#aaa; } #xs .pt { cursor:grab; } #xs .end { cursor:ew-resize; } #xs .hd { cursor:crosshair; }
   .zoombar { display:flex; gap:6px; align-items:center; margin:4px 0 6px; } .zoombar button { width:34px; margin:0; padding:3px 0; } .zoombar button#zfit { width:auto; padding:3px 12px; }
   .viewer { background:#1c1b1a; border-radius:8px; overflow:auto; max-height:72vh; cursor:grab; } .viewer.drag { cursor:grabbing; } .viewer img { display:block; width:100%; max-width:none; margin:0; border-radius:0; background:none; user-select:none; }
+  .viewer.nozoom { max-height:none; overflow:visible; cursor:default; }
   .viewer3d { background:#1c1b1a; border-radius:8px; margin-top:10px; } .viewer3d img { display:block; max-width:520px; width:100%; margin:0 auto; background:none; }
 </style></head><body>
 <header><h1>Sea Anemone</h1><span class="derived">Sea anemone polyp pattern. Everything in millimetres. Type them, press Rebuild, pick Detailed or Laser cut, save the PDF for the laser.</span>
@@ -345,12 +346,12 @@ PAGE = r"""<!doctype html>
     <div id="sections"></div>
   </div>
   <div class="results">
-    <div class="card" id="xcard"><h2>Tube cross-section <span class="derived">Drag the dots to move the control points and the squares to set each tangent (direction and length). The numbers on the left follow.</span></h2>
+    <div class="card" id="xcard"><h2>Tube cross-section <span class="derived">Drag the red dots to move the two middle control points, the white dots (bottom and top) in or out to change their diameter, and the yellow squares to set each tangent (direction and length). The numbers on the left follow.</span></h2>
       <svg id="xs" viewBox="0 0 640 520" preserveAspectRatio="xMidYMid meet"></svg></div>
     <div class="card" id="card"><h2>Pattern <span id="busy" class="derived"></span></h2>
       <div id="warnings"></div>
       <div class="seg"><button id="v-detailed" class="on" type="button">Detailed</button><button id="v-outline" type="button">Laser cut</button></div>
-      <div class="zoombar"><button id="zout" type="button" class="secondary">&minus;</button><button id="zin" type="button" class="secondary">+</button><button id="zfit" type="button" class="secondary">Fit</button><span class="derived">Scroll to zoom, drag to move, double-click to fit.</span></div>
+      <div class="zoombar" id="zoombar"><button id="zout" type="button" class="secondary">&minus;</button><button id="zin" type="button" class="secondary">+</button><button id="zfit" type="button" class="secondary">Fit</button><span class="derived">Scroll to zoom, drag to move, double-click to fit.</span></div>
       <div class="viewer" id="viewer"><img id="pic" alt="" draggable="false"></div>
       <div id="pic3dbox"><div class="viewer3d"><img id="pic3d" alt=""></div><p class="derived">The finished anemone, inflated: a picture, not a simulation. The cap puffs into a dome with the seam on the rounded corner; the frill is blown up by air from the base. No motion.</p></div>
       <p id="dlhelp" class="derived"></p>
@@ -449,6 +450,8 @@ function showView() {
   $('v-detailed').classList.toggle('on', view === 'detailed'); $('v-outline').classList.toggle('on', view === 'outline');
   if (curKey) { $('pic').src = '/out/' + curKey + '/preview-' + view + '.svg'; $('pic3d').src = '/out/' + curKey + '/picture-3d.png'; }
   $('pic3dbox').style.display = view === 'detailed' ? '' : 'none';
+  $('zoombar').style.display = view === 'outline' ? '' : 'none';           // zoom only in the Laser cut view
+  $('viewer').classList.toggle('nozoom', view === 'detailed');
   if (view !== shownView) { shownView = view; zoomTo(1); }
   $('dlhelp').textContent = HELP[view];
 }
@@ -464,11 +467,11 @@ function zoomTo(k, cx, cy) {
   zoom = k; img.style.width = (100 * k) + '%';
   viewer.scrollLeft = fx * img.clientWidth - cx; viewer.scrollTop = fy * img.clientHeight - cy;
 }
-viewer.addEventListener('wheel', e => { e.preventDefault(); const r = viewer.getBoundingClientRect(); zoomTo(zoom * Math.exp(-e.deltaY / 300), e.clientX - r.left, e.clientY - r.top); }, {passive: false});
+viewer.addEventListener('wheel', e => { if (view === 'detailed') return; e.preventDefault(); const r = viewer.getBoundingClientRect(); zoomTo(zoom * Math.exp(-e.deltaY / 300), e.clientX - r.left, e.clientY - r.top); }, {passive: false});
 $('zin').onclick = () => zoomTo(zoom * 1.5); $('zout').onclick = () => zoomTo(zoom / 1.5); $('zfit').onclick = () => zoomTo(1);
-viewer.addEventListener('dblclick', () => zoomTo(1));
+viewer.addEventListener('dblclick', () => { if (view !== 'detailed') zoomTo(1); });
 let dragging = null;
-viewer.addEventListener('mousedown', e => { dragging = {x: e.clientX, y: e.clientY, l: viewer.scrollLeft, t: viewer.scrollTop}; viewer.classList.add('drag'); e.preventDefault(); });
+viewer.addEventListener('mousedown', e => { if (view === 'detailed') return; dragging = {x: e.clientX, y: e.clientY, l: viewer.scrollLeft, t: viewer.scrollTop}; viewer.classList.add('drag'); e.preventDefault(); });
 window.addEventListener('mousemove', e => { if (dragging) { viewer.scrollLeft = dragging.l - (e.clientX - dragging.x); viewer.scrollTop = dragging.t - (e.clientY - dragging.y); } });
 window.addEventListener('mouseup', () => { dragging = null; viewer.classList.remove('drag'); });
 // ---- tube cross-section: draw the curve from the boxes, drag points and tangent handles (like a CAD spline)
@@ -530,7 +533,7 @@ function drawProfile() {
       h += `<text x="${px + 14}" y="${py - 10}" fill="#eee">${names[i]}: Ø${Math.round(P[1] * 2)}, ${i === 1 ? v.LOWER_HEIGHT : v.UPPER_FROM_TOP} ${i === 1 ? 'up' : 'down'}</text>`;
       h += `<text x="${px + 14}" y="${py + 4}">${i === 1 ? v.LOWER_ANGLE : v.UPPER_ANGLE}&deg;, handle ${i === 1 ? v.LOWER_LENGTH : v.UPPER_LENGTH}</text>`;
     } else {
-      h += `<circle cx="${px}" cy="${py}" r="5" fill="none" stroke="#bbb" stroke-width="2"/><text x="${px + 10}" y="${py + (i ? -8 : 16)}">${names[i]} Ø${Math.round(P[1] * 2)}</text>`;
+      h += `<circle class="pt end" data-id="p${i}" cx="${px}" cy="${py}" r="8" fill="#ffffff" stroke="#1c1b1a" stroke-width="2"/><circle cx="${X(-P[1])}" cy="${py}" r="5" fill="#ffffff" fill-opacity=".4"/><text x="${px + 14}" y="${py + (i ? -10 : 18)}" fill="#eee">${names[i]}: Ø${Math.round(P[1] * 2)}</text>`;
     }
   }
   svg.innerHTML = h; svg._g = g;
@@ -548,7 +551,11 @@ $('xs').addEventListener('pointermove', e => {
   const q = pt.matrixTransform(svg.getScreenCTM().inverse()), g = xsFrozen;
   const zmm = (g.z0 - q.y) / g.sc, rmm = (q.x - g.cx) / g.sc, H = vals.HEIGHT;
   const clamp = (x, a, b) => Math.min(Math.max(x, a), b);
-  if (xsDrag === 'p1') {
+  if (xsDrag === 'p0') {
+    vals.DIAMETER_BOTTOM = Math.round(clamp(Math.abs(rmm) * 2, 30, 400));
+  } else if (xsDrag === 'p3') {
+    vals.DIAMETER_TOP = Math.round(clamp(Math.abs(rmm) * 2, 30, 400));
+  } else if (xsDrag === 'p1') {
     vals.LOWER_HEIGHT = Math.round(clamp(zmm, 5, H - vals.UPPER_FROM_TOP - 5)); vals.LOWER_DIAMETER = Math.round(clamp(Math.abs(rmm) * 2, 30, 400));
   } else if (xsDrag === 'p2') {
     vals.UPPER_FROM_TOP = Math.round(clamp(H - zmm, 5, H - vals.LOWER_HEIGHT - 5)); vals.UPPER_DIAMETER = Math.round(clamp(Math.abs(rmm) * 2, 30, 400));
