@@ -3,7 +3,7 @@
 What it makes (all lengths in millimetres):
   1. TUBE   one piece of woven nylon with ONE straight seam down its side. The tube is a smooth shape: wider at the
             bottom, narrower in the middle, wider again at the top (three diameters you choose). Because the shape
-            curves, the two flat side edges are curved too, so they get V notches in the seam allowance (as do the top and bottom edges).
+            curves, the two flat side edges are curved too, so they get V notches in the seam allowance (as does the top edge; the bottom edge has no allowance).
   2. CAP    a flat disk that closes the top of the tube.
   3. FRILL  ONE long straight strip sewn into the ring seam between the tube top and the cap. Its sewn edge gets V notches
             so the straight strip can bend into a circle. The part that stands out is slit into FRINGE_WIDTH strands
@@ -46,6 +46,8 @@ DIAMETER_TOP = 150.0        # ASSUMED. Slightly flared top. The cap disk and the
 FRILL_LENGTH = 0.0          # length of the frill strip. 0 = exactly the top circumference (pi x top diameter). More = it gathers
 FRILL_WIDTH = 60.0          # ASSUMED. Cut width of the frill strip: seam allowance + solid band + fringe
 FRINGE_WIDTH = 6.0          # the standing-out part of the frill is slit into strands this wide
+FRILL_WAVE = 3.0            # ASSUMED. How wavy the fringe strands are: height of the wave in mm (0 = straight). All strands wave the same way, so they still nest
+FRILL_WAVE_LENGTH = 40.0    # ASSUMED. Length of one wave along a strand
 FRILL_BAND = 0.0            # solid (unslit) band between the sew line and the fringe. 0 = fringe starts at the sew line
 FRILL_NOTCH_DEPTH = 9.0     # ASSUMED (Remy: 3/8 in = 9.5 mm leaving 3 mm). V notches in the frill's seam allowance (0 = none)
 FRILL_NOTCHES_BETWEEN_TABS = 7.0  # ASSUMED. How many notches go between each pair of neighbouring ring tabs on the frill (0 = none). Their width is worked out from the circle
@@ -57,7 +59,7 @@ TAB_SIZE = 12.0             # alignment tabs are this-size squares
 TAB_SPACING = 125.0         # about one tab every this many mm of seam
 
 NAMES = ["HEIGHT", "DIAMETER_BOTTOM", "DIAMETER_MIDDLE", "DIAMETER_TOP", "FRILL_LENGTH", "FRILL_WIDTH", "FRINGE_WIDTH",
-         "FRILL_BAND", "FRILL_NOTCH_DEPTH", "FRILL_NOTCHES_BETWEEN_TABS", "SEAM", "TUBE_NOTCH_DEPTH", "TUBE_NOTCHES_BETWEEN_TABS",
+         "FRILL_WAVE", "FRILL_WAVE_LENGTH", "FRILL_BAND", "FRILL_NOTCH_DEPTH", "FRILL_NOTCHES_BETWEEN_TABS", "SEAM", "TUBE_NOTCH_DEPTH", "TUBE_NOTCHES_BETWEEN_TABS",
          "FABRIC_WIDTH", "TAB_SIZE", "TAB_SPACING"]
 
 
@@ -225,6 +227,12 @@ def build():
     warn = []
     outline = Polygon(T.outline()).buffer(0)
     body = outline.buffer(SEAM, join_style=2, mitre_limit=4)
+    # no seam allowance on the bottom edge of the tube (Remy): keep only what lies above the bottom edge
+    Bp = T.arc(0.0)[1]
+    tL, tR = unit(Bp[1] - Bp[0]), unit(Bp[-1] - Bp[-2])
+    keep = [tuple(Bp[0] - tL * 40)] + [tuple(q) for q in Bp] + [tuple(Bp[-1] + tR * 40)]
+    keep += [(keep[-1][0], keep[-1][1] - 3000), (keep[0][0], keep[0][1] - 3000)]
+    body = body.intersection(Polygon(keep))
     h = TAB_SIZE / 2
     R_top = DIAMETER_TOP / 2
     circ_top = 2 * math.pi * R_top
@@ -247,7 +255,7 @@ def build():
         squares.append(tab_square(p, t, n, SEAM, TAB_SIZE))
         labels.append((p + n * (SEAM + h), lab))
     cut = unary_union([body] + squares)
-    # --- notches in the allowance, n between each pair of tabs: both side edges, the top edge, the bottom edge
+    # --- notches in the allowance, n between each pair of tabs: both side edges and the top edge (no allowance on the bottom edge)
     n_tube_notches = n_skipped = 0
     depth = min(TUBE_NOTCH_DEPTH, SEAM - 2.0)
     n_between = int(round(TUBE_NOTCHES_BETWEEN_TABS))
@@ -270,11 +278,10 @@ def build():
                 sn = a_ + (b_ - a_) * k / (n_between + 1)
                 for side in (-1, 1):
                     add_notch(*T.edge_frame(sn, side))
-        for f in ring_notch_fracs(ring_f, n_between):                     # top edge (between the lettered tabs), bottom edge (same places)
-            if min(f, 1 - f) * 2 * math.pi * min(T.rt, T.rb) < 1.5 * SEAM:   # not in the corner where the side seam joins
+        for f in ring_notch_fracs(ring_f, n_between):                     # top edge, between the lettered tabs
+            if min(f, 1 - f) * 2 * math.pi * T.rt < 1.5 * SEAM:           # not in the corner where the side seam joins
                 continue
             add_notch(*T.ring_frame(T.S, -math.pi * T.rt + f * 2 * math.pi * T.rt))
-            add_notch(*T.ring_frame(0.0, -math.pi * T.rb + f * 2 * math.pi * T.rb))
         if cutters:
             cut = cut.difference(unary_union(cutters))
         if n_skipped:
@@ -316,7 +323,7 @@ def build():
         raise SystemExit("Fringe strand width must be at least 1 mm.")
     n_slits = max(1, round(Lf / FRINGE_WIDTH))
     strand = Lf / n_slits
-    rect = Polygon([[0, 0], [Lf, 0], [Lf, W], [0, W]])
+    rect = Polygon([[0, 0], [Lf, 0], [Lf, y_fringe], [0, y_fringe]])      # the solid part (allowance + band); the fringe is added below
     ftabs, flabs, tab_x = [], [], []
     for f, lab in zip(ring_f, ring_lab):
         x = f * Lf
@@ -342,20 +349,42 @@ def build():
         if fcutters:
             fcut = fcut.difference(unary_union(fcutters))
     shift = np.array([0.0, TAB_SIZE])                      # tabs hang above the strip's allowance edge, so lift everything
-    ring_pts = [tuple(q) for q in fcut.exterior.coords][:-1]
-    i0 = min(range(len(ring_pts)), key=lambda i: (abs(ring_pts[i][1] - W) + abs(ring_pts[i][0])))
-    ring_pts = ring_pts[i0:] + ring_pts[:i0]
-    ring_pts.append(ring_pts[0])
-    loop = []                                              # ONE closed loop: each slit is walked down and back up
-    for (xa, ya), (xb, yb) in zip(ring_pts[:-1], ring_pts[1:]):
-        loop.append((xa, ya))
-        if abs(ya - W) < 1e-9 and abs(yb - W) < 1e-9 and xa != xb:
-            ks = [k for k in range(1, n_slits) if min(xa, xb) < k * strand < max(xa, xb)]
-            ks.sort(key=lambda k: abs(k * strand - xa))
-            for k in ks:
-                x = k * strand
-                loop += [(x, W), (x, y_fringe), (x, W)]
-    loop.append(ring_pts[-1])
+    pts = [tuple(q) for q in fcut.exterior.coords][:-1]
+    i0 = min(range(len(pts)), key=lambda i: abs(pts[i][0]) + abs(pts[i][1] - y_fringe))
+    pts = pts[i0:] + pts[:i0]
+    if abs(pts[1][1] - y_fringe) < 1e-9 and pts[1][0] > 1:                 # ring runs along the bottom first: turn it round
+        pts = [pts[0]] + pts[:0:-1]
+    top_path = [list(q) for q in pts]                      # from (0, y_fringe) up round the allowance edge to (Lf, y_fringe)
+    # fringe: wavy strands with round ends. Every slit is the same wave shifted along, so the strands nest exactly.
+    r_end = strand / 2
+    y_e = W - r_end                                        # where the straight-sided part of each strand ends and its round tip starts
+    fl = y_e - y_fringe
+    if fl < 2:
+        raise SystemExit("The fringe is too short for its round ends: make the frill wider or the strands narrower.")
+    ramp = min(10.0, 0.35 * fl)                            # the wave eases in and out so the tips are straight and the cap is clean
+    ys = np.linspace(y_fringe, y_e, max(24, math.ceil(fl / 1.5)))
+
+    def smooth(t):
+        t = np.clip(t, 0, 1)
+        return t * t * (3 - 2 * t)
+    wave = FRILL_WAVE * smooth((ys - y_fringe) / ramp) * smooth((y_e - ys) / ramp) * np.sin(2 * math.pi * (ys - y_fringe) / max(FRILL_WAVE_LENGTH, 5.0))
+
+    def curve(k):
+        return np.column_stack([k * strand + wave, ys])
+    loop = list(top_path) + curve(n_slits).tolist()        # ONE closed loop: down the right end, then along the free edge
+    ang = np.linspace(0, math.pi, 28)
+    for j in range(n_slits - 1, -1, -1):
+        cx = (j + 0.5) * strand
+        loop += [[cx + r_end * math.cos(a_), y_e + r_end * math.sin(a_)] for a_ in ang]       # round tip of strand j
+        c = curve(j)
+        loop += (c[::-1].tolist() + c.tolist()) if j > 0 else c[::-1].tolist()                  # each slit up and back down (doubled); the left end only up
+    clean = [loop[0]]
+    for q in loop[1:]:
+        if math.hypot(q[0] - clean[-1][0], q[1] - clean[-1][1]) > 1e-9:
+            clean.append(q)
+    if math.hypot(clean[-1][0] - clean[0][0], clean[-1][1] - clean[0][1]) > 1e-9:
+        clean.append(clean[0])
+    loop = clean
     frill = Piece("frill")
     frill.add("cut", np.array(loop) + shift)
     frill.add("sew", np.array([[0, SEAM], [Lf, SEAM]]) + shift)
@@ -408,7 +437,7 @@ def report(info):
            f"{info['notch_w']:.1f} mm wide at the cut edge (width worked out from the circle)") if info["n_frill_notches"]
           else "  Frill seam notches              none",
           (f"  Tube seam notches               {info['n_tube_notches']} V notches, {TUBE_NOTCHES_BETWEEN_TABS:g} between each pair of tabs, {min(TUBE_NOTCH_DEPTH, SEAM - 2.0):g} mm deep, "
-           f"on both side edges and the top and bottom edges (the cap edge has none)") if info["n_tube_notches"] else "  Tube seam notches               none",
+           f"on both side edges and the top edge (none on the bottom edge, which has no allowance, or on the cap)") if info["n_tube_notches"] else "  Tube seam notches               none",
           f"  Alignment tabs                  {TAB_SIZE:g} mm squares: {info['side_tabs']} numbered pairs on the side seam, "
           f"{info['ring_tabs']} lettered sets (tube top, cap, frill) round the ring",
           f"  Pieces to cut                   {info['pieces']}", ""]

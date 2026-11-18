@@ -34,6 +34,8 @@ FIELDS = [
     ("Frill", "FRILL_LENGTH", "Frill length (0 = fits the ring)", "mm", 0, 2000, 5),
     ("Frill", "FRILL_WIDTH", "Frill strip width (cut)", "mm", 20, 200, 1),
     ("Frill", "FRINGE_WIDTH", "Fringe strip width", "mm", 3, 25, 0.5),
+    ("Frill", "FRILL_WAVE", "Frill waviness", "slider", 0, 15, 0.5),
+    ("Frill", "FRILL_WAVE_LENGTH", "Wave length", "mm", 10, 200, 1),
     ("Frill", "FRILL_BAND", "Solid band beside the sew line", "mm", 0, 30, 1),
     ("Frill", "FRILL_NOTCH_DEPTH", "Frill notch depth (0 = none)", "mm", 0, 25, 0.5),
     ("Frill", "FRILL_NOTCHES_BETWEEN_TABS", "Frill notches between tabs", "", 0, 30, 1),
@@ -359,6 +361,15 @@ function refreshBtn() { $('rebuild').disabled = JSON.stringify(vals) === built; 
 for (const [sec, name, label, unit, lo, hi, step] of META.fields) {
   if (!secs[sec]) { const c = document.createElement('div'); c.className = 'card'; c.style.marginTop = '12px'; c.innerHTML = `<h2>${sec}</h2>`; $('sections').appendChild(c); secs[sec] = c; }
   const d = document.createElement('div'); d.className = 'field';
+  if (unit === 'slider') {          // a slider with its value shown; rebuilds when you let go
+    d.innerHTML = `<label>${label}<span><span id="v-${name}"></span> mm</span></label><input type="range" id="n-${name}" min="${lo}" max="${hi}" step="${step}">`;
+    secs[sec].appendChild(d);
+    const sl = d.querySelector('input');
+    sl.value = vals[name]; $('v-' + name).textContent = vals[name];
+    sl.oninput = () => { vals[name] = parseFloat(sl.value); $('v-' + name).textContent = vals[name]; refreshBtn(); };
+    sl.onchange = () => { if (!$('rebuild').disabled) run(); };
+    continue;
+  }
   if (unit === 'toggle') {          // Separate cuff: Yes = the cuff is its own band (CUFF_IN_STRIP = 0)
     d.innerHTML = `<label>${label}<span class="sw"><span id="t-${name}-txt"></span><input type="checkbox" id="n-${name}"><span class="track"></span></span></label>`;
     secs[sec].appendChild(d);
@@ -380,6 +391,7 @@ function sync() {
     const el = $('n-' + name);
     if (unit === 'toggle') { el.checked = vals[name] === 0; $('t-' + name + '-txt').textContent = el.checked ? 'Yes' : 'No'; }
     else el.value = +(+vals[name]).toFixed(3);
+    if (unit === 'slider') $('v-' + name).textContent = vals[name];
   }
 }
 $('reset').onclick = () => { Object.assign(vals, META.defaults); sync(); run(); };

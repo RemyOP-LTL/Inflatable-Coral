@@ -8,8 +8,10 @@ A third polyp design, started 2026-11-17 on branch `polyp-2026-11-17-sea-anemone
 - **Cap:** a flat disk that closes the top of the tube.
 - **Frill:** one straight strip sewn into the ring seam between the tube top and the cap, same idea as the cone worm. Its sewn edge is V-notched so the straight strip can bend into a circle. The free part is slit into 6 mm strands (laser cut).
 - **Frill notches:** about 9.5 mm (3/8 in) deep, leaving about 3 mm. Fallback if that is too weak: notch deeper and keep a solid, unslit band (setting `FRILL_BAND`, e.g. 6 mm = 1/4 in) between the sew line and the fringe.
-- **Tube notches (updated 2026-11-17):** V notches about 6 mm deep on ALL tube seam allowances (both side edges, top edge, bottom edge) because they are all curved. Only the cap edge has none: it is meant to wrinkle when the piece is turned inside out, which adds texture (Remy).
-- **Notch spacing is now a count between tabs**, not a distance: `TUBE_NOTCHES_BETWEEN_TABS` (default 3) and `FRILL_NOTCHES_BETWEEN_TABS` (default 7) = notches evenly spaced between each pair of neighbouring tabs. The old distance setting clashed with the tab positions. The bottom tube edge has no tabs, so it reuses the top edge's positions. No notch goes in the corner where the side seam joins (or where the frill strip's ends meet), so with an even count the middle notch of that gap is left out.
+- **Tube notches (updated 2026-11-17):** V notches about 6 mm deep on the tube seam allowances that remain (both side edges and the top edge) because they are all curved. Only the cap edge has none: it is meant to wrinkle when the piece is turned inside out, which adds texture (Remy).
+- **Notch spacing is now a count between tabs**, not a distance: `TUBE_NOTCHES_BETWEEN_TABS` (default 3) and `FRILL_NOTCHES_BETWEEN_TABS` (default 7) = notches evenly spaced between each pair of neighbouring tabs. The old distance setting clashed with the tab positions. No notch goes in the corner where the side seam joins (or where the frill strip's ends meet), so with an even count the middle notch of that gap is left out.
+- **No seam allowance on the bottom edge of the tube** (Remy, 2026-11-17). The bottom edge has no notches either.
+- **Wavy, round-ended fringe (2026-11-17):** every fringe strand has a round tip and the slits are waves. `FRILL_WAVE` (slider in the app, mm of wave height, 0 = straight; releasing the slider rebuilds) and `FRILL_WAVE_LENGTH`. All slits are the same wave shifted sideways, so the strands nest exactly; the wave eases to zero at both ends of each strand so the tips are clean semicircles. The strip's two ends are the same wave, so they join into the ring. Strip is up to the wave height wider than the ring circumference at its ends. Defaults 3 mm / 40 mm are guesses.
 - Adjustable (top of each card in the app): height, diameter bottom / middle / top, frill length, frill width.
 
 ## What's here
@@ -30,7 +32,7 @@ The profile is a smooth curve (quadratic) through the three diameters. A smooth 
 - Odd settings run (bulge, long frill, band, no notches, strong taper); too-narrow settings give a clear error.
 
 ## Assumed, not decided (confirm with Remy)
-- Defaults: bottom and top 150 mm, middle 130 mm; frill width 60 mm; seam allowance 12 mm on every edge (including the open bottom edge, no hem); fabric 1470 mm; tabs 12 mm every 125 mm.
+- Defaults: bottom and top 150 mm, middle 130 mm; frill width 60 mm; seam allowance 12 mm on every edge except the tube's bottom edge (none); fabric 1470 mm; tabs 12 mm every 125 mm.
 - The profile is a quadratic through the three diameters (smooth, no straight middle section).
 - Frill length 0 = exactly the top circumference (pi x top diameter). A longer strip gathers, a shorter one leaves a gap (the tool warns).
 - Frill notch width is worked out from the circle (each notch takes out its share of the extra allowance length), not a fixed angle. Tube notches use a fixed 50 degree V like the cone worm. Default counts (3 and 7) are guesses.
