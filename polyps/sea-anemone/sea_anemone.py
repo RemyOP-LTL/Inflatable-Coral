@@ -3,7 +3,7 @@
 What it makes (all lengths in millimetres):
   1. TUBE   one piece of woven nylon with ONE straight seam down its side. The tube is a smooth shape: wider at the
             bottom, narrower in the middle, wider again at the top (three diameters you choose). Because the shape
-            curves, the two flat side edges are curved too, so they get V notches in the seam allowance.
+            curves, the two flat side edges are curved too, so they get V notches in the seam allowance (as do the top and bottom edges).
   2. CAP    a flat disk that closes the top of the tube.
   3. FRILL  ONE long straight strip sewn into the ring seam between the tube top and the cap. Its sewn edge gets V notches
             so the straight strip can bend into a circle. The part that stands out is slit into FRINGE_WIDTH strands
@@ -48,16 +48,16 @@ FRILL_WIDTH = 60.0          # ASSUMED. Cut width of the frill strip: seam allowa
 FRINGE_WIDTH = 6.0          # the standing-out part of the frill is slit into strands this wide
 FRILL_BAND = 0.0            # solid (unslit) band between the sew line and the fringe. 0 = fringe starts at the sew line
 FRILL_NOTCH_DEPTH = 9.0     # ASSUMED (Remy: 3/8 in = 9.5 mm leaving 3 mm). V notches in the frill's seam allowance (0 = none)
-FRILL_NOTCH_SPACING = 15.0  # ASSUMED. Distance between those notches (their width is worked out from the circle)
+FRILL_NOTCHES_BETWEEN_TABS = 7.0  # ASSUMED. How many notches go between each pair of neighbouring ring tabs on the frill (0 = none). Their width is worked out from the circle
 SEAM = 12.0                 # seam allowance on every edge
-TUBE_NOTCH_DEPTH = 6.0      # Remy: about 6 mm. V notches in the allowance of the two curved side edges of the tube (0 = none)
-TUBE_NOTCH_SPACING = 25.0   # ASSUMED. Distance between those notches
+TUBE_NOTCH_DEPTH = 6.0      # Remy: about 6 mm. V notches in the allowance of the tube: both side edges, the top edge and the bottom edge (0 = none)
+TUBE_NOTCHES_BETWEEN_TABS = 3.0   # ASSUMED. How many notches go between each pair of neighbouring tabs along those edges (the bottom edge has no tabs; it uses the same positions as the top)
 FABRIC_WIDTH = 1470.0       # ASSUMED usable fabric width (about 58 in), for the fit check
 TAB_SIZE = 12.0             # alignment tabs are this-size squares
 TAB_SPACING = 125.0         # about one tab every this many mm of seam
 
 NAMES = ["HEIGHT", "DIAMETER_BOTTOM", "DIAMETER_MIDDLE", "DIAMETER_TOP", "FRILL_LENGTH", "FRILL_WIDTH", "FRINGE_WIDTH",
-         "FRILL_BAND", "FRILL_NOTCH_DEPTH", "FRILL_NOTCH_SPACING", "SEAM", "TUBE_NOTCH_DEPTH", "TUBE_NOTCH_SPACING",
+         "FRILL_BAND", "FRILL_NOTCH_DEPTH", "FRILL_NOTCHES_BETWEEN_TABS", "SEAM", "TUBE_NOTCH_DEPTH", "TUBE_NOTCHES_BETWEEN_TABS",
          "FABRIC_WIDTH", "TAB_SIZE", "TAB_SPACING"]
 
 
@@ -197,6 +197,13 @@ def tab_positions(lo, hi, spacing):
     return list(np.linspace(lo, hi, k + 1))
 
 
+def ring_notch_fracs(tab_f, n):
+    """Notch positions round a closed ring (as fractions 0..1): n evenly spaced notches between each pair of neighbouring
+    tabs. The tabs are evenly spaced, so this is one even spacing all the way round with a tab in every (n+1)th place."""
+    m = len(tab_f)
+    return sorted((f + k / (m * (n + 1))) % 1.0 for f in tab_f for k in range(1, n + 1))
+
+
 def v_notch(p, t, n, depth, half_w, out=2.0):
     """A V cut into the seam allowance: tip `depth` in from the cut edge, opening beyond it. p = point on the sew line,
     n = outward direction, t = along the edge."""
@@ -240,24 +247,38 @@ def build():
         squares.append(tab_square(p, t, n, SEAM, TAB_SIZE))
         labels.append((p + n * (SEAM + h), lab))
     cut = unary_union([body] + squares)
-    # --- notches in the allowance along the two curved side edges
-    n_tube_notches = 0
+    # --- notches in the allowance, n between each pair of tabs: both side edges, the top edge, the bottom edge
+    n_tube_notches = n_skipped = 0
     depth = min(TUBE_NOTCH_DEPTH, SEAM - 2.0)
-    if depth > 0.5:
-        if TUBE_NOTCH_SPACING < 3:
-            raise SystemExit("Tube notch spacing must be at least 3 mm.")
+    n_between = int(round(TUBE_NOTCHES_BETWEEN_TABS))
+    if depth > 0.5 and n_between > 0:
+        tabs_union = unary_union(squares)
+        half_w = depth * math.tan(math.radians(25))                       # a 50 degree V
         cutters = []
-        sn = 15.0
-        while sn < T.S - 15.0:
-            if all(abs(sn - ts) > 1.2 * TAB_SIZE for ts in side_s):
+
+        def add_notch(p, t):
+            nonlocal n_tube_notches, n_skipped
+            n = outward(p, t, outline)
+            c = v_notch(p, t, n, depth, half_w)
+            if c.distance(tabs_union) < 1.5:                               # would run into a tab
+                n_skipped += 1
+                return
+            cutters.append(c)
+            n_tube_notches += 1
+        for a_, b_ in zip(side_s[:-1], side_s[1:]):                       # side edges: between each pair of numbered tabs
+            for k in range(1, n_between + 1):
+                sn = a_ + (b_ - a_) * k / (n_between + 1)
                 for side in (-1, 1):
-                    p, t = T.edge_frame(sn, side)
-                    n = outward(p, t, outline)
-                    cutters.append(v_notch(p, t, n, depth, depth * math.tan(math.radians(25))))
-                n_tube_notches += 2
-            sn += TUBE_NOTCH_SPACING
+                    add_notch(*T.edge_frame(sn, side))
+        for f in ring_notch_fracs(ring_f, n_between):                     # top edge (between the lettered tabs), bottom edge (same places)
+            if min(f, 1 - f) * 2 * math.pi * min(T.rt, T.rb) < 1.5 * SEAM:   # not in the corner where the side seam joins
+                continue
+            add_notch(*T.ring_frame(T.S, -math.pi * T.rt + f * 2 * math.pi * T.rt))
+            add_notch(*T.ring_frame(0.0, -math.pi * T.rb + f * 2 * math.pi * T.rb))
         if cutters:
             cut = cut.difference(unary_union(cutters))
+        if n_skipped:
+            warn.append(f"{n_skipped} tube notch(es) were left out because they would run into a tab. Use fewer notches between tabs.")
     if cut.geom_type != "Polygon" or len(cut.interiors) > 0:
         warn.append("The tube's cut outline touches itself. Make the seam allowance smaller or move the notches apart.")
         if cut.geom_type != "Polygon":
@@ -306,17 +327,15 @@ def build():
     n_fn = 0
     fdepth = min(FRILL_NOTCH_DEPTH, SEAM - 1.5)
     notch_w = 0.0
-    if fdepth > 0.5:
-        if FRILL_NOTCH_SPACING < 3:
-            raise SystemExit("Frill notch spacing must be at least 3 mm.")
-        k_n = max(1, round(Lf / FRILL_NOTCH_SPACING))
-        sp = Lf / k_n
-        R_eff = Lf / (2 * math.pi)                        # radius of the circle this strip forms at its sew line
-        notch_w = min(sp * SEAM / R_eff, 0.8 * sp)        # each notch closes its share of the allowance's extra length
+    f_between = int(round(FRILL_NOTCHES_BETWEEN_TABS))
+    if fdepth > 0.5 and f_between > 0:
+        sp = Lf / (len(ring_f) * (f_between + 1))                     # distance between neighbouring notches
+        fracs = [f for f in ring_notch_fracs(ring_f, f_between) if min(f, 1 - f) * Lf > 1.5 * SEAM]   # none in the corner where the strip's ends meet
+        notch_w = min(2 * math.pi * SEAM / max(len(fracs), 1), 0.8 * sp)   # together they take out the allowance's extra length (2 pi x allowance)
         fcutters = []
-        for k in range(k_n):
-            x = (k + 0.5) * sp
-            if all(abs(x - tx) > 1.2 * TAB_SIZE for tx in tab_x):
+        for f in fracs:
+            x = f * Lf
+            if True:
                 fcutters.append(Polygon([(x, fdepth), (x - notch_w / 2 * (fdepth + 2) / fdepth, -2),
                                          (x + notch_w / 2 * (fdepth + 2) / fdepth, -2)]))
                 n_fn += 1
@@ -385,11 +404,11 @@ def report(info):
           f"  Frill                           one strip {info['frill_len']:.0f} x {info['frill_w']:.0f} mm; {SEAM:g} mm seam allowance"
           + (f", {FRILL_BAND:g} mm solid band" if FRILL_BAND > 0 else "")
           + f", {info['F']:.0f} mm of fringe slit into {info['n_slits']} strands {info['strand']:.1f} mm wide",
-          (f"  Frill seam notches              {info['n_frill_notches']} V notches, {min(FRILL_NOTCH_DEPTH, SEAM - 1.5):g} mm deep, "
+          (f"  Frill seam notches              {info['n_frill_notches']} V notches, {FRILL_NOTCHES_BETWEEN_TABS:g} between each pair of tabs, {min(FRILL_NOTCH_DEPTH, SEAM - 1.5):g} mm deep, "
            f"{info['notch_w']:.1f} mm wide at the cut edge (width worked out from the circle)") if info["n_frill_notches"]
           else "  Frill seam notches              none",
-          (f"  Tube seam notches               {info['n_tube_notches']} V notches, {min(TUBE_NOTCH_DEPTH, SEAM - 2.0):g} mm deep, "
-           f"every {TUBE_NOTCH_SPACING:g} mm along both side edges") if info["n_tube_notches"] else "  Tube seam notches               none",
+          (f"  Tube seam notches               {info['n_tube_notches']} V notches, {TUBE_NOTCHES_BETWEEN_TABS:g} between each pair of tabs, {min(TUBE_NOTCH_DEPTH, SEAM - 2.0):g} mm deep, "
+           f"on both side edges and the top and bottom edges (the cap edge has none)") if info["n_tube_notches"] else "  Tube seam notches               none",
           f"  Alignment tabs                  {TAB_SIZE:g} mm squares: {info['side_tabs']} numbered pairs on the side seam, "
           f"{info['ring_tabs']} lettered sets (tube top, cap, frill) round the ring",
           f"  Pieces to cut                   {info['pieces']}", ""]

@@ -8,7 +8,8 @@ A third polyp design, started 2026-11-17 on branch `polyp-2026-11-17-sea-anemone
 - **Cap:** a flat disk that closes the top of the tube.
 - **Frill:** one straight strip sewn into the ring seam between the tube top and the cap, same idea as the cone worm. Its sewn edge is V-notched so the straight strip can bend into a circle. The free part is slit into 6 mm strands (laser cut).
 - **Frill notches:** about 9.5 mm (3/8 in) deep, leaving about 3 mm. Fallback if that is too weak: notch deeper and keep a solid, unslit band (setting `FRILL_BAND`, e.g. 6 mm = 1/4 in) between the sew line and the fringe.
-- **Tube notches:** V notches about 6 mm deep along both curved side edges.
+- **Tube notches (updated 2026-11-17):** V notches about 6 mm deep on ALL tube seam allowances (both side edges, top edge, bottom edge) because they are all curved. Only the cap edge has none: it is meant to wrinkle when the piece is turned inside out, which adds texture (Remy).
+- **Notch spacing is now a count between tabs**, not a distance: `TUBE_NOTCHES_BETWEEN_TABS` (default 3) and `FRILL_NOTCHES_BETWEEN_TABS` (default 7) = notches evenly spaced between each pair of neighbouring tabs. The old distance setting clashed with the tab positions. The bottom tube edge has no tabs, so it reuses the top edge's positions. No notch goes in the corner where the side seam joins (or where the frill strip's ends meet), so with an even count the middle notch of that gap is left out.
 - Adjustable (top of each card in the app): height, diameter bottom / middle / top, frill length, frill width.
 
 ## What's here
@@ -29,11 +30,11 @@ The profile is a smooth curve (quadratic) through the three diameters. A smooth 
 - Odd settings run (bulge, long frill, band, no notches, strong taper); too-narrow settings give a clear error.
 
 ## Assumed, not decided (confirm with Remy)
-- Defaults: bottom and top 150 mm, middle 130 mm; frill width 60 mm; seam allowance 12 mm on every edge (including the open bottom edge, no hem); frill notch spacing 15 mm, tube notch spacing 25 mm; fabric 1470 mm; tabs 12 mm every 125 mm.
+- Defaults: bottom and top 150 mm, middle 130 mm; frill width 60 mm; seam allowance 12 mm on every edge (including the open bottom edge, no hem); fabric 1470 mm; tabs 12 mm every 125 mm.
 - The profile is a quadratic through the three diameters (smooth, no straight middle section).
 - Frill length 0 = exactly the top circumference (pi x top diameter). A longer strip gathers, a shorter one leaves a gap (the tool warns).
-- Frill notch width is worked out from the circle (each notch takes out its share of the extra allowance length), not a fixed angle. Tube notches use a fixed 50 degree V like the cone worm.
-- No notches on the cap disk edge or on the top and bottom edges of the tube. Tell Claude if the cap needs them.
+- Frill notch width is worked out from the circle (each notch takes out its share of the extra allowance length), not a fixed angle. Tube notches use a fixed 50 degree V like the cone worm. Default counts (3 and 7) are guesses.
+- No notches on the cap disk edge (on purpose, see above).
 - The two ends of the frill strip are left to be joined by hand (no extra allowance for an end seam).
 - Ring tabs: lettered A, B, ... on the tube top edge, cap and frill; side seam tabs numbered 1, 2, ...
 
