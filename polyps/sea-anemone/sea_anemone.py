@@ -41,14 +41,14 @@ from shapely.ops import unary_union
 # ----------------------------------------------------------------------------- settings (millimetres)
 HEIGHT = 250.0              # height of the tube (bottom opening to the cap), measured straight up the axis
 DIAMETER_BOTTOM = 150.0     # ASSUMED. Slightly flared base
-LOWER_HEIGHT = 60.0         # lower control point of the tube's cross-section curve: how far up from the bottom
-LOWER_DIAMETER = 135.0      # ... its diameter
-LOWER_ANGLE = -5.0          # ... tangent direction in degrees from the tube's axis (0 = straight up, + = widening upward, - = narrowing upward)
-LOWER_LENGTH = 35.0         # ... tangent handle length in mm: how far the point's direction holds the curve before it bends
-UPPER_FROM_TOP = 60.0       # upper control point: how far down from the top
-UPPER_DIAMETER = 135.0      # ... its diameter
-UPPER_ANGLE = 5.0           # ... tangent direction, same rules as the lower point
-UPPER_LENGTH = 35.0         # ... tangent handle length in mm
+LOWER_HEIGHT = 80.0         # lower control point of the tube's cross-section curve: how far up from the bottom
+LOWER_DIAMETER = 133.0      # ... its diameter
+LOWER_ANGLE = -3.0          # ... tangent direction in degrees from the tube's axis (0 = straight up, + = widening upward, - = narrowing upward)
+LOWER_LENGTH = 40.0         # ... tangent handle length in mm: how far the point's direction holds the curve before it bends
+UPPER_FROM_TOP = 80.0       # upper control point: how far down from the top
+UPPER_DIAMETER = 133.0      # ... its diameter
+UPPER_ANGLE = 3.0           # ... tangent direction, same rules as the lower point
+UPPER_LENGTH = 40.0         # ... tangent handle length in mm
 DIAMETER_TOP = 150.0        # ASSUMED. Slightly flared top. The cap disk and the frill ring match this
 FRILL_STRIP_LENGTH = 0.0    # length of the frill strip round the ring. 0 = exactly the top circumference (pi x top diameter). More = it gathers
 FRILL_LENGTH = 48.0         # ASSUMED. How far the frill stands out (the fringe). The strip's cut width is this + seam allowance + solid band
@@ -119,8 +119,7 @@ def profile_controls():
     d3 = unit(np.array(P[3]) - np.array(P[2]))
     dirs = [d0, np.array([math.cos(math.radians(LOWER_ANGLE)), math.sin(math.radians(LOWER_ANGLE))]),
             np.array([math.cos(math.radians(UPPER_ANGLE)), math.sin(math.radians(UPPER_ANGLE))]), d3]
-    lens = [float(np.hypot(*(np.array(P[1]) - np.array(P[0])))) / 3, LOWER_LENGTH, UPPER_LENGTH,
-            float(np.hypot(*(np.array(P[3]) - np.array(P[2])))) / 3]
+    lens = [0.0, LOWER_LENGTH, UPPER_LENGTH, 0.0]            # the bottom and top points have no handle of their own: the curve reaches them at whatever angle the neighbouring handle gives
     return [np.array(q) for q in P], dirs, lens
 
 

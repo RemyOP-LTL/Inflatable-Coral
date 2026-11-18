@@ -484,7 +484,7 @@ function profCtl(v) {
   const un = (a, b) => { const dz = b[0] - a[0], dr = b[1] - a[1], n = Math.hypot(dz, dr) || 1; return [dz / n, dr / n, n]; };
   const u0 = un(P[0], P[1]), u3 = un(P[2], P[3]);
   return {P, d: [[u0[0], u0[1]], [Math.cos(rad(v.LOWER_ANGLE)), Math.sin(rad(v.LOWER_ANGLE))], [Math.cos(rad(v.UPPER_ANGLE)), Math.sin(rad(v.UPPER_ANGLE))], [u3[0], u3[1]]],
-          l: [u0[2] / 3, v.LOWER_LENGTH, v.UPPER_LENGTH, u3[2] / 3]};
+          l: [0, v.LOWER_LENGTH, v.UPPER_LENGTH, 0]};
 }
 function profCurve(c, m = 60) {
   const out = [];
