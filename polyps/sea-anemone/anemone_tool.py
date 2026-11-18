@@ -219,7 +219,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200 if p else 404, json.dumps(p or {"error": "No such snapshot."}), "application/json")
         elif path.startswith("/out/"):
             parts = path.split("/")[2:]
-            ok = len(parts) == 2 and re.fullmatch(r"[0-9a-f]{12}", parts[0]) and re.fullmatch(r"sea-anemone(-detailed|-outline)?\.(png|svg|dxf|pdf|txt)", parts[1])
+            ok = len(parts) == 2 and re.fullmatch(r"[0-9a-f]{12}", parts[0]) and re.fullmatch(r"sea-anemone(-detailed|-outline)?\.(svg|dxf|pdf|txt)|preview-(detailed|outline)\.svg|picture-3d\.png", parts[1])
             f = os.path.join(OUT, *parts) if ok else None
             if f and os.path.isfile(f):
                 ext = f.rsplit(".", 1)[-1]
@@ -318,6 +318,9 @@ PAGE = r"""<!doctype html>
   #load { width:100%; margin-top:8px; font:inherit; padding:5px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
   .sw { display:inline-flex; align-items:center; gap:6px; font-weight:400; } .sw input { position:absolute; opacity:0; } .sw .track { width:36px; height:20px; border-radius:10px; background:var(--line); position:relative; transition:.15s; } .sw .track::after { content:''; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:.15s; } .sw input:checked + .track { background:var(--accent); } .sw input:checked + .track::after { left:18px; }
   .derived { font-size:13px; color:var(--mute); }
+  .zoombar { display:flex; gap:6px; align-items:center; margin:4px 0 6px; } .zoombar button { width:34px; margin:0; padding:3px 0; } .zoombar button#zfit { width:auto; padding:3px 12px; }
+  .viewer { background:#1c1b1a; border-radius:8px; overflow:auto; max-height:72vh; cursor:grab; } .viewer.drag { cursor:grabbing; } .viewer img { display:block; width:100%; max-width:none; margin:0; border-radius:0; background:none; user-select:none; }
+  .viewer3d { background:#1c1b1a; border-radius:8px; margin-top:10px; } .viewer3d img { display:block; max-width:520px; width:100%; margin:0 auto; background:none; }
 </style></head><body>
 <header><h1>Sea Anemone</h1><span class="derived">Sea anemone polyp pattern. Everything in millimetres. Type them, press Rebuild, pick Detailed or Laser cut, save the PDF for the laser.</span>
   <span id="ver" class="derived" style="margin-left:auto"></span>
@@ -337,7 +340,9 @@ PAGE = r"""<!doctype html>
     <div class="card" id="card"><h2>Pattern <span id="busy" class="derived"></span></h2>
       <div id="warnings"></div>
       <div class="seg"><button id="v-detailed" class="on" type="button">Detailed</button><button id="v-outline" type="button">Laser cut</button></div>
-      <img id="pic" alt="">
+      <div class="zoombar"><button id="zout" type="button" class="secondary">&minus;</button><button id="zin" type="button" class="secondary">+</button><button id="zfit" type="button" class="secondary">Fit</button><span class="derived">Scroll to zoom, drag to move, double-click to fit.</span></div>
+      <div class="viewer" id="viewer"><img id="pic" alt="" draggable="false"></div>
+      <div id="pic3dbox"><div class="viewer3d"><img id="pic3d" alt=""></div><p class="derived">The finished anemone, inflated: a picture, not a simulation. The cap puffs into a dome with the seam on the rounded corner; the frill is blown up by air from the base. No motion.</p></div>
       <p id="dlhelp" class="derived"></p>
       <p><a id="pdf" href="#">Save PDF</a> &nbsp; <a id="dxf" href="#">Save DXF</a> &nbsp; <a id="svg" href="#">Save SVG</a></p>
       <div id="dlmsg" class="derived"></div>
@@ -353,7 +358,7 @@ PAGE = r"""<!doctype html>
 const META = __META__;
 const $ = id => document.getElementById(id);
 const vals = {...META.defaults};
-let seq = 0;
+let seq = 0, zoom = 1, shownView = '';
 const secs = {};
 let built = '', curKey = '', snapNames = [], view = 'detailed', named = null;   // named = {cfg, name}: the settings that already have a saved snapshot name
 
@@ -432,11 +437,30 @@ const HELP = {detailed: 'Exports every line shown (cut, sew, tab labels), true s
               outline: 'Exports only the cut lines the laser follows (the frill is one closed loop that doubles back along each slit), true size in mm, no scales or grid.'};
 function showView() {
   $('v-detailed').classList.toggle('on', view === 'detailed'); $('v-outline').classList.toggle('on', view === 'outline');
-  if (curKey) $('pic').src = '/out/' + curKey + '/sea-anemone' + (view === 'outline' ? '-outline' : '') + '.png';
+  if (curKey) { $('pic').src = '/out/' + curKey + '/preview-' + view + '.svg'; $('pic3d').src = '/out/' + curKey + '/picture-3d.png'; }
+  $('pic3dbox').style.display = view === 'detailed' ? '' : 'none';
+  if (view !== shownView) { shownView = view; zoomTo(1); }
   $('dlhelp').textContent = HELP[view];
 }
 $('v-detailed').onclick = () => { view = 'detailed'; showView(); };
 $('v-outline').onclick = () => { view = 'outline'; showView(); };
+// zoom and pan the flat-pattern preview (the SVG is resized, so it stays sharp)
+const viewer = $('viewer');
+function zoomTo(k, cx, cy) {
+  const img = $('pic');
+  k = Math.min(Math.max(k, 1), 14);
+  if (cx === undefined) { cx = viewer.clientWidth / 2; cy = viewer.clientHeight / 2; }
+  const fx = (viewer.scrollLeft + cx) / img.clientWidth, fy = (viewer.scrollTop + cy) / (img.clientHeight || 1);
+  zoom = k; img.style.width = (100 * k) + '%';
+  viewer.scrollLeft = fx * img.clientWidth - cx; viewer.scrollTop = fy * img.clientHeight - cy;
+}
+viewer.addEventListener('wheel', e => { e.preventDefault(); const r = viewer.getBoundingClientRect(); zoomTo(zoom * Math.exp(-e.deltaY / 300), e.clientX - r.left, e.clientY - r.top); }, {passive: false});
+$('zin').onclick = () => zoomTo(zoom * 1.5); $('zout').onclick = () => zoomTo(zoom / 1.5); $('zfit').onclick = () => zoomTo(1);
+viewer.addEventListener('dblclick', () => zoomTo(1));
+let dragging = null;
+viewer.addEventListener('mousedown', e => { dragging = {x: e.clientX, y: e.clientY, l: viewer.scrollLeft, t: viewer.scrollTop}; viewer.classList.add('drag'); e.preventDefault(); });
+window.addEventListener('mousemove', e => { if (dragging) { viewer.scrollLeft = dragging.l - (e.clientX - dragging.x); viewer.scrollTop = dragging.t - (e.clientY - dragging.y); } });
+window.addEventListener('mouseup', () => { dragging = null; viewer.classList.remove('drag'); });
 showView();
 function askName(ext) {
   if (!curKey) return;

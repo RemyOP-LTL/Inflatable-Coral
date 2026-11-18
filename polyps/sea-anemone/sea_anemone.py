@@ -14,7 +14,7 @@ cap and frill). Tack matching tabs together, then sew.
 Outputs, in the folder given with --out:
   <name>-detailed.pdf/.svg/.dxf   every line, tab labels included, true size in mm
   <name>-outline.pdf/.svg/.dxf    only the cut lines for the laser (the frill is one closed loop that doubles back along each slit)
-  <name>.png (flat pieces + 3D sketch) and <name>-outline.png   the two previews
+  preview-detailed.svg, preview-outline.svg (dark-background previews for the app) and picture-3d.png (the inflated picture)
   <name>.txt      the numbers and the checks
 
 Run:  python3 sea_anemone.py --out some-folder
@@ -585,50 +585,56 @@ def write_dxf(path, pieces, detailed):
         f.write("\n".join(code) + "\n")
 
 
+BG = "#1c1b1a"            # the dark background of the previews in the app (exports for the laser are not affected)
+
+
 def _axes(ax):
-    ax.set_aspect("equal"); ax.grid(alpha=.2); ax.set_xlabel("mm"); ax.set_ylabel("mm")
-    sx = ax.secondary_xaxis("top", functions=(lambda v: v / 25.4, lambda v: v * 25.4)); sx.set_xlabel("inches")
-    sy = ax.secondary_yaxis("right", functions=(lambda v: v / 25.4, lambda v: v * 25.4)); sy.set_ylabel("inches")
+    ax.set_aspect("equal")
+    ax.grid(alpha=.12, color="#ffffff")
+    ax.set_xlabel("mm", color="#bbbbbb"); ax.set_ylabel("mm", color="#bbbbbb")
+    sx = ax.secondary_xaxis("top", functions=(lambda v: v / 25.4, lambda v: v * 25.4)); sx.set_xlabel("inches", color="#bbbbbb")
+    sy = ax.secondary_yaxis("right", functions=(lambda v: v / 25.4, lambda v: v * 25.4)); sy.set_ylabel("inches", color="#bbbbbb")
+    for a in (ax, sx, sy):
+        a.tick_params(colors="#aaaaaa")
+    for sp in ax.spines.values():
+        sp.set_color("#555555")
 
 
-def draw_png_outline(path, pieces):
-    """Preview of the laser view: the flat pieces and only their cut lines (axes in mm and inches to read sizes)."""
-    items, w, h = export_items(pieces, False)
-    fig = plt.figure(figsize=(10, max(4.0, 10 * h / w + 1.2)))
-    ax = fig.add_subplot(111)
-    for k, a, t in items:
-        ax.plot(a[:, 0], a[:, 1], color="#d00000", lw=0.9)
-    ax.set_xlim(0, w); ax.set_ylim(h, 0)
-    _axes(ax)
-    ax.set_title("Laser cut view: only the lines the laser follows (the frill is one closed loop that doubles back along each slit)", fontsize=10)
-    fig.tight_layout()
-    fig.savefig(path, dpi=100)
-    plt.close(fig)
-
-
-def draw_png(path, T, pieces, info):
-    fig = plt.figure(figsize=(16, 10))
-    gs = fig.add_gridspec(1, 2, width_ratios=[1.3, 1])
-    ax = fig.add_subplot(gs[0, 0])
-    items, w, h = export_items(pieces, True)
-    col = {"cut": ("#d00000", "-", 1.1), "sew": ("#1d4ed8", "--", 0.9), "mark": ("#777", ":", 1.0)}
+def draw_preview(path, pieces, detailed):
+    """The flat-pattern preview for the app, as a dark-background SVG (vector, so it stays sharp when zoomed). Lines keep a
+    constant thickness on screen when zoomed. Detailed = every line and label; laser view = cut lines only."""
+    import re
+    matplotlib.rcParams["svg.fonttype"] = "none"
+    items, w, h = export_items(pieces, detailed)
+    fig = plt.figure(figsize=(14, max(4.0, 14 * h / w + 1.3)), facecolor=BG)
+    ax = fig.add_subplot(111, facecolor=BG)
+    col = {"cut": ("#ff6a5c", "-", 1.2), "sew": ("#6aa7e8", "--", 1.0), "mark": ("#999999", ":", 1.0)}
     for k, a, t in items:
         if k == "label":
-            ax.text(a[0][0], a[0][1], t, fontsize=6, ha="center", va="center", color="#d00000")
+            ax.text(a[0][0], a[0][1], t, fontsize=6, ha="center", va="center", color="#ff9a8f")
         elif k == "title":
-            ax.text(a[0][0], a[0][1], t, fontsize=8, color="#444")
+            ax.text(a[0][0], a[0][1], t, fontsize=8, color="#d0d0d0")
         else:
             ax.plot(a[:, 0], a[:, 1], color=col[k][0], ls=col[k][1], lw=col[k][2])
     ax.set_xlim(0, w); ax.set_ylim(h, 0)
     _axes(ax)
-    ax.set_title("Flat pieces. Red = cut, blue dashed = sew, lettered / numbered squares = alignment tabs that go together", fontsize=10)
-    a3 = fig.add_subplot(gs[0, 1])
-    import anemone_3d
-    shape = anemone_3d.draw(a3, T, T.S, DIAMETER_TOP / 2, info["F"], info["strand"], info["n_slits"], FRILL_WAVE, FRILL_WAVE_LENGTH)
-    a3.set_title("Finished anemone, inflated (a picture, not a simulation). No motion.\n"
-                 "Cap puffs into a dome, seam on the rounded corner; frill blown up by air from the base.", fontsize=9)
     fig.tight_layout()
-    fig.savefig(path, dpi=100)
+    fig.savefig(path, format="svg", facecolor=BG)
+    plt.close(fig)
+    with open(path) as f:
+        svg = f.read()
+    svg = re.sub(r'(<path [^>]*?style=")', r'\1vector-effect: non-scaling-stroke; ', svg)
+    with open(path, "w") as f:
+        f.write(svg)
+
+
+def draw_picture(path, T, info):
+    """The inflated 3D picture (white anemone on the dark background)."""
+    fig = plt.figure(figsize=(8, 9.5), facecolor=BG)
+    ax = fig.add_axes([0, 0, 1, 1], facecolor=BG)
+    import anemone_3d
+    anemone_3d.draw(ax, T, T.S, DIAMETER_TOP / 2, info["F"], info["strand"], info["n_slits"], FRILL_WAVE, FRILL_WAVE_LENGTH)
+    fig.savefig(path, dpi=130, facecolor=BG)
     plt.close(fig)
 
 
@@ -638,8 +644,9 @@ def make(out, name="sea-anemone"):
     for view, detailed in (("detailed", True), ("outline", False)):     # the two views the page can show, each exported three ways
         for ext, fn in (("svg", write_svg), ("pdf", write_pdf), ("dxf", write_dxf)):
             fn(os.path.join(out, f"{name}-{view}.{ext}"), pieces, detailed)
-    draw_png_outline(os.path.join(out, name + "-outline.png"), pieces)
-    draw_png(os.path.join(out, name + ".png"), T, pieces, info)
+    draw_preview(os.path.join(out, "preview-detailed.svg"), pieces, True)       # the two zoomable previews and the 3D picture for the app
+    draw_preview(os.path.join(out, "preview-outline.svg"), pieces, False)
+    draw_picture(os.path.join(out, "picture-3d.png"), T, info)
     text = report(info)
     with open(os.path.join(out, name + ".txt"), "w") as f:
         f.write(text + "\n")

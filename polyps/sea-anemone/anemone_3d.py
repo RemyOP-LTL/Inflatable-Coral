@@ -130,7 +130,7 @@ def draw(ax, T, S_target, cap_radius, frill_len, strand, n_strands, wave, wave_l
         return np.stack([p @ right, p @ up], axis=-1), p @ cam
 
     polys, depth, colors, edges, widths = [], [], [], [], []
-    body = np.array(to_rgb("#e8618f"))
+    body = np.array([1.0, 1.0, 1.0])
     seamdark = 0.72
 
     def shade(n, base, k=1.0):
@@ -164,7 +164,7 @@ def draw(ax, T, S_target, cap_radius, frill_len, strand, n_strands, wave, wave_l
     seam_r = RR[np.argmin(np.abs(sg - s_seam))]
     seam_z = float(np.interp(s_seam, sg, Z0))
     n_str = max(8, min(int(n_strands), 160))
-    pal = [np.array(to_rgb(c)) for c in ("#ffd23f", "#ff7a3d", "#ff9bb5")]
+    pal = [np.array([1.0, 1.0, 1.0])]
     nseg = 18
     ds = frill_len / nseg
     lowfreq = sum(rng.normal() * np.sin(2 * math.pi * (f * np.arange(n_str) / n_str) + rng.uniform(0, 6.28)) for f in (2, 3, 5)) / 2.5
@@ -191,7 +191,7 @@ def draw(ax, T, S_target, cap_radius, frill_len, strand, n_strands, wave, wave_l
             tans.append(t)
         pts = np.array(pts)
         tans.append(tans[-1])
-        base = pal[i % 3]
+        base = pal[0] * (0.84 + 0.16 * rng.random())          # all white; each strand a slightly different tone so neighbours read apart
         hw = 0.5 * strand * 0.92
         wd = []
         for k in range(nseg + 1):
