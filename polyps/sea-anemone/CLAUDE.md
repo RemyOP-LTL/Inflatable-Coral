@@ -36,7 +36,7 @@ A third polyp design, started 2026-11-17 on branch `polyp-2026-11-17-sea-anemone
 - Pieces to cut: 4 (lower cone, upper cone, cap, frill). Each cone has its own straight seam. The two cones are joined at the ring seam (both arcs are exactly one circumference long).
 - Tabs: numbered `L1, L2` / `U1, U2` along the straight seams; lowercase `a, b, c` on the ring seam between the cones (both arcs); capital `A..D` on the top arc of the upper cone, the cap and the frill. No seam allowance on the open bottom edge of the lower cone (flush cut, as before).
 - Notches (6 mm deep, `TUBE_NOTCHES_BETWEEN_TABS` between each pair of ring tabs): on the arc edges that have allowance (ring seam, both sides, and the top edge). None on the straight seams (straight now), the open bottom edge or the cap.
-- 3D picture: the profile is the two cones, drawn with the corner at the ring seam softened by the picture's usual smoothing. Same inflated cap and wind-blown frill as before.
+- 3D picture: the profile is the two cones, with the ring seam between them drawn as a darker line with a few small gathers (the corner softened), drawn with the corner at the ring seam softened by the picture's usual smoothing. Same inflated cap and wind-blown frill as before.
 - Checked 2026-11-18: DXF read back with ezdxf (units mm, 4 closed loops, sizes match the report), PDF read back with pymupdf (4 paths, black 0.001 in). Odd shapes run: cylinders, widening cones, narrowing cones, a deep pinch (sector 216 degrees), tall tube.
 - Not done: more than two cones (the analysis says 3 would stray 1.4 mm instead of 2.3 mm from a smooth curve, 4 would stray 0.55 mm); real sample not sewn yet; the Mac window not tested.
 

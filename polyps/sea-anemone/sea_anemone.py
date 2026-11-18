@@ -625,7 +625,8 @@ def draw_picture(path, T, info):
     fig = plt.figure(figsize=(8, 9.5), facecolor=BG)
     ax = fig.add_axes([0, 0, 1, 1], facecolor=BG)
     import anemone_3d
-    anemone_3d.draw(ax, T, T.S, DIAMETER_TOP / 2, info["F"], info["strand"], info["n_slits"], FRILL_WAVE, FRILL_WAVE_LENGTH)
+    anemone_3d.draw(ax, T, T.S, DIAMETER_TOP / 2, info["F"], info["strand"], info["n_slits"], FRILL_WAVE, FRILL_WAVE_LENGTH,
+                    mid_frac=T.lower.L / T.S)
     fig.savefig(path, dpi=130, facecolor=BG)
     plt.close(fig)
 

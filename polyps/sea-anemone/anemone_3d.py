@@ -79,7 +79,7 @@ def profile(T, S_target, cap_radius):
     return r, z, len(rw) - 1
 
 
-def draw(ax, T, S_target, cap_radius, frill_len, strand, n_strands, wave, wave_len, azim=-58, elev=22, seed=11):
+def draw(ax, T, S_target, cap_radius, frill_len, strand, n_strands, wave, wave_len, azim=-58, elev=22, seed=11, mid_frac=None):
     rng = np.random.default_rng(seed)
     pr, pz, i_seam = profile(T, S_target, cap_radius)
     # resample the profile evenly by arc length so the patches are even
@@ -104,9 +104,13 @@ def draw(ax, T, S_target, cap_radius, frill_len, strand, n_strands, wave, wave_l
     ntheta = 120
     th = np.linspace(0, 2 * math.pi, ntheta + 1)
     # gathers (small wrinkles) round the seam, strongest on the cap side
+    s_mid = None if mid_frac is None else mid_frac * s_seam           # the ring seam between the two cones, at the same fraction of the tube fabric
     dist = (sg - s_seam)[:, None]
     env = np.exp(-(dist / 14.0) ** 2) * np.where(dist > 0, 1.0, 0.6)
     wr = (0.022 * np.sin(26 * th + 0.7) + 0.012 * np.sin(41 * th + 2.1) + 0.008 * np.sin(13 * th)) * env
+    if s_mid is not None:                                              # a few small gathers along the middle seam too (both arcs have the same length, so fewer than at the cap)
+        dm = (sg - s_mid)[:, None]
+        wr = wr + (0.006 * np.sin(31 * th + 1.3) + 0.004 * np.sin(17 * th + 0.4)) * np.exp(-(dm / 9.0) ** 2)
     RR = R0[:, None] * (1 + wr)
     X = RR * np.cos(th)[None, :]
     Y = RR * np.sin(th)[None, :]
@@ -140,7 +144,7 @@ def draw(ax, T, S_target, cap_radius, frill_len, strand, n_strands, wave, wave_l
     sx, dx = proj(np.stack([A, B, C, D], axis=-2))
     sc = sg[:-1] + (sg[1] - sg[0]) / 2
     for i in range(nprof - 1):
-        k = seamdark if abs(sc[i] - s_seam) < 2.0 else 1.0
+        k = seamdark if (abs(sc[i] - s_seam) < 2.0 or (s_mid is not None and abs(sc[i] - s_mid) < 1.6)) else 1.0
         for j in range(ntheta):
             col = shade(nrm[i, j], body, k)
             polys.append(sx[i, j])
