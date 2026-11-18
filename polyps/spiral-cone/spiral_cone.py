@@ -13,9 +13,9 @@ Alignment tabs: 12 mm squares sticking out of the cut edges at matching places a
 edges and the frill) and along the straight seam. Tack the tabs together, then sew.
 
 Outputs, in the folder given with --out:
-  <name>.dxf      only the cone-strip and frill cut outlines, true size, millimetres (for the laser)
-  <name>.svg      cut lines and sew lines at true size, for the laser (red = cut, blue = sew)
-  <name>.png      a picture of the flat pieces and a 3D sketch of the finished cone
+  <name>-detailed.pdf/.svg/.dxf   every line, tab numbers included, true size in mm
+  <name>-outline.pdf/.svg/.dxf    only the cut lines for the laser (one line per fringe slit), true size in mm
+  <name>.png (flat pieces + 3D sketch) and <name>-outline.png   the two previews
   <name>.txt      the numbers and the checks
 
 Run:  python3 spiral_cone.py --out some-folder
@@ -365,89 +365,133 @@ def title(name):
             "frill": "FRILL STRIP (cut 1). Sew along the blue line; the slits make the fringe"}[name]
 
 
-def write_svg(path, cut, pieces):
-    place, ymax = layout(cut, pieces)
-    x1 = max(float(a[:, 0].max()) + place[p.name][0] for p in pieces for k, a, t in p.items) + 25
-    style = {"cut": 'stroke="#d00000" stroke-width="0.5" fill="none"',
-             "sew": 'stroke="#1d4ed8" stroke-width="0.4" stroke-dasharray="3 2" fill="none"',
-             "mark": 'stroke="#777" stroke-width="0.4" stroke-dasharray="1.2 3" fill="none"'}
-    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{x1:.1f}mm" height="{ymax + 25:.1f}mm" viewBox="0 0 {x1:.2f} {ymax + 25:.2f}">',
-           '<!-- Units are millimetres. Red = cut, blue dashed = sew line, grey dotted = cuff line. Squares are alignment tabs. -->']
+def export_items(cut, pieces, detailed):
+    """Everything an export file draws, at true size in mm, y pointing down, shifted so the drawing starts 10 mm in
+    from the corner. detailed=False keeps only the cut lines (what the laser follows): outlines and one line per slit.
+    Returns (items, width, height); items are (kind, points, text) with kind cut / sew / mark / label / title."""
+    place, _ = layout(cut, pieces)
+    items = []
     for p in pieces:
         dx, dy = place[p.name]
         for k, a, t in p.items:
-            if k == "label":
-                out.append(f'<text x="{a[0][0] + dx:.2f}" y="{a[0][1] + dy + 1.8:.2f}" font-size="5" text-anchor="middle" '
-                           f'font-family="sans-serif" fill="#d00000">{t}</text>')
-            else:
-                pts = " ".join(f"{x + dx:.3f},{y + dy:.3f}" for x, y in a)
-                out.append(f'<polyline points="{pts}" {style[k]}/>')
-        bx, by = (cut.bounds[0] + 5, cut.bounds[1] + 12) if p.name == "cone" else (0.0, -5.0)
-        out.append(f'<text x="{bx + dx:.2f}" y="{by + dy:.2f}" font-size="9" font-family="sans-serif" fill="#555">{title(p.name)}</text>')
-    ty = ymax - 60
-    out.append(f'<rect x="25" y="{ty:.2f}" width="50" height="50" fill="none" stroke="#000" stroke-width="0.5"/>')
-    out.append(f'<text x="85" y="{ty + 30:.2f}" font-size="8" font-family="sans-serif">50 mm test square. '
-               f'Tabs with the same number go together (tack, then sew).</text>')
+            if k != "cut" and not detailed:
+                continue
+            items.append((k, a + np.array([dx, dy]), t))
+        if detailed:
+            bx, by = (cut.bounds[0] + 5, cut.bounds[1] + 12) if p.name == "cone" else (0.0, -5.0)
+            items.append(("title", np.array([[bx + dx, by + dy]]), title(p.name)))
+    allp = np.vstack([a for k, a, t in items])
+    lo = allp.min(axis=0) - 10.0
+    hi = allp.max(axis=0) + 10.0
+    if detailed:
+        hi[0] = max(hi[0], lo[0] + 90.0)
+    items = [(k, a - lo, t) for k, a, t in items]
+    return items, float(hi[0] - lo[0]), float(hi[1] - lo[1])
+
+
+def write_svg(path, cut, pieces, detailed):
+    items, w, h = export_items(cut, pieces, detailed)
+    style = {"cut": 'stroke="#d00000" stroke-width="0.5" fill="none"',
+             "sew": 'stroke="#1d4ed8" stroke-width="0.4" stroke-dasharray="3 2" fill="none"',
+             "mark": 'stroke="#777" stroke-width="0.4" stroke-dasharray="1.2 3" fill="none"'}
+    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.2f}mm" height="{h:.2f}mm" viewBox="0 0 {w:.3f} {h:.3f}">',
+           "<!-- Units are millimetres, true size. " + ("Red = cut, blue dashed = sew line, grey dotted = cuff line. Squares are alignment tabs. -->"
+                                                       if detailed else "Only the cut lines. -->")]
+    for k, a, t in items:
+        if k == "label":
+            out.append(f'<text x="{a[0][0]:.2f}" y="{a[0][1] + 1.8:.2f}" font-size="5" text-anchor="middle" font-family="sans-serif" fill="#d00000">{t}</text>')
+        elif k == "title":
+            out.append(f'<text x="{a[0][0]:.2f}" y="{a[0][1]:.2f}" font-size="9" font-family="sans-serif" fill="#555">{t}</text>')
+        else:
+            out.append(f'<polyline points="{" ".join(f"{x:.3f},{y:.3f}" for x, y in a)}" {style[k]}/>')
     out.append("</svg>")
     with open(path, "w") as f:
         f.write("\n".join(out))
 
 
-def write_dxf(path, cut, pieces):
-    """Laser file: only the cut outlines of the cone strip and the frill, true size, units = millimetres.
-    Plain ASCII DXF (R12 style), no extra libraries. Layer CUT = outlines, layer SLITS = frill fringe slits.
-    The y axis points up (the SVG one points down), so the cone looks the same as on the page."""
-    by = {p.name: p for p in pieces}
-    cb = cut.bounds
-    fr = by["frill"]
-    fa = [a for k, a, t in fr.items if k == "cut"]
-    gap = 50.0
-    place = {"cone": (-cb[0], -cb[1])}                                  # cone: lower-left corner at (0, 0)
-    place["frill"] = (0.0, (cb[3] - cb[1]) + gap)                       # frill: above it (SVG y), lifted by the gap
+def write_pdf(path, cut, pieces, detailed):
+    """True-size PDF: the page is exactly as big as the drawing (1 PDF point = 1/72 inch = 0.3528 mm), no margins
+    added by the program, no grid, no scales. Laser version: red hairlines, nothing else."""
+    items, w, h = export_items(cut, pieces, detailed)
+    fig = plt.figure(figsize=(w / 25.4, h / 25.4))
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(0, w); ax.set_ylim(h, 0); ax.axis("off")
+    fig.patch.set_visible(False)                      # no white background rectangle for the laser software to pick up
+    sty = {"cut": ("#ff0000", "-", 0.5 if detailed else 0.1), "sew": ("#1d4ed8", (0, (4, 3)), 0.4), "mark": ("#777777", ":", 0.4)}
+    for k, a, t in items:
+        if k == "label":
+            ax.text(a[0][0], a[0][1], t, fontsize=5, ha="center", va="center", color="#d00000")
+        elif k == "title":
+            ax.text(a[0][0], a[0][1], t, fontsize=7, ha="left", va="baseline", color="#555555")
+        else:
+            c_, ls, lw = sty[k]
+            ax.plot(a[:, 0], a[:, 1], color=c_, ls=ls, lw=lw, solid_capstyle="butt")
+    fig.savefig(path, format="pdf")
+    plt.close(fig)
+
+
+def write_dxf(path, cut, pieces, detailed):
+    """Laser/CAD file, true size, units = millimetres. Plain ASCII DXF (R12 style), no extra libraries.
+    Layers: CUT (closed outlines), SLITS (one line per fringe slit); detailed adds SEW, MARK, LABELS, TITLES.
+    The y axis points up (the SVG/PDF one points down), so it looks the same as on the page."""
+    items, w, h = export_items(cut, pieces, detailed)
     code = []
 
     def put(c, v):
         code.append(f"{c}\n{v}")
 
-    def poly(layer, pts, closed):
-        put(0, "POLYLINE"); put(8, layer); put(66, 1); put(70, 1 if closed else 0)
-        for x, y in pts:
-            put(0, "VERTEX"); put(8, layer); put(10, f"{x:.4f}"); put(20, f"{y:.4f}"); put(30, 0)
-        put(0, "SEQEND"); put(8, layer)
-
-    # flip y so up is up; shift the frill so its lowest point sits above the cone
-    def xf(a, name):
-        dx, dy = place[name]
-        return [(x + dx, -(y + dy)) for x, y in a]
-
-    cone_cut = [a for k, a, t in by["cone"].items if k == "cut"][0]
-    parts = {"cone": [("CUT", cone_cut, True)],
-             "frill": [("CUT" if i == 0 else "SLITS", a, i == 0) for i, a in enumerate(fa)]}
-    allpts = []
-    for name, lst in parts.items():
-        for layer, a, closed in lst:
-            pts = xf(a if not closed else a[:-1] if np.allclose(a[0], a[-1]) else a, name)
-            allpts += pts
-    xs_ = [x for x, y in allpts]; ys_ = [y for x, y in allpts]
+    ents = []
+    for k, a, t in items:
+        if k == "label" or k == "title":
+            ents.append(("LABELS" if k == "label" else "TITLES", "text", a[0], t))
+            continue
+        closed = len(a) > 3 and np.allclose(a[0], a[-1])
+        layer = {"cut": "CUT" if closed else "SLITS", "sew": "SEW", "mark": "MARK"}[k]
+        ents.append((layer, "poly", a[:-1] if closed else a, closed))
     put(0, "SECTION"); put(2, "HEADER")
     put(9, "$ACADVER"); put(1, "AC1009")
     put(9, "$INSUNITS"); put(70, 4)                                     # 4 = millimetres
     put(9, "$MEASUREMENT"); put(70, 1)                                  # 1 = metric
-    put(9, "$EXTMIN"); put(10, f"{min(xs_):.4f}"); put(20, f"{min(ys_):.4f}"); put(30, 0)
-    put(9, "$EXTMAX"); put(10, f"{max(xs_):.4f}"); put(20, f"{max(ys_):.4f}"); put(30, 0)
+    put(9, "$EXTMIN"); put(10, "0.0"); put(20, f"{-h:.4f}"); put(30, 0)
+    put(9, "$EXTMAX"); put(10, f"{w:.4f}"); put(20, "0.0"); put(30, 0)
     put(0, "ENDSEC")
-    put(0, "SECTION"); put(2, "TABLES"); put(0, "TABLE"); put(2, "LAYER"); put(70, 2)
-    for nm in ("CUT", "SLITS"):
-        put(0, "LAYER"); put(2, nm); put(70, 0); put(62, 1); put(6, "CONTINUOUS")   # colour 1 = red
+    layers = {"CUT": 1, "SLITS": 1, "SEW": 5, "MARK": 8, "LABELS": 1, "TITLES": 8}
+    put(0, "SECTION"); put(2, "TABLES"); put(0, "TABLE"); put(2, "LAYER"); put(70, len(layers))
+    for nm, col in layers.items():
+        put(0, "LAYER"); put(2, nm); put(70, 0); put(62, col); put(6, "CONTINUOUS")
     put(0, "ENDTAB"); put(0, "ENDSEC")
     put(0, "SECTION"); put(2, "ENTITIES")
-    for name, lst in parts.items():
-        for layer, a, closed in lst:
-            a2 = a[:-1] if closed and np.allclose(a[0], a[-1]) else a
-            poly(layer, xf(a2, name), closed)
+    for layer, kind, g, extra in ents:
+        if kind == "text":
+            put(0, "TEXT"); put(8, layer); put(10, f"{g[0]:.4f}"); put(20, f"{-g[1]:.4f}"); put(30, 0)
+            put(40, 5 if layer == "LABELS" else 9); put(1, extra)
+            if layer == "LABELS":
+                put(72, 1); put(11, f"{g[0]:.4f}"); put(21, f"{-g[1]:.4f}"); put(31, 0)
+        else:
+            put(0, "POLYLINE"); put(8, layer); put(66, 1); put(70, 1 if extra else 0)
+            for x, y in g:
+                put(0, "VERTEX"); put(8, layer); put(10, f"{x:.4f}"); put(20, f"{-y:.4f}"); put(30, 0)
+            put(0, "SEQEND"); put(8, layer)
     put(0, "ENDSEC"); put(0, "EOF")
     with open(path, "w") as f:
         f.write("\n".join(code) + "\n")
+
+
+def draw_png_outline(path, cut, pieces):
+    """Preview of the laser view: the flat pieces and only their cut lines (axes in mm and inches to read sizes)."""
+    items, w, h = export_items(cut, pieces, False)
+    fig = plt.figure(figsize=(10, max(4.0, 10 * h / w + 1.2)))
+    ax = fig.add_subplot(111)
+    for k, a, t in items:
+        ax.plot(a[:, 0], a[:, 1], color="#d00000", lw=0.9)
+    ax.set_xlim(0, w); ax.set_ylim(h, 0); ax.set_aspect("equal"); ax.grid(alpha=.2)
+    ax.set_xlabel("mm"); ax.set_ylabel("mm")
+    sx = ax.secondary_xaxis("top", functions=(lambda v: v / 25.4, lambda v: v * 25.4)); sx.set_xlabel("inches")
+    sy = ax.secondary_yaxis("right", functions=(lambda v: v / 25.4, lambda v: v * 25.4)); sy.set_ylabel("inches")
+    ax.set_title("Laser cut view: only the lines the laser follows (every fringe slit is a single line)", fontsize=10)
+    fig.tight_layout()
+    fig.savefig(path, dpi=100)
+    plt.close(fig)
 
 
 def draw_png(path, c, outline, cut, pieces, info):
@@ -505,8 +549,10 @@ def draw_png(path, c, outline, cut, pieces, info):
 def make(out, name="spiral-cone"):
     os.makedirs(out, exist_ok=True)
     c, outline, cut, pieces, info = build()
-    write_svg(os.path.join(out, name + ".svg"), cut, pieces)
-    write_dxf(os.path.join(out, name + ".dxf"), cut, pieces)
+    for view, detailed in (("detailed", True), ("outline", False)):     # the two views the page can show, each exported three ways
+        for ext, fn in (("svg", write_svg), ("pdf", write_pdf), ("dxf", write_dxf)):
+            fn(os.path.join(out, f"{name}-{view}.{ext}"), cut, pieces, detailed)
+    draw_png_outline(os.path.join(out, name + "-outline.png"), cut, pieces)
     draw_png(os.path.join(out, name + ".png"), c, outline, cut, pieces, info)
     text = report(info)
     with open(os.path.join(out, name + ".txt"), "w") as f:

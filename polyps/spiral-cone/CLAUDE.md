@@ -82,3 +82,12 @@ Seam edge lengths bottom and top: 41.521 in both. Open-end arc 19.295 in = pi x 
 - Page: DXF and SVG download links now open a small "Name this snapshot" box; a name is required, the BUILT values are saved as a snapshot, then the file downloads. Names: `<snapshot>_cone-and-frill-outline_mm.dxf` and `<snapshot>_pattern_mm.svg` (spaces become `_`).
 - `cone_window.py` now sets `webview.settings["ALLOW_DOWNLOADS"] = True`. Without it the Mac window ignored download links, so the old SVG link did nothing in the app. Not tested inside the real window (tested in the browser pane on a spare port).
 - Open: the separate cuff band is not in the DXF (only "frill and spiral" were asked for); say if it should be.
+
+## Laser cut view and PDF export (2026-11-17)
+- The pattern tile has a Detailed / Laser cut switch. Detailed = the old picture (flat pieces with sew lines, cuff line, numbered tabs, plus the 3D sketch). Laser cut = flat pieces only, cut lines only (preview has mm and inch axes).
+- Downloads (PDF, DXF, SVG) export whatever view is showing, with no scales, grid or test square. Names: `detailed_<snapshot>_mm.pdf` and `outline_<snapshot>_mm.pdf` (same for .dxf/.svg). Every download still forces naming and saving a snapshot first.
+- Files made per build (`spiral_cone.py`): `-detailed.{pdf,svg,dxf}`, `-outline.{pdf,svg,dxf}`, `.png`, `-outline.png`. Shared item list: `export_items()`.
+- PDF page = exactly the drawing plus 10 mm margin, 1 pt = 1/72 in (true size, no scaling needed). Outline PDF is red 0.1 pt hairlines only, no background rectangle, no text. Detailed PDF/DXF include labels and titles; detailed DXF layers: CUT, SLITS, SEW, MARK, LABELS, TITLES.
+- Each fringe slit is ONE line (61 lines of 63 mm in the default pattern, checked by reading the PDF and DXF back). Outlines are closed shapes. If the laser still shows doubled slit lines, tell Claude what the cutter software shows.
+- The separate cuff band (when on) is now included in all exports, DXF too (earlier DXF left it out).
+- Checked: PDF page 534.9 x 727.6 mm = SVG size; drawn extent 514.9 x 707.6 mm; cone width matches the report. Not tested in the real Mac window.

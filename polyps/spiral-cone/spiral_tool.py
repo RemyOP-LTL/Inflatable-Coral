@@ -187,16 +187,16 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200 if p else 404, json.dumps(p or {"error": "No such snapshot."}), "application/json")
         elif path.startswith("/out/"):
             parts = path.split("/")[2:]
-            ok = len(parts) == 2 and re.fullmatch(r"[0-9a-f]{12}", parts[0]) and parts[1].startswith("spiral-cone.")
+            ok = len(parts) == 2 and re.fullmatch(r"[0-9a-f]{12}", parts[0]) and re.fullmatch(r"spiral-cone(-detailed|-outline)?\.(png|svg|dxf|pdf|txt)", parts[1])
             f = os.path.join(OUT, *parts) if ok else None
             if f and os.path.isfile(f):
                 ext = f.rsplit(".", 1)[-1]
-                ctype = {"png": "image/png", "svg": "image/svg+xml", "dxf": "application/dxf", "txt": "text/plain"}.get(ext, "application/octet-stream")
+                ctype = {"png": "image/png", "svg": "image/svg+xml", "dxf": "application/dxf", "pdf": "application/pdf", "txt": "text/plain"}.get(ext, "application/octet-stream")
                 extra = None
-                if ext in ("svg", "dxf") and "dl=1" in self.path:      # downloads are named after the saved snapshot, with the units
+                if ext in ("svg", "dxf", "pdf") and "dl=1" in self.path:      # named: detailed_ or outline_ + the saved snapshot name + units
                     nm = snap_clean(parse_qs(urlparse(self.path).query).get("name", [""])[0]).replace(" ", "_")
-                    kind = "cone-and-frill-outline" if ext == "dxf" else "pattern"
-                    extra = {"Content-Disposition": f'attachment; filename="{nm}_{kind}_mm.{ext}"'}
+                    view = "outline" if "-outline." in parts[1] else "detailed"
+                    extra = {"Content-Disposition": f'attachment; filename="{view}_{nm}_mm.{ext}"'}
                 self.send(200, open(f, "rb").read(), ctype, extra)
             else:
                 self.send(404, "not found", "text/plain")
@@ -255,13 +255,14 @@ PAGE = r"""<!doctype html>
   .reset { background:none; border:none; color:var(--mute); text-decoration:underline; font-weight:400; width:auto; padding:0; margin:8px 0 0; }
   .sticky { position:sticky; top:0; z-index:5; }
   button:disabled { opacity:.4; cursor:default; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-bottom:8px; } .seg button { width:auto; margin:0; border:0; border-radius:0; background:var(--bg); color:var(--ink); padding:6px 14px; cursor:pointer; font:inherit; } .seg button.on { background:var(--ink); color:var(--bg); }
   dialog { border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); padding:16px; max-width:380px; } dialog input[type=text] { width:100%; box-sizing:border-box; font:inherit; padding:6px; margin-top:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
   .row { display:flex; gap:6px; margin-top:8px; } .row input { flex:1; min-width:0; font:inherit; padding:4px 6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); } .row button { width:auto; margin:0; }
   #load { width:100%; margin-top:8px; font:inherit; padding:5px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
   .sw { display:inline-flex; align-items:center; gap:6px; font-weight:400; } .sw input { position:absolute; opacity:0; } .sw .track { width:36px; height:20px; border-radius:10px; background:var(--line); position:relative; transition:.15s; } .sw .track::after { content:''; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:.15s; } .sw input:checked + .track { background:var(--accent); } .sw input:checked + .track::after { left:18px; }
   .derived { font-size:13px; color:var(--mute); }
 </style></head><body>
-<header><h1>Cone worm</h1><span class="derived">Spiral-cone polyp pattern. Sizes in millimetres. Type them, press Rebuild, download the DXF for the laser.</span>
+<header><h1>Cone worm</h1><span class="derived">Spiral-cone polyp pattern. Sizes in millimetres. Type them, press Rebuild, pick Detailed or Laser cut, download the PDF for the laser.</span>
   <span id="ver" class="derived" style="margin-left:auto"></span>
   <button id="refresh-btn" title="Load the newest version of the tool (anything Claude changed or pushed)">Refresh tool</button>
   <span id="refresh-msg" class="derived"></span></header>
@@ -278,9 +279,10 @@ PAGE = r"""<!doctype html>
   <div class="results">
     <div class="card" id="card"><h2>Pattern <span id="busy" class="derived"></span></h2>
       <div id="warnings"></div>
+      <div class="seg"><button id="v-detailed" class="on" type="button">Detailed</button><button id="v-outline" type="button">Laser cut</button></div>
       <img id="pic" alt="">
-      <p><a id="dxf" href="#">Download DXF (cone strip and frill outlines only, true size in mm)</a><br>
-         <a id="svg" href="#">Download SVG (whole pattern with sew lines, true size in mm)</a></p>
+      <p id="dlhelp" class="derived"></p>
+      <p><a id="pdf" href="#">Download PDF</a> &nbsp; <a id="dxf" href="#">Download DXF</a> &nbsp; <a id="svg" href="#">Download SVG</a></p>
       <dialog id="dlg"><form method="dialog" id="dlgform"><h2>Name this snapshot</h2>
         <p class="derived">Every download is saved as a snapshot first, so you can come back to exactly this pattern. The name goes in the file name.</p>
         <input type="text" id="dlgname" maxlength="60" placeholder="e.g. test cone 1" autocomplete="off">
@@ -295,7 +297,7 @@ const $ = id => document.getElementById(id);
 const vals = {...META.defaults};
 let seq = 0;
 const secs = {};
-let built = '', curKey = '', snapNames = [];
+let built = '', curKey = '', snapNames = [], view = 'detailed';
 function refreshBtn() { $('rebuild').disabled = JSON.stringify(vals) === built; }
 for (const [sec, name, label, unit, lo, hi, step] of META.fields) {
   if (!secs[sec]) { const c = document.createElement('div'); c.className = 'card'; c.style.marginTop = '12px'; c.innerHTML = `<h2>${sec}</h2>`; $('sections').appendChild(c); secs[sec] = c; }
@@ -351,18 +353,28 @@ async function run() {
   if (r.error) { $('warnings').innerHTML = '<div class="warn err">' + r.error + '</div>'; refreshBtn(); return; }
   $('warnings').innerHTML = ''; $('card').classList.remove('stale');
   built = sent; refreshBtn();
-  $('pic').src = '/out/' + r.key + '/spiral-cone.png';
-  curKey = r.key;
+  curKey = r.key; showView();
   $('text').textContent = r.text;
 }
 
 // Downloads: name and save a snapshot of the built pattern first (the name goes into the file name)
 let wantExt = '';
+const HELP = {detailed: 'Exports every line shown (cut, sew, cuff line, numbered tabs), true size in mm, no scales or grid.',
+              outline: 'Exports only the cut lines the laser follows (one line per fringe slit), true size in mm, no scales or grid.'};
+function showView() {
+  $('v-detailed').classList.toggle('on', view === 'detailed'); $('v-outline').classList.toggle('on', view === 'outline');
+  if (curKey) $('pic').src = '/out/' + curKey + '/spiral-cone' + (view === 'outline' ? '-outline' : '') + '.png';
+  $('dlhelp').textContent = HELP[view];
+}
+$('v-detailed').onclick = () => { view = 'detailed'; showView(); };
+$('v-outline').onclick = () => { view = 'outline'; showView(); };
+showView();
 function askName(ext) {
   if (!curKey) return;
   wantExt = ext; $('dlgname').value = ''; $('dlgok').disabled = true; $('dlgwarn').textContent = '';
   $('dlg').showModal(); $('dlgname').focus();
 }
+$('pdf').onclick = e => { e.preventDefault(); askName('pdf'); };
 $('dxf').onclick = e => { e.preventDefault(); askName('dxf'); };
 $('svg').onclick = e => { e.preventDefault(); askName('svg'); };
 $('dlgcancel').onclick = () => $('dlg').close();
@@ -377,7 +389,7 @@ $('dlgform').onsubmit = async e => {
   if (!r) { $('dlgwarn').textContent = 'Could not save the snapshot, so nothing was downloaded.'; return; }
   $('dlg').close(); $('snapmsg').textContent = 'Saved "' + r.name + '".'; loadSnaps(r.name);
   const a = document.createElement('a');
-  a.href = '/out/' + curKey + '/spiral-cone.' + wantExt + '?dl=1&name=' + encodeURIComponent(r.name);
+  a.href = '/out/' + curKey + '/spiral-cone-' + view + '.' + wantExt + '?dl=1&name=' + encodeURIComponent(r.name);
   document.body.appendChild(a); a.click(); a.remove();
 };
 fetch('/api/version').then(r => r.json()).then(v => {
