@@ -57,6 +57,7 @@ TUBE_NOTCH_DEPTH = 6.0      # Remy: about 6 mm. V notches in the allowance of th
 TUBE_NOTCHES_BETWEEN_TABS = 3.0   # ASSUMED. How many notches go between each pair of neighbouring ring tabs along those arc edges
 FABRIC_WIDTH = 1470.0       # ASSUMED usable fabric width (about 58 in), for the fit check
 TAB_SIZE = 12.0             # alignment tabs are this-size squares (and the width of the frill tabs)
+NEST_GAP = 3.0             # space between pieces on the laser sheet (Laser cut view and its exports). The Detailed view keeps its own readable layout
 FRILL_TAB_LENGTH = 30.0     # length of the tabs on the frill (2.5 x the normal tab size). Fold them over to make loops for a hoop. Their width is TAB_SIZE
 TABS_LOWER_SEAM = 2.0       # number of alignment tabs along each straight seam edge of the lower cone (the same number on both edges, so they pair up), evenly spaced
 TABS_MID_RING = 3.0         # number of tabs round the ring seam between the two cones (on both arcs), evenly spaced
@@ -65,7 +66,7 @@ TABS_TOP_RING = 4.0         # number of tabs round the top ring: the top arc of 
 
 NAMES = ["HEIGHT", "DIAMETER_BOTTOM", "DIAMETER_TOP", "MID_HEIGHT", "MID_DIAMETER", "FRILL_STRIP_LENGTH", "FRILL_LENGTH", "FRINGE_WIDTH",
          "FRILL_WAVE", "FRILL_WAVE_LENGTH", "FRILL_BAND", "FRILL_NOTCH_DEPTH", "FRILL_NOTCHES_BETWEEN_TABS", "SEAM", "TUBE_NOTCH_DEPTH", "TUBE_NOTCHES_BETWEEN_TABS",
-         "FABRIC_WIDTH", "TAB_SIZE", "FRILL_TAB_LENGTH", "TABS_LOWER_SEAM", "TABS_MID_RING", "TABS_UPPER_SEAM", "TABS_TOP_RING"]
+         "FABRIC_WIDTH", "NEST_GAP", "TAB_SIZE", "FRILL_TAB_LENGTH", "TABS_LOWER_SEAM", "TABS_MID_RING", "TABS_UPPER_SEAM", "TABS_TOP_RING"]
 
 
 def settings():
@@ -481,10 +482,34 @@ def title(name):
             "frill": "FRILL STRIP (cut 1). Sew along the blue line; the slits make the fringe"}[name]
 
 
+def nest_transforms(pieces):
+    """Turn and shift for each piece so they pack close together on the laser sheet (see anemone_nest.py). Cached on the pieces."""
+    import anemone_nest
+    key = (NEST_GAP, id(pieces[0]))
+    cached = getattr(pieces[0], "_nest", None)
+    if cached and cached[0] == key:
+        return cached[1]
+    shapes = {p.name: [a for k, a, t in p.items if k == "cut"][0] for p in pieces}
+    tr = anemone_nest.nest(shapes, NEST_GAP)
+    # check the real outlines really are at least (nearly) the gap apart; if not, give up on nesting
+    from shapely.geometry import Polygon as _P
+    from shapely.validation import make_valid as _mv
+    polys = {n: _mv(_P(anemone_nest.apply(shapes[n], tr[n]))) for n in shapes}               # the real outlines, not the grown ones
+    names = list(polys)
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            if polys[names[i]].distance(polys[names[j]]) < min(NEST_GAP, 2.0) * 0.5 and NEST_GAP > 0:
+                tr = None
+    pieces[0]._nest = (key, tr)
+    return tr
+
+
 def export_items(pieces, detailed):
     """Everything an export file draws, at true size in mm, y pointing down, shifted so the drawing starts 10 mm in from
-    the corner. detailed=False keeps only the cut lines (what the laser follows): one closed outline per piece.
+    the corner. detailed=False keeps only the cut lines (what the laser follows): one closed outline per piece, with the pieces
+    nested close together (turned as needed); the Detailed view keeps its readable layout.
     Returns (items, width, height); items are (kind, points, text) with kind cut / sew / mark / label / title."""
+    tr = None if detailed else nest_transforms(pieces)
     place = layout(pieces)
     items = []
     for p in pieces:
@@ -492,7 +517,11 @@ def export_items(pieces, detailed):
         for k, a, t in p.items:
             if k != "cut" and not detailed:
                 continue
-            items.append((k, a + np.array([dx, dy]), t))
+            if tr is not None:
+                import anemone_nest
+                items.append((k, anemone_nest.apply(a, tr[p.name]), t))
+            else:
+                items.append((k, a + np.array([dx, dy]), t))
         if detailed:
             items.append(("title", np.array([[tx, ty]]), title(p.name)))
     allp = np.vstack([a for k, a, t in items])
