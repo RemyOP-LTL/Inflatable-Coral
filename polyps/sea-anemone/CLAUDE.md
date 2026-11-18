@@ -56,5 +56,6 @@ The profile is a smooth curve (quadratic) through the three diameters. A smooth 
 - No 3D surface for Fusion 360 (deferred, as for the whole project).
 
 ## Next
+- (2026-11-18) Remy is sewing a real sample and will send a photo. Then rework the 3D picture / simulation of the inflated shape against it (dome height, corner roundness, how the tube and gathers really sit, how the frill really hangs). Useful to note with the photo: settings used (a saved snapshot name), fabric, whether it was inflated, and any measurements (height, widest diameter, dome height).
 - Remy runs `./install-app.sh` here, opens Sea Anemone, tries a test cut on paper or cheap fabric.
 - Settle notch depths and the frill band from the test sew.
