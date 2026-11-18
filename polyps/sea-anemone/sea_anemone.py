@@ -57,11 +57,14 @@ TUBE_NOTCH_DEPTH = 6.0      # Remy: about 6 mm. V notches in the allowance of th
 TUBE_NOTCHES_BETWEEN_TABS = 3.0   # ASSUMED. How many notches go between each pair of neighbouring ring tabs along those arc edges
 FABRIC_WIDTH = 1470.0       # ASSUMED usable fabric width (about 58 in), for the fit check
 TAB_SIZE = 12.0             # alignment tabs are this-size squares
-TAB_SPACING = 125.0         # about one tab every this many mm of seam
+TABS_LOWER_SEAM = 2.0       # number of alignment tabs along each straight seam edge of the lower cone (the same number on both edges, so they pair up), evenly spaced
+TABS_MID_RING = 3.0         # number of tabs round the ring seam between the two cones (on both arcs), evenly spaced
+TABS_UPPER_SEAM = 2.0       # number of tabs along each straight seam edge of the upper cone
+TABS_TOP_RING = 4.0         # number of tabs round the top ring: the top arc of the upper cone, the cap and the frill all get this many, matching
 
 NAMES = ["HEIGHT", "DIAMETER_BOTTOM", "DIAMETER_TOP", "MID_HEIGHT", "MID_DIAMETER", "FRILL_STRIP_LENGTH", "FRILL_LENGTH", "FRINGE_WIDTH",
          "FRILL_WAVE", "FRILL_WAVE_LENGTH", "FRILL_BAND", "FRILL_NOTCH_DEPTH", "FRILL_NOTCHES_BETWEEN_TABS", "SEAM", "TUBE_NOTCH_DEPTH", "TUBE_NOTCHES_BETWEEN_TABS",
-         "FABRIC_WIDTH", "TAB_SIZE", "TAB_SPACING"]
+         "FABRIC_WIDTH", "TAB_SIZE", "TABS_LOWER_SEAM", "TABS_MID_RING", "TABS_UPPER_SEAM", "TABS_TOP_RING"]
 
 
 def settings():
@@ -215,10 +218,16 @@ def build():
     R_top = DIAMETER_TOP / 2
     circ_top = 2 * math.pi * R_top
     circ_mid = 2 * math.pi * T.rm
-    n_ring = max(2, round(circ_top / TAB_SPACING))
+    n_ring, n_mid = int(round(TABS_TOP_RING)), int(round(TABS_MID_RING))
+    n_lo, n_up = int(round(TABS_LOWER_SEAM)), int(round(TABS_UPPER_SEAM))
+    if n_ring < 1 or n_mid < 1:
+        raise SystemExit("The ring seams need at least 1 tab each (the notches are placed between the tabs).")
+    if n_lo < 0 or n_up < 0:
+        raise SystemExit("Tab counts cannot be negative.")
+    if max(n_ring, n_mid) > 26:
+        raise SystemExit("A ring seam can have at most 26 tabs (they are labelled with letters).")
     ring_f = [(i + 0.5) / n_ring for i in range(n_ring)]                 # tab positions round the top ring, as fractions
     ring_lab = [chr(ord("A") + i) for i in range(n_ring)]
-    n_mid = max(2, round(circ_mid / TAB_SPACING))
     mid_f = [(i + 0.5) / n_mid for i in range(n_mid)]                    # tab positions round the ring seam between the two cones
     mid_lab = [chr(ord("a") + i) for i in range(n_mid)]
     depth = min(TUBE_NOTCH_DEPTH, SEAM - 2.0)
@@ -227,7 +236,7 @@ def build():
     n_tube_notches = n_skipped = 0
     cone_pieces = []                                                       # (piece, cut polygon, outline polygon)
 
-    def make_cone(F, name, prefix, bottom_flush, top_f, top_lab, bot_f, bot_lab):
+    def make_cone(F, name, prefix, n_side, bottom_flush, top_f, top_lab, bot_f, bot_lab):
         """Flat cut piece for one cone. Tabs: numbered along the straight seam; lettered round the arcs that get sewn to
         something. Notches: on the arc edges that have a seam allowance, between the tabs."""
         nonlocal n_tube_notches, n_skipped
@@ -236,7 +245,7 @@ def build():
         if bottom_flush:
             body = F.flush_bottom(body)
         squares, labels = [], []
-        side_l = tab_positions(2 * TAB_SIZE, F.L - 2 * TAB_SIZE, TAB_SPACING)
+        side_l = [F.L * (i + 0.5) / n_side for i in range(n_side)]          # evenly spaced along the straight seam
         for i, lam in enumerate(side_l, start=1):
             for side in (-1, 1):
                 p, t = F.side_frame(side, lam)
@@ -283,11 +292,15 @@ def build():
             pc.add("label", [p], txt)
         return pc, cut, outline, len(side_l)
 
-    lower, cut_lo, outline_lo, side_lo = make_cone(T.lower, "lower", "L", True, mid_f, mid_lab, None, None)
-    upper, cut_up, outline_up, side_up = make_cone(T.upper, "upper", "U", False, ring_f, ring_lab, mid_f, mid_lab)
+    lower, cut_lo, outline_lo, side_lo = make_cone(T.lower, "lower", "L", n_lo, True, mid_f, mid_lab, None, None)
+    upper, cut_up, outline_up, side_up = make_cone(T.upper, "upper", "U", n_up, False, ring_f, ring_lab, mid_f, mid_lab)
     if n_skipped:
         warn.append(f"{n_skipped} tube notch(es) were left out because they would run into a tab. Use fewer notches between tabs.")
     pieces = [lower, upper]
+    for lab_, ln_, cnt_ in (("lower cone's straight seam", T.lower.L, n_lo), ("upper cone's straight seam", T.upper.L, n_up),
+                            ("central ring seam", circ_mid, n_mid), ("top ring", circ_top, n_ring)):
+        if cnt_ > 0 and ln_ / cnt_ < 1.6 * TAB_SIZE:
+            warn.append(f"The {lab_} has {cnt_} tabs in {ln_:.0f} mm: they are only {ln_ / cnt_:.0f} mm apart and will crowd each other. Use fewer or smaller tabs.")
     # --- cap disk
     ccx = ccy = R_top + SEAM
     csq, clab = [], []

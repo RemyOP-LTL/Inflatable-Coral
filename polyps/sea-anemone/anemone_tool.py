@@ -45,7 +45,10 @@ FIELDS = [
     ("Seam", "TUBE_NOTCHES_BETWEEN_TABS", "Tube notches between tabs", "", 0, 20, 1),
     ("Seam", "FABRIC_WIDTH", "Fabric width (fit check)", "mm", 300, 3000, 10),
     ("Tabs", "TAB_SIZE", "Tab size", "mm", 6, 25, 1),
-    ("Tabs", "TAB_SPACING", "Tab spacing", "mm", 50, 300, 5),
+    ("Tabs", "TABS_LOWER_SEAM", "Lower cone seam (each edge)", "tabs", 0, 12, 1),
+    ("Tabs", "TABS_MID_RING", "Central ring seam", "tabs", 1, 24, 1),
+    ("Tabs", "TABS_UPPER_SEAM", "Upper cone seam (each edge)", "tabs", 0, 12, 1),
+    ("Tabs", "TABS_TOP_RING", "Cap ring (tube top, cap, frill)", "tabs", 1, 24, 1),
 ]
 DEFAULTS = {k: getattr(S, k) for k in S.NAMES}
 PAGE_DEFAULTS = dict(DEFAULTS)
