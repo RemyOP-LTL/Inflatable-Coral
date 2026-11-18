@@ -18,6 +18,7 @@ A third polyp design, started 2026-11-17 on branch `polyp-2026-11-17-sea-anemone
 | File | Job |
 |---|---|
 | `sea_anemone.py` | The pattern maths and all outputs (settings are module variables at the top). `build()`, `export_items()`, `write_svg/pdf/dxf`, `draw_png*`, `report()`. Run alone: `python3 sea_anemone.py --out folder`; override with `ANEMONE="HEIGHT=300,DIAMETER_TOP=170"`. |
+| `anemone_3d.py` | The right-hand picture of the finished, inflated anemone (see below). Drawn by hand with a depth-sorted painter, because matplotlib's own 3D mixes up what is in front when surfaces and ribbons overlap. |
 | `anemone_tool.py` | Local web server and the page (`FIELDS` lists every input box). Port **8830** (window app picks the first free of 8830-8839). Same sticky Rebuild / snapshot tile, Detailed / Laser cut switch, Save PDF / DXF / SVG (asks where, via the Mac Save window), Refresh tool button as the cone worm. |
 | `anemone_window.py` | The Mac window (pywebview), starts the server and restarts it if it dies. |
 | `install-app.sh` | One-time setup: `.venv`, libraries, builds `~/Applications/Sea Anemone.app`. |
@@ -25,6 +26,11 @@ A third polyp design, started 2026-11-17 on branch `polyp-2026-11-17-sea-anemone
 
 ## How the flat tube is found
 The profile is a smooth curve (quadratic) through the three diameters. A smooth hourglass cannot unroll flat without distortion. We keep the line opposite the seam straight and true length, make each ring an arc of its true circumference, and bend those arcs by a fraction of the true curvature. That fraction is solved so the flat side edge is exactly as long as the tube's surface line. A plain cone (all three diameters on a straight line) comes out exact. The distortion lands on the in-between lines. If the edge cannot match (a bulge: middle wider than the ends) the report shows the difference.
+
+## The 3D picture (2026-11-17, a drawing, not a physics simulation, no motion)
+- Tube keeps the pattern's circumference at every height. The cap puffs into a dome and the seam ring sits on the rounded corner between wall and dome. The corner is solved so fabric lengths match: tube fabric from bottom to seam = the flat pattern's side-edge length, cap fabric from seam to dome centre = the cap radius. The seam ring comes out a little smaller than the tube top, so the fabric gathers: small wrinkles are drawn round the seam (the cap edge has no notches on purpose).
+- Frill: one ribbon per strand, leaving the seam going outward and blown upward by air from the base. Each strand keeps its real length (the frill length) and the pattern's wave; direction is random but trends up (about 52 degrees on average, spread by a smooth random pattern round the ring plus per-strand noise; fixed random seed so it does not change on every rebuild).
+- Not done: no real inflation or cloth simulation; the dome height and corner roundness come from the length rules above, not from pressure. The wrinkles are decoration.
 
 ## Checked (2026-11-17, defaults: height 250, diameters 150 / 130 / 150)
 - Flat side edge 251 mm = surface line 251 mm. Circumferences 471 / 408 / 471 mm. Tube cut size 510 x 287 mm, cap 174 mm across, frill 471 x 60 mm (79 strands of 6 mm, 78 slits of 48 mm), 3 pieces.

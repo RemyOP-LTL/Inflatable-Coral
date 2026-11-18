@@ -231,7 +231,8 @@ def build():
     Bp = T.arc(0.0)[1]
     tL, tR = unit(Bp[1] - Bp[0]), unit(Bp[-1] - Bp[-2])
     keep = [tuple(Bp[0] - tL * 40)] + [tuple(q) for q in Bp] + [tuple(Bp[-1] + tR * 40)]
-    keep += [(keep[-1][0], keep[-1][1] - 3000), (keep[0][0], keep[0][1] - 3000)]
+    bx0, bx1 = body.bounds[0] - 50, body.bounds[2] + 50                 # wide enough for a bulging tube
+    keep += [(bx1, keep[-1][1]), (bx1, keep[-1][1] - 3000), (bx0, keep[0][1] - 3000), (bx0, keep[0][1])]
     body = body.intersection(Polygon(keep))
     h = TAB_SIZE / 2
     R_top = DIAMETER_TOP / 2
@@ -621,24 +622,11 @@ def draw_png(path, T, pieces, info):
     ax.set_xlim(0, w); ax.set_ylim(h, 0)
     _axes(ax)
     ax.set_title("Flat pieces. Red = cut, blue dashed = sew, lettered / numbered squares = alignment tabs that go together", fontsize=10)
-    a3 = fig.add_subplot(gs[0, 1], projection="3d")
-    zz = np.linspace(0, HEIGHT, 50); tt = np.linspace(0, 2 * math.pi, 70)
-    Z, TT = np.meshgrid(zz, tt)
-    R = np.interp(Z, T.z, T.r)
-    a3.plot_surface(R * np.cos(TT), R * np.sin(TT), Z, color="#dbe7f5", alpha=0.5, linewidth=0, shade=True)
-    rt = DIAMETER_TOP / 2
-    a3.plot(rt * np.cos(tt), rt * np.sin(tt), HEIGHT + 0 * tt, color="k", lw=1)
-    a3.plot([T.r[0], np.interp(HEIGHT, T.z, T.r)], [0, 0], [0, HEIGHT], alpha=0)          # keeps the axes honest
-    a3.plot(R[0, :], 0 * zz, zz, color="#1d4ed8", lw=1.6)                                 # the side seam
-    F = info["F"]
-    for a_ in np.linspace(0, 2 * math.pi, 90, endpoint=False):
-        a3.plot([rt * math.cos(a_), (rt + F) * math.cos(a_)], [rt * math.sin(a_), (rt + F) * math.sin(a_)], [HEIGHT, HEIGHT], color="#c4492f", lw=0.6)
-    m = max(HEIGHT, 2 * (rt + F)) / 2
-    a3.set_xlim(-m, m); a3.set_ylim(-m, m); a3.set_zlim(0, HEIGHT)
-    a3.set_box_aspect((1, 1, HEIGHT / (2 * m)))
-    a3.view_init(20, -60)
-    a3.set_title(f"Finished anemone: tube {HEIGHT:g} mm tall, cap on top, frill ({F:.0f} mm of fringe) in the ring seam.\n"
-                 "Blue = side seam. The fringe is drawn flat out from the ring; it hangs freely in real life.", fontsize=9)
+    a3 = fig.add_subplot(gs[0, 1])
+    import anemone_3d
+    shape = anemone_3d.draw(a3, T, T.S, DIAMETER_TOP / 2, info["F"], info["strand"], info["n_slits"], FRILL_WAVE, FRILL_WAVE_LENGTH)
+    a3.set_title("Finished anemone, inflated (a picture, not a simulation). No motion.\n"
+                 "Cap puffs into a dome, seam on the rounded corner; frill blown up by air from the base.", fontsize=9)
     fig.tight_layout()
     fig.savefig(path, dpi=100)
     plt.close(fig)
