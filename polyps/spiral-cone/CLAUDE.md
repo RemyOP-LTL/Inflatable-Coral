@@ -1,5 +1,7 @@
 # polyps/spiral-cone/
 
+**Latest state (2026-11-17): the app moved on a lot since this file was first written (metric, Mac window, snapshots, PDF/DXF laser exports, notches). Start with `NEXT-SHAPE-BRIEF.md` for the current feature list and file map; Remy is starting a separate app for a new shape.**
+
 **Decision 2026-11-16 (Remy): this is its own tool, the "cone worm pattern simulator". It is NOT to be merged into the polyp tool or `main`. Remy is moving to a new session and working locally. Start with `HANDOFF.md`, which has the full summary.**
 
 ## Purpose
