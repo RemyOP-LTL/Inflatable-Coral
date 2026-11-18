@@ -1,0 +1,5 @@
+tool-output/
+.venv/
+__pycache__/
+icon/*.iconset/
+snapshots/
