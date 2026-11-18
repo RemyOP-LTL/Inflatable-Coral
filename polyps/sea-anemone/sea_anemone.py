@@ -61,7 +61,7 @@ FRILL_NOTCHES_BETWEEN_TABS = 7.0  # ASSUMED. How many notches go between each pa
 SEAM = 12.0                 # seam allowance on every edge
 TUBE_NOTCH_DEPTH = 6.0      # Remy: about 6 mm. V notches in the allowance of the tube: both side edges, the top edge and the bottom edge (0 = none)
 TUBE_NOTCHES_BETWEEN_TABS = 3.0   # ASSUMED. How many notches go between each pair of neighbouring tabs along those edges (the bottom edge has no tabs; it uses the same positions as the top)
-RING_BEND = 0.0            # 0 = the flat side edge has the same shape as the cross-section curve (width = circumference at every height; the edge ends up a little longer than the tube is tall). 1 = bend the rings so the edge is exactly as long as the tube, at the cost of a different edge shape
+RING_BEND = 1.0            # how strongly the rings bend into arcs on the flat pattern (the top and bottom edges become arcs, like a cut-off cone). 1 = automatic: the amount that makes the side edge exactly as long as the tube (exact for a plain cone). 0 = straight edges (no flare shape). More than 1 = stronger arcs, more flare shape, but the seam gets shorter than the tube
 FABRIC_WIDTH = 1470.0       # ASSUMED usable fabric width (about 58 in), for the fit check
 TAB_SIZE = 12.0             # alignment tabs are this-size squares
 TAB_SPACING = 125.0         # about one tab every this many mm of seam
@@ -175,7 +175,7 @@ class Tube:
                         hi = mid
                 self.lam = float((lo + hi) / 2)
                 break
-        self.lam *= float(min(max(RING_BEND, 0.0), 1.0))               # default 0: straight rings, so the edge follows the cross-section shape
+        self.lam = float(min(max(self.lam * max(RING_BEND, 0.0), 0.0), 1.0))   # 1 = the automatic amount; more bends the rings further (never past the true curvature)
 
     def edge_length(self, lam, n=700):
         old = getattr(self, "lam", 1.0)
@@ -465,7 +465,8 @@ def build():
                 bbox=(cb[2] - cb[0], cb[3] - cb[1]), circ_top=circ_top, circ_bottom=math.pi * DIAMETER_BOTTOM,
                 circ_mid=math.pi * d_mid, frill_len=Lf, frill_w=W, F=W - y_fringe, n_slits=n_slits, strand=strand,
                 n_tube_notches=n_tube_notches, n_frill_notches=n_fn, notch_w=notch_w, side_tabs=len(side_s), ring_tabs=n_ring,
-                cap_d=2 * (R_top + SEAM), slope_max=T.slope_max, warnings=warn)
+                cap_d=2 * (R_top + SEAM), slope_max=T.slope_max, lam=T.lam,
+                sag_top=float(np.ptp(T.arc(T.S)[1][:, 1])), sag_bottom=float(np.ptp(T.arc(0.0)[1][:, 1])), warnings=warn)
     return T, outline, cut, pieces, info
 
 
@@ -478,6 +479,8 @@ def report(info):
           f"  Tube piece, cut size            bounding box {info['bbox'][0]:.0f} x {info['bbox'][1]:.0f} mm, "
           f"tightest rectangle {info['tube_tight']:.0f} x {info['tube_long']:.0f} mm",
           f"  Straight seam                   one side seam, flat edge {info['edge_len']:.0f} mm long (surface line {info['tube_s']:.0f} mm)",
+          f"  Flat edges                      rings bent to {info['lam'] * 100:.0f}% of the true curvature (100% = exactly like a cone); the top edge is an arc "
+          f"{info['sag_top']:.0f} mm deep, the bottom edge {info['sag_bottom']:.0f} mm",
           f"  Circumference                   bottom {info['circ_bottom']:.0f}, narrowest {info['circ_mid']:.0f}, top {info['circ_top']:.0f} mm",
           f"  Cap disk                        {info['cap_d']:.0f} mm across with allowance ({DIAMETER_TOP:g} mm sew circle)",
           f"  Frill                           one strip {info['frill_len']:.0f} x {info['frill_w']:.0f} mm; {SEAM:g} mm seam allowance"
