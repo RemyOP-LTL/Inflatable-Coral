@@ -30,14 +30,8 @@ FIELDS = [
     ("Tube shape", "HEIGHT", "Height", "mm", 50, 800, 5),
     ("Tube shape", "DIAMETER_BOTTOM", "Diameter at the bottom", "mm", 30, 400, 1),
     ("Tube shape", "DIAMETER_TOP", "Diameter at the top", "mm", 30, 400, 1),
-    ("Lower control point", "LOWER_HEIGHT", "Height above the bottom", "mm", 5, 800, 1),
-    ("Lower control point", "LOWER_DIAMETER", "Diameter", "mm", 30, 400, 1),
-    ("Lower control point", "LOWER_ANGLE", "Tangent angle", "deg", -85, 85, 1),
-    ("Lower control point", "LOWER_LENGTH", "Tangent length", "mm", 0, 400, 1),
-    ("Upper control point", "UPPER_FROM_TOP", "Distance below the top", "mm", 5, 800, 1),
-    ("Upper control point", "UPPER_DIAMETER", "Diameter", "mm", 30, 400, 1),
-    ("Upper control point", "UPPER_ANGLE", "Tangent angle", "deg", -85, 85, 1),
-    ("Upper control point", "UPPER_LENGTH", "Tangent length", "mm", 0, 400, 1),
+    ("Central control point", "MID_HEIGHT", "Height above the bottom", "mm", 20, 800, 1),
+    ("Central control point", "MID_DIAMETER", "Diameter", "mm", 30, 400, 1),
     ("Frill", "FRILL_LENGTH", "Frill length", "mm", 5, 200, 1),
     ("Frill", "FRILL_STRIP_LENGTH", "Strip length round the ring (0 = fits)", "mm", 0, 2000, 5),
     ("Frill", "FRINGE_WIDTH", "Fringe strip width", "mm", 3, 25, 0.5),
@@ -346,7 +340,7 @@ PAGE = r"""<!doctype html>
     <div id="sections"></div>
   </div>
   <div class="results">
-    <div class="card" id="xcard"><h2>Tube cross-section <span class="derived">Drag the red dots to move the two middle control points, the white dots (bottom and top) in or out to change their diameter, and the yellow squares to set each tangent (direction and length). The numbers on the left follow.</span></h2>
+    <div class="card" id="xcard"><h2>Tube cross-section <span class="derived">Two stacked cones: drag the red central point up, down, in or out, and the white bottom and top points in or out to change their diameter. The numbers on the left follow.</span></h2>
       <svg id="xs" viewBox="0 0 640 520" preserveAspectRatio="xMidYMid meet"></svg></div>
     <div class="card" id="card"><h2>Pattern <span id="busy" class="derived"></span></h2>
       <div id="warnings"></div>
@@ -474,75 +468,42 @@ let dragging = null;
 viewer.addEventListener('mousedown', e => { if (view === 'detailed') return; dragging = {x: e.clientX, y: e.clientY, l: viewer.scrollLeft, t: viewer.scrollTop}; viewer.classList.add('drag'); e.preventDefault(); });
 window.addEventListener('mousemove', e => { if (dragging) { viewer.scrollLeft = dragging.l - (e.clientX - dragging.x); viewer.scrollTop = dragging.t - (e.clientY - dragging.y); } });
 window.addEventListener('mouseup', () => { dragging = null; viewer.classList.remove('drag'); });
-// ---- tube cross-section: draw the curve from the boxes, drag points and tangent handles (like a CAD spline)
+// ---- tube cross-section: three control points joined by straight lines (two stacked cones); drag them
 const XS = {W: 640, H: 520, ml: 60, mr: 40, mt: 24, mb: 40};
 let xsFrozen = null;
-function profCtl(v) {
-  const H = v.HEIGHT, rad = a => a * Math.PI / 180;
-  const P = [[0, v.DIAMETER_BOTTOM / 2], [v.LOWER_HEIGHT, v.LOWER_DIAMETER / 2], [H - v.UPPER_FROM_TOP, v.UPPER_DIAMETER / 2], [H, v.DIAMETER_TOP / 2]];
-  const un = (a, b) => { const dz = b[0] - a[0], dr = b[1] - a[1], n = Math.hypot(dz, dr) || 1; return [dz / n, dr / n, n]; };
-  const u0 = un(P[0], P[1]), u3 = un(P[2], P[3]);
-  return {P, d: [[u0[0], u0[1]], [Math.cos(rad(v.LOWER_ANGLE)), Math.sin(rad(v.LOWER_ANGLE))], [Math.cos(rad(v.UPPER_ANGLE)), Math.sin(rad(v.UPPER_ANGLE))], [u3[0], u3[1]]],
-          l: [0, v.LOWER_LENGTH, v.UPPER_LENGTH, 0]};
-}
-function profCurve(c, m = 60) {
-  const out = [];
-  for (let i = 0; i < 3; i++) {
-    const p0 = c.P[i], p3 = c.P[i + 1];
-    const p1 = [p0[0] + c.d[i][0] * c.l[i], p0[1] + c.d[i][1] * c.l[i]], p2 = [p3[0] - c.d[i + 1][0] * c.l[i + 1], p3[1] - c.d[i + 1][1] * c.l[i + 1]];
-    for (let k = (i ? 1 : 0); k <= m; k++) {
-      const t = k / m, a = (1 - t) ** 3, b = 3 * (1 - t) ** 2 * t, e = 3 * (1 - t) * t * t, f = t ** 3;
-      out.push([a * p0[0] + b * p1[0] + e * p2[0] + f * p3[0], a * p0[1] + b * p1[1] + e * p2[1] + f * p3[1]]);
-    }
-  }
-  return out;
-}
-function xsGeom(v, c, curve) {
+function profCtl(v) { return [[0, v.DIAMETER_BOTTOM / 2], [v.MID_HEIGHT, v.MID_DIAMETER / 2], [v.HEIGHT, v.DIAMETER_TOP / 2]]; }
+function xsGeom(v, P) {
   if (xsFrozen) return xsFrozen;
-  let rmax = 20;
-  curve.forEach(q => rmax = Math.max(rmax, q[1]));
-  for (let i = 1; i <= 2; i++) for (const sg of [-1, 1]) rmax = Math.max(rmax, Math.abs(c.P[i][1] + sg * c.d[i][1] * c.l[i]));
-  rmax += 18;
+  let rmax = 20; P.forEach(q => rmax = Math.max(rmax, q[1])); rmax += 18;
   const sc = Math.min((XS.W - XS.ml - XS.mr) / (2 * rmax), (XS.H - XS.mt - XS.mb) / (v.HEIGHT * 1.02));
   return {sc, cx: XS.ml + (XS.W - XS.ml - XS.mr) / 2, z0: XS.H - XS.mb};
 }
 function drawProfile() {
   const svg = $('xs'); if (!svg) return;
-  const v = vals, c = profCtl(v), curve = profCurve(c), g = xsGeom(v, c, curve);
+  const v = vals, P = profCtl(v), g = xsGeom(v, P);
   const X = r => g.cx + r * g.sc, Y = z => g.z0 - z * g.sc;
   let h = '';
   const step = v.HEIGHT > 400 ? 100 : 50;
   for (let z = 0; z <= v.HEIGHT + 0.1; z += step) h += `<line x1="${XS.ml - 8}" x2="${XS.W - XS.mr}" y1="${Y(z)}" y2="${Y(z)}" stroke="#ffffff" stroke-opacity=".08"/><text x="${XS.ml - 12}" y="${Y(z) + 4}" text-anchor="end">${z}</text>`;
   h += `<line x1="${g.cx}" x2="${g.cx}" y1="${Y(0)}" y2="${Y(v.HEIGHT)}" stroke="#888" stroke-dasharray="6 5"/>`;
   h += `<line x1="${X(-v.DIAMETER_TOP / 2) - 6}" x2="${X(v.DIAMETER_TOP / 2) + 6}" y1="${Y(v.HEIGHT)}" y2="${Y(v.HEIGHT)}" stroke="#bbb" stroke-dasharray="3 3"/><text x="${X(v.DIAMETER_TOP / 2) + 10}" y="${Y(v.HEIGHT) + 4}">cap</text>`;
-  const pathR = curve.map((q, i) => (i ? 'L' : 'M') + X(q[1]).toFixed(1) + ' ' + Y(q[0]).toFixed(1)).join(' ');
-  const pathL = curve.map((q, i) => (i ? 'L' : 'M') + X(-q[1]).toFixed(1) + ' ' + Y(q[0]).toFixed(1)).join(' ');
-  h += `<path d="${pathL}" fill="none" stroke="#6aa7e8" stroke-opacity=".55" stroke-width="2"/><path d="${pathR}" fill="none" stroke="#6aa7e8" stroke-width="2.5"/>`;
-  const names = ['bottom', 'lower', 'upper', 'top'];
-  for (let i = 0; i < 4; i++) {
-    const P = c.P[i], px = X(P[1]), py = Y(P[0]);
-    if (i === 1 || i === 2) {
-      for (const sg of [-1, 1]) {
-        const ex = X(P[1] + sg * c.d[i][1] * c.l[i]), ey = Y(P[0] + sg * c.d[i][0] * c.l[i]);
-        h += `<line x1="${px}" y1="${py}" x2="${ex}" y2="${ey}" stroke="#ffd23f" stroke-width="1.5"/>`;
-        h += `<rect class="hd" data-id="h${i}${sg > 0 ? 'p' : 'm'}" x="${ex - 6}" y="${ey - 6}" width="12" height="12" fill="#ffd23f" stroke="#1c1b1a"/>`;
-        const mx = X(-(P[1] + sg * c.d[i][1] * c.l[i])), my = ey;
-        h += `<line x1="${X(-P[1])}" y1="${py}" x2="${mx}" y2="${my}" stroke="#ffd23f" stroke-opacity=".35"/><rect x="${mx - 4}" y="${my - 4}" width="8" height="8" fill="#ffd23f" fill-opacity=".35"/>`;
-      }
-      h += `<circle class="pt" data-id="p${i}" cx="${px}" cy="${py}" r="8" fill="#ff6a5c" stroke="#1c1b1a" stroke-width="2"/><circle cx="${X(-P[1])}" cy="${py}" r="5" fill="#ff6a5c" fill-opacity=".4"/>`;
-      h += `<text x="${px + 14}" y="${py - 10}" fill="#eee">${names[i]}: Ø${Math.round(P[1] * 2)}, ${i === 1 ? v.LOWER_HEIGHT : v.UPPER_FROM_TOP} ${i === 1 ? 'up' : 'down'}</text>`;
-      h += `<text x="${px + 14}" y="${py + 4}">${i === 1 ? v.LOWER_ANGLE : v.UPPER_ANGLE}&deg;, handle ${i === 1 ? v.LOWER_LENGTH : v.UPPER_LENGTH}</text>`;
-    } else {
-      h += `<circle class="pt end" data-id="p${i}" cx="${px}" cy="${py}" r="8" fill="#ffffff" stroke="#1c1b1a" stroke-width="2"/><circle cx="${X(-P[1])}" cy="${py}" r="5" fill="#ffffff" fill-opacity=".4"/><text x="${px + 14}" y="${py + (i ? -10 : 18)}" fill="#eee">${names[i]}: Ø${Math.round(P[1] * 2)}</text>`;
-    }
+  const pr = P.map((q, i) => (i ? 'L' : 'M') + X(q[1]).toFixed(1) + ' ' + Y(q[0]).toFixed(1)).join(' ');
+  const pl = P.map((q, i) => (i ? 'L' : 'M') + X(-q[1]).toFixed(1) + ' ' + Y(q[0]).toFixed(1)).join(' ');
+  h += `<path d="${pl}" fill="none" stroke="#6aa7e8" stroke-opacity=".55" stroke-width="2"/><path d="${pr}" fill="none" stroke="#6aa7e8" stroke-width="2.5"/>`;
+  const names = ['bottom', 'centre', 'top'];
+  for (let i = 0; i < 3; i++) {
+    const q = P[i], px = X(q[1]), py = Y(q[0]);
+    const mid = i === 1;
+    h += `<circle class="pt ${mid ? '' : 'end'}" data-id="p${i}" cx="${px}" cy="${py}" r="8" fill="${mid ? '#ff6a5c' : '#ffffff'}" stroke="#1c1b1a" stroke-width="2"/><circle cx="${X(-q[1])}" cy="${py}" r="5" fill="${mid ? '#ff6a5c' : '#ffffff'}" fill-opacity=".4"/>`;
+    h += `<text x="${px + 14}" y="${py + (i === 0 ? 18 : -10)}" fill="#eee">${names[i]}: Ø${Math.round(q[1] * 2)}${mid ? ', ' + v.MID_HEIGHT + ' up' : ''}</text>`;
   }
-  svg.innerHTML = h; svg._g = g;
+  svg.innerHTML = h;
 }
 let xsDrag = null;
 $('xs').addEventListener('pointerdown', e => {
   const t = e.target.closest('[data-id]'); if (!t) return;
-  const svg = $('xs'); xsDrag = t.dataset.id; svg.setPointerCapture(e.pointerId);
-  const c = profCtl(vals); xsFrozen = xsGeom(vals, c, profCurve(c));          // keep the scale fixed while dragging
+  xsDrag = t.dataset.id; $('xs').setPointerCapture(e.pointerId);
+  xsFrozen = xsGeom(vals, profCtl(vals));                                // keep the scale fixed while dragging
   e.preventDefault();
 });
 $('xs').addEventListener('pointermove', e => {
@@ -551,20 +512,10 @@ $('xs').addEventListener('pointermove', e => {
   const q = pt.matrixTransform(svg.getScreenCTM().inverse()), g = xsFrozen;
   const zmm = (g.z0 - q.y) / g.sc, rmm = (q.x - g.cx) / g.sc, H = vals.HEIGHT;
   const clamp = (x, a, b) => Math.min(Math.max(x, a), b);
-  if (xsDrag === 'p0') {
-    vals.DIAMETER_BOTTOM = Math.round(clamp(Math.abs(rmm) * 2, 30, 400));
-  } else if (xsDrag === 'p3') {
-    vals.DIAMETER_TOP = Math.round(clamp(Math.abs(rmm) * 2, 30, 400));
-  } else if (xsDrag === 'p1') {
-    vals.LOWER_HEIGHT = Math.round(clamp(zmm, 5, H - vals.UPPER_FROM_TOP - 5)); vals.LOWER_DIAMETER = Math.round(clamp(Math.abs(rmm) * 2, 30, 400));
-  } else if (xsDrag === 'p2') {
-    vals.UPPER_FROM_TOP = Math.round(clamp(H - zmm, 5, H - vals.LOWER_HEIGHT - 5)); vals.UPPER_DIAMETER = Math.round(clamp(Math.abs(rmm) * 2, 30, 400));
-  } else if (xsDrag[0] === 'h') {
-    const i = +xsDrag[1], sg = xsDrag[2] === 'p' ? 1 : -1, c = profCtl(vals);
-    const dz = (zmm - c.P[i][0]) * sg, dr = (rmm - c.P[i][1]) * sg;
-    const ang = clamp(Math.round(Math.atan2(dr, Math.max(dz, 0.5)) * 180 / Math.PI), -85, 85), len = Math.max(0, Math.round(Math.hypot(Math.max(dz, 0.5), dr)));
-    if (i === 1) { vals.LOWER_ANGLE = ang; vals.LOWER_LENGTH = len; } else { vals.UPPER_ANGLE = ang; vals.UPPER_LENGTH = len; }
-  }
+  const dia = Math.round(clamp(Math.abs(rmm) * 2, 30, 400));
+  if (xsDrag === 'p0') vals.DIAMETER_BOTTOM = dia;
+  else if (xsDrag === 'p2') vals.DIAMETER_TOP = dia;
+  else if (xsDrag === 'p1') { vals.MID_HEIGHT = Math.round(clamp(zmm, 20, H - 20)); vals.MID_DIAMETER = dia; }
   sync(); refreshBtn();
 });
 function xsEnd() { if (!xsDrag) return; xsDrag = null; xsFrozen = null; drawProfile(); if (!$('rebuild').disabled) run(); }

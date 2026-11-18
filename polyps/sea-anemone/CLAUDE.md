@@ -1,5 +1,7 @@
 # polyps/sea-anemone/
 
+**Branch `polyp-2026-11-18-stacked-cones` (2026-11-18): the tube is TWO STACKED CONES, each flattened exactly.** Branched from `polyp-2026-11-18-profile-editor` (4-point spline tube, one piece), which still exists on GitHub. Why: one flat piece without stretch can only be exact for a cone or cylinder (Remy asked for flat edges that are true arcs, and the spline tube cannot give that, see the analysis below), so the tube is cut into a lower cone (bottom ring to the central control point) and an upper cone (central point to the top), sewn at a circular ring seam. Remy's experience: fabric softens the corner at the seam when inflated. No curve control in this version: only three control points (bottom, central, top).
+
 **Branch `polyp-2026-11-18-profile-editor` (2026-11-18): the tube's cross-section is now a 4-point spline you can edit in a cross-section view.** The older branch `polyp-2026-11-17-sea-anemone` still has the simple three-diameter (bottom / middle / top) tube. See "Tube cross-section spline" below.
 
 ## Purpose
@@ -27,6 +29,16 @@ A third polyp design, started 2026-11-17 on branch `polyp-2026-11-17-sea-anemone
 - **One piece vs split (analysis 2026-11-18, not built):** one flat piece without stretch can only be exact for a cone or cylinder. Relative edge error depends on how wide the piece is (half the circumference each side), not on how tall. Split into **stacked pieces** (rings joined by circular seams): each piece is a cut-off cone, flat pattern exact with true arcs and straight side edges; 2 pieces stray at most 2.3 mm in radius from the smooth curve, 3 pieces 1.4 mm, 4 pieces 0.55 mm. Split into **longitudinal gores** (halves): the full-curvature edge shortfall drops from 41% (one piece) to 10% (two) and 2.6% (four), but is never exact.
 - The white bottom and top dots can be dragged in or out (diameter only; their heights stay fixed). Zoom in the flat-pattern preview is now only in the Laser cut view (removed from Detailed, Remy 2026-11-18).
 - Errors: a handle so long or steep that the curve doubles back, middle points out of order or outside the tube, or a profile narrower than 20 mm, give a clear message.
+
+## Stacked cones version (this branch)
+- Settings: `HEIGHT`, `DIAMETER_BOTTOM`, `DIAMETER_TOP`, `MID_HEIGHT` (central point, height above the bottom), `MID_DIAMETER`. The cross-section view has 3 draggable points: red centre (up/down and in/out), white bottom and top (in/out). The tube between points is straight (two cones).
+- Each cone piece is an exact flat ring sector (`Frustum` in `sea_anemone.py`): straight side edges (the seam, length = slant length), arcs top and bottom (true arcs, like a paper party hat with the tip cut off). A cylinder (equal diameters) is a plain rectangle. Defaults: both cones 125 mm tall, sector 28.7 degrees, arcs 25 to 29 mm deep, cut size about 504 x 165 and 504 x 188 mm.
+- Pieces to cut: 4 (lower cone, upper cone, cap, frill). Each cone has its own straight seam. The two cones are joined at the ring seam (both arcs are exactly one circumference long).
+- Tabs: numbered `L1, L2` / `U1, U2` along the straight seams; lowercase `a, b, c` on the ring seam between the cones (both arcs); capital `A..D` on the top arc of the upper cone, the cap and the frill. No seam allowance on the open bottom edge of the lower cone (flush cut, as before).
+- Notches (6 mm deep, `TUBE_NOTCHES_BETWEEN_TABS` between each pair of ring tabs): on the arc edges that have allowance (ring seam, both sides, and the top edge). None on the straight seams (straight now), the open bottom edge or the cap.
+- 3D picture: the profile is the two cones, drawn with the corner at the ring seam softened by the picture's usual smoothing. Same inflated cap and wind-blown frill as before.
+- Checked 2026-11-18: DXF read back with ezdxf (units mm, 4 closed loops, sizes match the report), PDF read back with pymupdf (4 paths, black 0.001 in). Odd shapes run: cylinders, widening cones, narrowing cones, a deep pinch (sector 216 degrees), tall tube.
+- Not done: more than two cones (the analysis says 3 would stray 1.4 mm instead of 2.3 mm from a smooth curve, 4 would stray 0.55 mm); real sample not sewn yet; the Mac window not tested.
 
 ## What's here
 | File | Job |

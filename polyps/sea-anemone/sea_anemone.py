@@ -41,14 +41,8 @@ from shapely.ops import unary_union
 # ----------------------------------------------------------------------------- settings (millimetres)
 HEIGHT = 250.0              # height of the tube (bottom opening to the cap), measured straight up the axis
 DIAMETER_BOTTOM = 150.0     # ASSUMED. Slightly flared base
-LOWER_HEIGHT = 80.0         # lower control point of the tube's cross-section curve: how far up from the bottom
-LOWER_DIAMETER = 133.0      # ... its diameter
-LOWER_ANGLE = -3.0          # ... tangent direction in degrees from the tube's axis (0 = straight up, + = widening upward, - = narrowing upward)
-LOWER_LENGTH = 40.0         # ... tangent handle length in mm: how far the point's direction holds the curve before it bends
-UPPER_FROM_TOP = 80.0       # upper control point: how far down from the top
-UPPER_DIAMETER = 133.0      # ... its diameter
-UPPER_ANGLE = 3.0           # ... tangent direction, same rules as the lower point
-UPPER_LENGTH = 40.0         # ... tangent handle length in mm
+MID_HEIGHT = 125.0          # the central control point of the tube's cross-section: how far up from the bottom
+MID_DIAMETER = 130.0        # ... its diameter. Two straight-sided cones (cut-off cones) stack: bottom to centre, centre to top
 DIAMETER_TOP = 150.0        # ASSUMED. Slightly flared top. The cap disk and the frill ring match this
 FRILL_STRIP_LENGTH = 0.0    # length of the frill strip round the ring. 0 = exactly the top circumference (pi x top diameter). More = it gathers
 FRILL_LENGTH = 48.0         # ASSUMED. How far the frill stands out (the fringe). The strip's cut width is this + seam allowance + solid band
@@ -59,14 +53,13 @@ FRILL_BAND = 0.0            # solid (unslit) band between the sew line and the f
 FRILL_NOTCH_DEPTH = 9.0     # ASSUMED (Remy: 3/8 in = 9.5 mm leaving 3 mm). V notches in the frill's seam allowance (0 = none)
 FRILL_NOTCHES_BETWEEN_TABS = 7.0  # ASSUMED. How many notches go between each pair of neighbouring ring tabs on the frill (0 = none). Their width is worked out from the circle
 SEAM = 12.0                 # seam allowance on every edge
-TUBE_NOTCH_DEPTH = 6.0      # Remy: about 6 mm. V notches in the allowance of the tube: both side edges, the top edge and the bottom edge (0 = none)
-TUBE_NOTCHES_BETWEEN_TABS = 3.0   # ASSUMED. How many notches go between each pair of neighbouring tabs along those edges (the bottom edge has no tabs; it uses the same positions as the top)
+TUBE_NOTCH_DEPTH = 6.0      # Remy: about 6 mm. V notches in the allowance of the curved (arc) edges of the two cone pieces: the ring seam between them and the top edge (0 = none). Their straight side edges and the open bottom edge have none
+TUBE_NOTCHES_BETWEEN_TABS = 3.0   # ASSUMED. How many notches go between each pair of neighbouring ring tabs along those arc edges
 FABRIC_WIDTH = 1470.0       # ASSUMED usable fabric width (about 58 in), for the fit check
 TAB_SIZE = 12.0             # alignment tabs are this-size squares
 TAB_SPACING = 125.0         # about one tab every this many mm of seam
 
-NAMES = ["HEIGHT", "DIAMETER_BOTTOM", "DIAMETER_TOP", "LOWER_HEIGHT", "LOWER_DIAMETER", "LOWER_ANGLE", "LOWER_LENGTH",
-         "UPPER_FROM_TOP", "UPPER_DIAMETER", "UPPER_ANGLE", "UPPER_LENGTH", "FRILL_STRIP_LENGTH", "FRILL_LENGTH", "FRINGE_WIDTH",
+NAMES = ["HEIGHT", "DIAMETER_BOTTOM", "DIAMETER_TOP", "MID_HEIGHT", "MID_DIAMETER", "FRILL_STRIP_LENGTH", "FRILL_LENGTH", "FRINGE_WIDTH",
          "FRILL_WAVE", "FRILL_WAVE_LENGTH", "FRILL_BAND", "FRILL_NOTCH_DEPTH", "FRILL_NOTCHES_BETWEEN_TABS", "SEAM", "TUBE_NOTCH_DEPTH", "TUBE_NOTCHES_BETWEEN_TABS",
          "FABRIC_WIDTH", "TAB_SIZE", "TAB_SPACING"]
 
@@ -94,136 +87,82 @@ def unit(v):
     return v / (np.hypot(*v) or 1.0)
 
 
-# ----------------------------------------------------------------------------- the tube
-def profile_controls():
-    """The four control points of the tube's cross-section curve, as (height, radius), with a tangent direction (dz, dr) and a
-    handle length at each. The bottom and top points point along the line to their neighbour with a handle a third of that
-    long (like a CAD spline end); the two middle points use the angle and length you set. Each segment between neighbours is
-    a cubic Bezier curve: start, start + handle, end - handle, end."""
-    H = HEIGHT
-    P = [(0.0, DIAMETER_BOTTOM / 2), (LOWER_HEIGHT, LOWER_DIAMETER / 2), (H - UPPER_FROM_TOP, UPPER_DIAMETER / 2), (H, DIAMETER_TOP / 2)]
-    if H <= 20:
-        raise SystemExit("The height must be more than 20 mm.")
-    if min(q[1] for q in P) < 10:
-        raise SystemExit("Every diameter must be at least 20 mm.")
-    if not (0 < P[1][0] < P[2][0] < H):
-        raise SystemExit("The two middle control points must be inside the tube, the lower one below the upper one "
-                         "(lower height + distance below the top must be less than the height).")
-    for ang in (LOWER_ANGLE, UPPER_ANGLE):
-        if abs(ang) >= 89:
-            raise SystemExit("Tangent angles must be between -89 and 89 degrees.")
-    if LOWER_LENGTH < 0 or UPPER_LENGTH < 0:
-        raise SystemExit("Tangent lengths cannot be negative.")
-    d0 = unit(np.array(P[1]) - np.array(P[0]))
-    d3 = unit(np.array(P[3]) - np.array(P[2]))
-    dirs = [d0, np.array([math.cos(math.radians(LOWER_ANGLE)), math.sin(math.radians(LOWER_ANGLE))]),
-            np.array([math.cos(math.radians(UPPER_ANGLE)), math.sin(math.radians(UPPER_ANGLE))]), d3]
-    lens = [0.0, LOWER_LENGTH, UPPER_LENGTH, 0.0]            # the bottom and top points have no handle of their own: the curve reaches them at whatever angle the neighbouring handle gives
-    return [np.array(q) for q in P], dirs, lens
+# ----------------------------------------------------------------------------- the tube: two stacked cones
+class Frustum:
+    """One cut-off cone (bottom radius r_a, top radius r_b, axial height h) flattened EXACTLY: a sector of a ring with straight
+    side edges (the seam) and arcs for the top and bottom edges, like a paper party hat with the tip cut off. A cylinder
+    (r_a = r_b) is a plain rectangle."""
+
+    def __init__(self, r_a, r_b, h):
+        self.r_a, self.r_b, self.h = r_a, r_b, h
+        self.L = math.hypot(h, r_b - r_a)                          # slant length = length of the straight seam
+        d = r_b - r_a
+        self.cyl = abs(d) < 1e-6
+        if self.cyl:
+            self.theta, self.rho_a, self.rho_b = None, None, None
+        else:
+            self.rho_a = r_a * self.L / abs(d)                     # flat distance from the cone's tip to the bottom ring
+            self.rho_b = r_b * self.L / abs(d)
+            self.theta = 2 * math.pi * abs(d) / self.L             # angle of the sector
+
+    def ring_point(self, which, f):
+        """Flat position of the point a fraction f (0..1) of the way round the bottom ('a') or top ('b') ring."""
+        r = self.r_a if which == "a" else self.r_b
+        if self.cyl:
+            return np.array([-math.pi * r + f * 2 * math.pi * r, self.h if which == "a" else 0.0])
+        rho = self.rho_a if which == "a" else self.rho_b
+        phi = -self.theta / 2 + f * self.theta
+        sgn = -1.0 if self.r_b > self.r_a else 1.0                   # widening upward: the tip is below the piece, so "up" is -y
+        return np.array([rho * math.sin(phi), sgn * rho * math.cos(phi)])
+
+    def ring_frame(self, which, f):
+        d = 1e-4
+        p0, p1 = self.ring_point(which, f - d), self.ring_point(which, f + d)
+        return self.ring_point(which, f), unit(p1 - p0)
+
+    def side_point(self, side, lam):
+        """Point on the straight seam edge (side -1 left, +1 right), lam mm along it from the bottom ring."""
+        f = 0.0 if side < 0 else 1.0
+        pa, pb = self.ring_point("a", f), self.ring_point("b", f)
+        return pa + (pb - pa) * (lam / self.L)
+
+    def side_frame(self, side, lam):
+        f = 0.0 if side < 0 else 1.0
+        pa, pb = self.ring_point("a", f), self.ring_point("b", f)
+        return self.side_point(side, lam), unit(pb - pa)
+
+    def outline(self, n=400):
+        fs = np.linspace(0, 1, n)
+        bottom = np.array([self.ring_point("a", f) for f in fs])
+        top = np.array([self.ring_point("b", f) for f in fs])
+        return np.vstack([bottom, top[::-1]])                          # bottom left to right, up the right edge, top right to left, down the left edge
+
+    def flush_bottom(self, body):
+        """Remove the seam allowance beyond the bottom ring (the open bottom edge has none)."""
+        if self.cyl:
+            return body.intersection(Polygon([(-1e4, self.h), (1e4, self.h), (1e4, -1e4), (-1e4, -1e4)]))
+        disc = Point(0, 0).buffer(self.rho_a, 1024)
+        return body.difference(disc) if self.r_b > self.r_a else body.intersection(disc)
 
 
-def profile_curve(m=400):
-    """Points (height, radius) along the whole cross-section curve, bottom to top."""
-    P, d, l = profile_controls()
-    t = np.linspace(0, 1, m)[:, None]
-    pts = []
-    for i in range(3):
-        p0, p3 = P[i], P[i + 1]
-        p1 = p0 + d[i] * l[i]
-        p2 = p3 - d[i + 1] * l[i + 1]
-        seg = (1 - t) ** 3 * p0 + 3 * (1 - t) ** 2 * t * p1 + 3 * (1 - t) * t ** 2 * p2 + t ** 3 * p3
-        pts.append(seg if i == 0 else seg[1:])
-    return np.vstack(pts)
+class StackedTube:
+    """The tube as two cut-off cones stacked on each other: bottom ring to the central control point, central point to the top."""
 
-
-class Tube:
-    def __init__(self, n=3000):
-        rb, rt = DIAMETER_BOTTOM / 2, DIAMETER_TOP / 2
+    def __init__(self):
         H = HEIGHT
-        c = profile_curve()
-        if np.any(np.diff(c[:, 0]) <= 1e-9):
-            raise SystemExit("A tangent handle is so long or steep that the tube curve doubles back on itself. "
-                             "Shorten that handle or make its angle smaller.")
-        self.z = np.linspace(0, H, n)
-        self.r = np.interp(self.z, c[:, 0], c[:, 1])
-        if self.r.min() < 10:
-            raise SystemExit("The tube curve gets too narrow (under 20 mm across) somewhere. Widen a control point or lessen its tangent.")
-        rz = np.gradient(self.r, self.z)
-        ds = np.sqrt(1 + rz ** 2)
-        self.s = cumtrapz(ds, self.z)                      # arclength up the profile
-        self.S = float(self.s[-1])
-        self.kappa = (rz / ds) / self.r                    # curvature of each ring's arc on the flat: (dr/ds) / r
-        self.rb, self.rt = rb, rt
-        self.slope_max = float(np.abs(rz / ds).max())
-        # An hourglass-type surface cannot unroll perfectly flat. We bend each ring's arc by a fraction `lam` of its
-        # true curvature (0 = straight rings, 1 = true curvature) and pick lam so the side edge comes out exactly as
-        # long as the line straight opposite the seam. Both seam edges are then the true length; the distortion is
-        # pushed to the in-between lines, where fabric can ease it.
-        self.lam = 1.0
-        grid = np.linspace(0.0, 1.0, 41)
-        f = [self.edge_length(l) - self.S for l in grid]
-        self.lam = float(grid[int(np.argmin(np.abs(f)))])           # best fraction if the edge can never match exactly (a bulge)
-        for i in range(len(grid) - 1):
-            if f[i] > 0 >= f[i + 1]:                                  # the edge crosses the right length here: find it precisely
-                lo, hi = grid[i], grid[i + 1]
-                for _ in range(40):
-                    mid = (lo + hi) / 2
-                    if self.edge_length(mid) - self.S > 0:
-                        lo = mid
-                    else:
-                        hi = mid
-                self.lam = float((lo + hi) / 2)
-                break
-
-    def edge_length(self, lam, n=700):
-        old = getattr(self, "lam", 1.0)
-        self.lam = lam
-        _, E = self.edge(-1, n)
-        self.lam = old
-        return float(np.hypot(*np.diff(E, axis=0).T).sum())
-
-    def radius_s(self, s):
-        return np.interp(s, self.s, self.r)
-
-    def pt(self, s, u):
-        """Flat position (x across, y down) of the point at profile distance s and sideways arclength u from the
-        straight middle line. y = S - X so the top of the tube is at the top of the page."""
-        s = np.asarray(s, dtype=float)
-        u = np.asarray(u, dtype=float)
-        s, u = np.broadcast_arrays(s, u)
-        k = self.lam * np.interp(s, self.s, self.kappa)
-        phi = k * u
-        small = np.abs(phi) < 1e-7
-        ks = np.where(small, 1.0, k)
-        X = np.where(small, s, s - (1 - np.cos(phi)) / ks)
-        Y = np.where(small, u, np.sin(phi) / ks)
-        return np.column_stack([Y, self.S - X])
-
-    def edge(self, side, n=700):
-        s = np.linspace(0, self.S, n)
-        return s, self.pt(s, side * math.pi * self.radius_s(s))
-
-    def arc(self, s0, n=240):
-        r = float(self.radius_s(s0))
-        u = np.linspace(-math.pi * r, math.pi * r, n)
-        return u, self.pt(np.full_like(u, s0), u)
-
-    def outline(self):
-        _, L = self.edge(-1)
-        _, R = self.edge(+1)
-        _, T = self.arc(self.S)
-        _, B = self.arc(0.0)
-        return np.vstack([L, T, R[::-1], B[::-1]])
-
-    def edge_frame(self, s, side):
-        d = 0.5
-        pts = [self.pt(min(max(s + e, 0), self.S), side * math.pi * float(self.radius_s(min(max(s + e, 0), self.S))))[0] for e in (-d, d)]
-        return (pts[0] + pts[1]) / 2, unit(pts[1] - pts[0])
-
-    def ring_frame(self, s0, u):
-        d = 0.5
-        pts = [self.pt(s0, u + e)[0] for e in (-d, d)]
-        return (pts[0] + pts[1]) / 2, unit(pts[1] - pts[0])
+        rb, rm, rt = DIAMETER_BOTTOM / 2, MID_DIAMETER / 2, DIAMETER_TOP / 2
+        if H <= 40:
+            raise SystemExit("The height must be more than 40 mm.")
+        if min(rb, rm, rt) < 10:
+            raise SystemExit("Every diameter must be at least 20 mm.")
+        if not (20 <= MID_HEIGHT <= H - 20):
+            raise SystemExit(f"The central control point must be at least 20 mm from the bottom and the top (height between 20 and {H - 20:g} mm).")
+        self.lower = Frustum(rb, rm, MID_HEIGHT)
+        self.upper = Frustum(rm, rt, H - MID_HEIGHT)
+        self.rb, self.rm, self.rt = rb, rm, rt
+        self.S = self.lower.L + self.upper.L                           # fabric length of the tube, bottom to top, along the seams
+        self.z = np.linspace(0, H, 600)                                # profile for the 3D picture
+        self.r = np.interp(self.z, [0, MID_HEIGHT, H], [rb, rm, rt])
 
 
 def tab_square(p, t, n, off, size):
@@ -270,80 +209,85 @@ class Piece:
 
 # ----------------------------------------------------------------------------- build
 def build():
-    T = Tube()
+    T = StackedTube()
     warn = []
-    outline = Polygon(T.outline()).buffer(0)
-    body = outline.buffer(SEAM, join_style=2, mitre_limit=4)
-    # no seam allowance on the bottom edge of the tube (Remy): keep only what lies above the bottom edge
-    Bp = T.arc(0.0)[1]
-    tL, tR = unit(Bp[1] - Bp[0]), unit(Bp[-1] - Bp[-2])
-    keep = [tuple(Bp[0] - tL * 40)] + [tuple(q) for q in Bp] + [tuple(Bp[-1] + tR * 40)]
-    bx0, bx1 = body.bounds[0] - 50, body.bounds[2] + 50                 # wide enough for a bulging tube
-    keep += [(bx1, keep[-1][1]), (bx1, keep[-1][1] - 3000), (bx0, keep[0][1] - 3000), (bx0, keep[0][1])]
-    body = body.intersection(Polygon(keep))
     h = TAB_SIZE / 2
     R_top = DIAMETER_TOP / 2
     circ_top = 2 * math.pi * R_top
+    circ_mid = 2 * math.pi * T.rm
     n_ring = max(2, round(circ_top / TAB_SPACING))
-    ring_f = [(i + 0.5) / n_ring for i in range(n_ring)]                 # tab positions round the ring, as fractions
+    ring_f = [(i + 0.5) / n_ring for i in range(n_ring)]                 # tab positions round the top ring, as fractions
     ring_lab = [chr(ord("A") + i) for i in range(n_ring)]
-    # --- tube: tabs along both side edges, ring tabs along the top edge
-    squares, labels = [], []
-    side_s = tab_positions(2 * TAB_SIZE, T.S - 2 * TAB_SIZE, TAB_SPACING)
-    for i, s in enumerate(side_s, start=1):
-        for side in (-1, 1):
-            p, t = T.edge_frame(s, side)
-            n = outward(p, t, outline)
-            squares.append(tab_square(p, t, n, SEAM, TAB_SIZE))
-            labels.append((p + n * (SEAM + h), str(i)))
-    for f, lab in zip(ring_f, ring_lab):
-        u = -math.pi * T.rt + f * circ_top
-        p, t = T.ring_frame(T.S, u)
-        n = outward(p, t, outline)
-        squares.append(tab_square(p, t, n, SEAM, TAB_SIZE))
-        labels.append((p + n * (SEAM + h), lab))
-    cut = unary_union([body] + squares)
-    # --- notches in the allowance, n between each pair of tabs: both side edges and the top edge (no allowance on the bottom edge)
-    n_tube_notches = n_skipped = 0
+    n_mid = max(2, round(circ_mid / TAB_SPACING))
+    mid_f = [(i + 0.5) / n_mid for i in range(n_mid)]                    # tab positions round the ring seam between the two cones
+    mid_lab = [chr(ord("a") + i) for i in range(n_mid)]
     depth = min(TUBE_NOTCH_DEPTH, SEAM - 2.0)
     n_between = int(round(TUBE_NOTCHES_BETWEEN_TABS))
-    if depth > 0.5 and n_between > 0:
-        tabs_union = unary_union(squares)
-        half_w = depth * math.tan(math.radians(25))                       # a 50 degree V
-        cutters = []
+    half_w = max(depth, 0.1) * math.tan(math.radians(25))                # a 50 degree V
+    n_tube_notches = n_skipped = 0
+    cone_pieces = []                                                       # (piece, cut polygon, outline polygon)
 
-        def add_notch(p, t):
-            nonlocal n_tube_notches, n_skipped
-            n = outward(p, t, outline)
-            c = v_notch(p, t, n, depth, half_w)
-            if c.distance(tabs_union) < 1.5:                               # would run into a tab
-                n_skipped += 1
-                return
-            cutters.append(c)
-            n_tube_notches += 1
-        for a_, b_ in zip(side_s[:-1], side_s[1:]):                       # side edges: between each pair of numbered tabs
-            for k in range(1, n_between + 1):
-                sn = a_ + (b_ - a_) * k / (n_between + 1)
-                for side in (-1, 1):
-                    add_notch(*T.edge_frame(sn, side))
-        for f in ring_notch_fracs(ring_f, n_between):                     # top edge, between the lettered tabs
-            if min(f, 1 - f) * 2 * math.pi * T.rt < 1.5 * SEAM:           # not in the corner where the side seam joins
+    def make_cone(F, name, prefix, bottom_flush, top_f, top_lab, bot_f, bot_lab):
+        """Flat cut piece for one cone. Tabs: numbered along the straight seam; lettered round the arcs that get sewn to
+        something. Notches: on the arc edges that have a seam allowance, between the tabs."""
+        nonlocal n_tube_notches, n_skipped
+        outline = Polygon(F.outline()).buffer(0)
+        body = outline.buffer(SEAM, join_style=2, mitre_limit=4)
+        if bottom_flush:
+            body = F.flush_bottom(body)
+        squares, labels = [], []
+        side_l = tab_positions(2 * TAB_SIZE, F.L - 2 * TAB_SIZE, TAB_SPACING)
+        for i, lam in enumerate(side_l, start=1):
+            for side in (-1, 1):
+                p, t = F.side_frame(side, lam)
+                n = outward(p, t, outline)
+                squares.append(tab_square(p, t, n, SEAM, TAB_SIZE))
+                labels.append((p + n * (SEAM + h), f"{prefix}{i}"))
+        for which, fr, lab in (("b", top_f, top_lab), ("a", bot_f, bot_lab)):
+            if fr is None:
                 continue
-            add_notch(*T.ring_frame(T.S, -math.pi * T.rt + f * 2 * math.pi * T.rt))
-        if cutters:
-            cut = cut.difference(unary_union(cutters))
-        if n_skipped:
-            warn.append(f"{n_skipped} tube notch(es) were left out because they would run into a tab. Use fewer notches between tabs.")
-    if cut.geom_type != "Polygon" or len(cut.interiors) > 0:
-        warn.append("The tube's cut outline touches itself. Make the seam allowance smaller or move the notches apart.")
-        if cut.geom_type != "Polygon":
-            cut = max(cut.geoms, key=lambda g: g.area)
-    tube = Piece("tube")
-    tube.add("cut", np.array(cut.exterior.coords))
-    tube.add("sew", np.array(outline.exterior.coords))
-    for p, txt in labels:
-        tube.add("label", [p], txt)
-    pieces = [tube]
+            for f, lt in zip(fr, lab):
+                p, t = F.ring_frame(which, f)
+                n = outward(p, t, outline)
+                squares.append(tab_square(p, t, n, SEAM, TAB_SIZE))
+                labels.append((p + n * (SEAM + h), lt))
+        cut = unary_union([body] + squares)
+        if depth > 0.5 and n_between > 0:
+            tabs_union = unary_union(squares)
+            cutters = []
+            for which, fr in (("b", top_f), ("a", bot_f)):
+                if fr is None:
+                    continue
+                r_ring = F.r_b if which == "b" else F.r_a
+                for f in ring_notch_fracs(fr, n_between):
+                    if min(f, 1 - f) * 2 * math.pi * r_ring < 1.5 * SEAM:          # not in the corner where the straight seam joins
+                        continue
+                    p, t = F.ring_frame(which, f)
+                    n = outward(p, t, outline)
+                    c = v_notch(p, t, n, depth, half_w)
+                    if c.distance(tabs_union) < 1.5:
+                        n_skipped += 1
+                        continue
+                    cutters.append(c)
+                    n_tube_notches += 1
+            if cutters:
+                cut = cut.difference(unary_union(cutters))
+        if cut.geom_type != "Polygon" or len(cut.interiors) > 0:
+            warn.append(f"The {name} cone piece's cut outline touches itself. Make the seam allowance smaller or move the notches apart.")
+            if cut.geom_type != "Polygon":
+                cut = max(cut.geoms, key=lambda g: g.area)
+        pc = Piece(name)
+        pc.add("cut", np.array(cut.exterior.coords))
+        pc.add("sew", np.array(outline.exterior.coords))
+        for p, txt in labels:
+            pc.add("label", [p], txt)
+        return pc, cut, outline, len(side_l)
+
+    lower, cut_lo, outline_lo, side_lo = make_cone(T.lower, "lower", "L", True, mid_f, mid_lab, None, None)
+    upper, cut_up, outline_up, side_up = make_cone(T.upper, "upper", "U", False, ring_f, ring_lab, mid_f, mid_lab)
+    if n_skipped:
+        warn.append(f"{n_skipped} tube notch(es) were left out because they would run into a tab. Use fewer notches between tabs.")
+    pieces = [lower, upper]
     # --- cap disk
     ccx = ccy = R_top + SEAM
     csq, clab = [], []
@@ -442,48 +386,41 @@ def build():
         frill.add("label", [p + shift], txt)
     pieces.append(frill)
     # --- numbers and checks
-    xs, ys = np.array(outline.minimum_rotated_rectangle.exterior.coords).T
-    sides = sorted([math.hypot(xs[1] - xs[0], ys[1] - ys[0]), math.hypot(xs[2] - xs[1], ys[2] - ys[1])])
-    cb = cut.bounds
-    _, Ledge = T.edge(-1)
-    edge_len = float(np.hypot(*np.diff(Ledge, axis=0).T).sum())
-    if sides[0] + 2 * SEAM > FABRIC_WIDTH:
-        warn.append(f"The tube is {sides[0] + 2 * SEAM:.0f} mm across (tightest fit) and does not fit the {FABRIC_WIDTH:.0f} mm fabric.")
+    cones = []
+    for F, nm, cut, outline in ((T.lower, "lower", cut_lo, outline_lo), (T.upper, "upper", cut_up, outline_up)):
+        xs, ys = np.array(outline.minimum_rotated_rectangle.exterior.coords).T
+        sd = sorted([math.hypot(xs[1] - xs[0], ys[1] - ys[0]), math.hypot(xs[2] - xs[1], ys[2] - ys[1])])
+        cb = cut.bounds
+        sag = 0.0 if F.cyl else float(np.ptp(np.array([F.ring_point("a", f) for f in np.linspace(0, 1, 200)])[:, 1]))
+        sag_b = 0.0 if F.cyl else float(np.ptp(np.array([F.ring_point("b", f) for f in np.linspace(0, 1, 200)])[:, 1]))
+        cones.append(dict(name=nm, r_a=F.r_a, r_b=F.r_b, h=F.h, L=F.L, theta=0.0 if F.cyl else math.degrees(F.theta), cyl=F.cyl,
+                          bbox=(cb[2] - cb[0], cb[3] - cb[1]), tight=sd[0] + 2 * SEAM, sag_a=sag, sag_b=sag_b))
+        if sd[0] + 2 * SEAM > FABRIC_WIDTH:
+            warn.append(f"The {nm} cone piece is {sd[0] + 2 * SEAM:.0f} mm across (tightest fit) and does not fit the {FABRIC_WIDTH:.0f} mm fabric.")
     if abs(Lf - circ_top) / circ_top > 0.02:
         pct = (Lf / circ_top - 1) * 100
         warn.append(f"The frill is {abs(pct):.0f}% {'longer' if pct > 0 else 'shorter'} than the ring it goes round "
                     f"({circ_top:.0f} mm). " + ("It will gather a little." if pct > 0 else "It will leave a gap."))
     if FRILL_NOTCH_DEPTH > SEAM - 1.5 and FRILL_NOTCH_DEPTH > 0:
         warn.append(f"Frill notch depth was cut back to {fdepth:g} mm so at least 1.5 mm of the allowance stays solid.")
-    if abs(edge_len / T.S - 1) > 0.05:
-        warn.append(f"The flat side edge is {edge_len:.0f} mm but the tube is {T.S:.0f} mm tall along its surface "
-                    f"({(edge_len / T.S - 1) * 100:+.0f}%). The shape is quite curved, so expect to ease the seam while sewing.")
-    if T.lam < 0.6 and abs(math.degrees(math.atan(T.slope_max))) > 2:
-        warn.append(f"This profile curves too much to be made from one flat piece without stretch: the rings can only be bent to {T.lam * 100:.0f}% of the true curvature "
-                    "(100% = a plain cone), so the flat pattern gives only part of the flare and the rest must come from the fabric easing or stretching. "
-                    "Splitting the tube into stacked cone pieces would make it exact.")
-    d_mid = 2 * float(T.r.min())
-    info = dict(pieces=len(pieces), tube_s=T.S, edge_len=edge_len, tube_tight=sides[0] + 2 * SEAM, tube_long=sides[1] + 2 * SEAM,
-                bbox=(cb[2] - cb[0], cb[3] - cb[1]), circ_top=circ_top, circ_bottom=math.pi * DIAMETER_BOTTOM,
-                circ_mid=math.pi * d_mid, frill_len=Lf, frill_w=W, F=W - y_fringe, n_slits=n_slits, strand=strand,
-                n_tube_notches=n_tube_notches, n_frill_notches=n_fn, notch_w=notch_w, side_tabs=len(side_s), ring_tabs=n_ring,
-                cap_d=2 * (R_top + SEAM), slope_max=T.slope_max, lam=T.lam,
-                sag_top=float(np.ptp(T.arc(T.S)[1][:, 1])), sag_bottom=float(np.ptp(T.arc(0.0)[1][:, 1])), warnings=warn)
-    return T, outline, cut, pieces, info
+    info = dict(pieces=len(pieces), tube_s=T.S, cones=cones, circ_top=circ_top, circ_bottom=math.pi * DIAMETER_BOTTOM, circ_mid=circ_mid,
+                frill_len=Lf, frill_w=W, F=W - y_fringe, n_slits=n_slits, strand=strand,
+                n_tube_notches=n_tube_notches, n_frill_notches=n_fn, notch_w=notch_w, side_tabs=(side_lo, side_up), ring_tabs=n_ring, mid_tabs=n_mid,
+                cap_d=2 * (R_top + SEAM), warnings=warn)
+    return T, None, None, pieces, info
 
 
 def report(info):
     L = ["SEA ANEMONE POLYP: flat pattern numbers (millimetres)", "", "Settings:"]
     L += [f"  {k:<20} {v:g}" for k, v in settings().items()]
     L += ["", "Results:",
-          f"  Tube                            {HEIGHT:g} mm tall (surface line {info['tube_s']:.0f} mm), {DIAMETER_BOTTOM:g} mm across at the bottom, "
-          f"narrowest {info['circ_mid'] / math.pi:.0f} mm, {DIAMETER_TOP:g} mm at the top",
-          f"  Tube piece, cut size            bounding box {info['bbox'][0]:.0f} x {info['bbox'][1]:.0f} mm, "
-          f"tightest rectangle {info['tube_tight']:.0f} x {info['tube_long']:.0f} mm",
-          f"  Straight seam                   one side seam, flat edge {info['edge_len']:.0f} mm long (surface line {info['tube_s']:.0f} mm)",
-          f"  Flat edges                      rings bent to {info['lam'] * 100:.0f}% of the true curvature (100% = exactly like a cone); the top edge is an arc "
-          f"{info['sag_top']:.0f} mm deep, the bottom edge {info['sag_bottom']:.0f} mm",
-          f"  Circumference                   bottom {info['circ_bottom']:.0f}, narrowest {info['circ_mid']:.0f}, top {info['circ_top']:.0f} mm",
+          f"  Tube                            {HEIGHT:g} mm tall: two stacked cones, {DIAMETER_BOTTOM:g} mm across at the bottom, {MID_DIAMETER:g} mm at the central point "
+          f"({MID_HEIGHT:g} mm up), {DIAMETER_TOP:g} mm at the top. Every piece flattens exactly (no stretch)"]
+    for c in info["cones"]:
+        shape = ("a plain rectangle (a cylinder)" if c["cyl"] else f"a ring sector of {c['theta']:.1f} degrees; arcs {c['sag_a']:.0f} mm and {c['sag_b']:.0f} mm deep")
+        L.append(f"  {c['name'].capitalize() + ' cone':<31} {c['r_a'] * 2:.0f} to {c['r_b'] * 2:.0f} mm across over {c['h']:g} mm; straight seam {c['L']:.0f} mm; "
+                 f"{shape}; cut size {c['bbox'][0]:.0f} x {c['bbox'][1]:.0f} mm")
+    L += [f"  Circumference                   bottom {info['circ_bottom']:.0f}, centre {info['circ_mid']:.0f}, top {info['circ_top']:.0f} mm",
           f"  Cap disk                        {info['cap_d']:.0f} mm across with allowance ({DIAMETER_TOP:g} mm sew circle)",
           f"  Frill                           one strip {info['frill_len']:.0f} x {info['frill_w']:.0f} mm; {SEAM:g} mm seam allowance"
           + (f", {FRILL_BAND:g} mm solid band" if FRILL_BAND > 0 else "")
@@ -492,9 +429,9 @@ def report(info):
            f"{info['notch_w']:.1f} mm wide at the cut edge (width worked out from the circle)") if info["n_frill_notches"]
           else "  Frill seam notches              none",
           (f"  Tube seam notches               {info['n_tube_notches']} V notches, {TUBE_NOTCHES_BETWEEN_TABS:g} between each pair of tabs, {min(TUBE_NOTCH_DEPTH, SEAM - 2.0):g} mm deep, "
-           f"on both side edges and the top edge (none on the bottom edge, which has no allowance, or on the cap)") if info["n_tube_notches"] else "  Tube seam notches               none",
-          f"  Alignment tabs                  {TAB_SIZE:g} mm squares: {info['side_tabs']} numbered pairs on the side seam, "
-          f"{info['ring_tabs']} lettered sets (tube top, cap, frill) round the ring",
+           f"on the ring seam between the cones and the top edge (none on the straight seams, the open bottom edge or the cap)") if info["n_tube_notches"] else "  Tube seam notches               none",
+          f"  Alignment tabs                  {TAB_SIZE:g} mm squares: {info['side_tabs'][0]} (L) and {info['side_tabs'][1]} (U) numbered pairs on the straight seams, "
+          f"{info['mid_tabs']} lowercase sets on the ring seam between the cones, {info['ring_tabs']} capital sets (top of the tube, cap, frill)",
           f"  Pieces to cut                   {info['pieces']}", ""]
     L += ["Checks:"] + (["  " + w for w in info["warnings"]] or ["  none"])
     return "\n".join(L)
@@ -524,7 +461,8 @@ def layout(pieces):
 
 
 def title(name):
-    return {"tube": "TUBE (cut 1). One straight seam: sew the two side edges together",
+    return {"lower": "LOWER CONE (cut 1). Sew its two straight edges together; its top arc goes to the upper cone's bottom arc",
+            "upper": "UPPER CONE (cut 1). Sew its two straight edges together; its top arc goes to the cap and frill",
             "cap": "CAP DISK (cut 1)",
             "frill": "FRILL STRIP (cut 1). Sew along the blue line; the slits make the fringe"}[name]
 
