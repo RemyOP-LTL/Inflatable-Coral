@@ -1,5 +1,7 @@
 # polyps/sea-anemone/
 
+**Branch `polyp-2026-11-18-profile-editor` (2026-11-18): the tube's cross-section is now a 4-point spline you can edit in a cross-section view.** The older branch `polyp-2026-11-17-sea-anemone` still has the simple three-diameter (bottom / middle / top) tube. See "Tube cross-section spline" below.
+
 ## Purpose
 A third polyp design, started 2026-11-17 on branch `polyp-2026-11-17-sea-anemone` (branched from the cone worm branch). Same approach and app features as the cone worm (`../spiral-cone/`, not changed): a flat-pattern generator plus a small Mac window app. Motion is NOT simulated (Remy, 2026-11-17: of limited value).
 
@@ -13,6 +15,13 @@ A third polyp design, started 2026-11-17 on branch `polyp-2026-11-17-sea-anemone
 - **No seam allowance on the bottom edge of the tube** (Remy, 2026-11-17). The bottom edge has no notches either.
 - **Wavy, round-ended fringe (2026-11-17):** every fringe strand has a round tip and the slits are waves. `FRILL_WAVE` (slider in the app, mm of wave height, 0 = straight; releasing the slider rebuilds) and `FRILL_WAVE_LENGTH`. All slits are the same wave shifted sideways, so the strands nest exactly; the wave eases to zero at both ends of each strand so the tips are clean semicircles. The strip's two ends are the same wave, so they join into the ring. Strip is up to the wave height wider than the ring circumference at its ends. Defaults 3 mm / 40 mm are guesses.
 - Adjustable (top of each card in the app): height, diameter bottom / middle / top, frill length (how far the fringe stands out; the strip's cut width is that plus the seam allowance and solid band), strip length round the ring (0 = fits the ring exactly).
+
+## Tube cross-section spline (branch profile-editor, 2026-11-18)
+- The tube's profile (radius against height) is a spline through 4 control points: bottom (height 0, bottom diameter), **lower** point, **upper** point, top (height = tube height, top diameter). Between neighbours it is a cubic Bezier (CAD-style): start, start + handle, end - handle, end.
+- The lower and upper points each have: position (lower: height above the bottom + diameter; upper: distance below the top + diameter) and a tangent: **angle** in degrees from the tube's axis (0 = straight up the axis, + = widening going up, - = narrowing) and **length** (handle length in mm: how far the direction holds before the curve bends). The bottom and top points use a natural end: tangent along the line to their neighbour, handle a third as long.
+- Settings: `LOWER_HEIGHT, LOWER_DIAMETER, LOWER_ANGLE, LOWER_LENGTH, UPPER_FROM_TOP, UPPER_DIAMETER, UPPER_ANGLE, UPPER_LENGTH`. `DIAMETER_MIDDLE` is gone (old snapshots simply lose that value). Defaults (60 / 135 mm / -5 deg / 35, mirrored on top) reproduce the old smooth shape to within 0.2 mm.
+- Cross-section view (card above the pattern): drag a red dot to move that control point (height and diameter); drag a yellow square to set its tangent direction and length. The boxes on the left follow, and it rebuilds when you let go. Typing in the boxes redraws the view. The scale is true (equal mm both ways); the dashed line is the axis. The curve maths is the same in the page (JavaScript) and in `sea_anemone.py` (checked equal to 6 digits).
+- Errors: a handle so long or steep that the curve doubles back, middle points out of order or outside the tube, or a profile narrower than 20 mm, give a clear message.
 
 ## What's here
 | File | Job |

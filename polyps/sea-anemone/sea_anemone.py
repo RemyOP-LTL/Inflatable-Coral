@@ -41,7 +41,14 @@ from shapely.ops import unary_union
 # ----------------------------------------------------------------------------- settings (millimetres)
 HEIGHT = 250.0              # height of the tube (bottom opening to the cap), measured straight up the axis
 DIAMETER_BOTTOM = 150.0     # ASSUMED. Slightly flared base
-DIAMETER_MIDDLE = 130.0     # narrowest part (halfway up). Larger than the ends = a bulge instead
+LOWER_HEIGHT = 60.0         # lower control point of the tube's cross-section curve: how far up from the bottom
+LOWER_DIAMETER = 135.0      # ... its diameter
+LOWER_ANGLE = -5.0          # ... tangent direction in degrees from the tube's axis (0 = straight up, + = widening upward, - = narrowing upward)
+LOWER_LENGTH = 35.0         # ... tangent handle length in mm: how far the point's direction holds the curve before it bends
+UPPER_FROM_TOP = 60.0       # upper control point: how far down from the top
+UPPER_DIAMETER = 135.0      # ... its diameter
+UPPER_ANGLE = 5.0           # ... tangent direction, same rules as the lower point
+UPPER_LENGTH = 35.0         # ... tangent handle length in mm
 DIAMETER_TOP = 150.0        # ASSUMED. Slightly flared top. The cap disk and the frill ring match this
 FRILL_STRIP_LENGTH = 0.0    # length of the frill strip round the ring. 0 = exactly the top circumference (pi x top diameter). More = it gathers
 FRILL_LENGTH = 48.0         # ASSUMED. How far the frill stands out (the fringe). The strip's cut width is this + seam allowance + solid band
@@ -58,7 +65,8 @@ FABRIC_WIDTH = 1470.0       # ASSUMED usable fabric width (about 58 in), for the
 TAB_SIZE = 12.0             # alignment tabs are this-size squares
 TAB_SPACING = 125.0         # about one tab every this many mm of seam
 
-NAMES = ["HEIGHT", "DIAMETER_BOTTOM", "DIAMETER_MIDDLE", "DIAMETER_TOP", "FRILL_STRIP_LENGTH", "FRILL_LENGTH", "FRINGE_WIDTH",
+NAMES = ["HEIGHT", "DIAMETER_BOTTOM", "DIAMETER_TOP", "LOWER_HEIGHT", "LOWER_DIAMETER", "LOWER_ANGLE", "LOWER_LENGTH",
+         "UPPER_FROM_TOP", "UPPER_DIAMETER", "UPPER_ANGLE", "UPPER_LENGTH", "FRILL_STRIP_LENGTH", "FRILL_LENGTH", "FRINGE_WIDTH",
          "FRILL_WAVE", "FRILL_WAVE_LENGTH", "FRILL_BAND", "FRILL_NOTCH_DEPTH", "FRILL_NOTCHES_BETWEEN_TABS", "SEAM", "TUBE_NOTCH_DEPTH", "TUBE_NOTCHES_BETWEEN_TABS",
          "FABRIC_WIDTH", "TAB_SIZE", "TAB_SPACING"]
 
@@ -87,21 +95,61 @@ def unit(v):
 
 
 # ----------------------------------------------------------------------------- the tube
+def profile_controls():
+    """The four control points of the tube's cross-section curve, as (height, radius), with a tangent direction (dz, dr) and a
+    handle length at each. The bottom and top points point along the line to their neighbour with a handle a third of that
+    long (like a CAD spline end); the two middle points use the angle and length you set. Each segment between neighbours is
+    a cubic Bezier curve: start, start + handle, end - handle, end."""
+    H = HEIGHT
+    P = [(0.0, DIAMETER_BOTTOM / 2), (LOWER_HEIGHT, LOWER_DIAMETER / 2), (H - UPPER_FROM_TOP, UPPER_DIAMETER / 2), (H, DIAMETER_TOP / 2)]
+    if H <= 20:
+        raise SystemExit("The height must be more than 20 mm.")
+    if min(q[1] for q in P) < 10:
+        raise SystemExit("Every diameter must be at least 20 mm.")
+    if not (0 < P[1][0] < P[2][0] < H):
+        raise SystemExit("The two middle control points must be inside the tube, the lower one below the upper one "
+                         "(lower height + distance below the top must be less than the height).")
+    for ang in (LOWER_ANGLE, UPPER_ANGLE):
+        if abs(ang) >= 89:
+            raise SystemExit("Tangent angles must be between -89 and 89 degrees.")
+    if LOWER_LENGTH < 0 or UPPER_LENGTH < 0:
+        raise SystemExit("Tangent lengths cannot be negative.")
+    d0 = unit(np.array(P[1]) - np.array(P[0]))
+    d3 = unit(np.array(P[3]) - np.array(P[2]))
+    dirs = [d0, np.array([math.cos(math.radians(LOWER_ANGLE)), math.sin(math.radians(LOWER_ANGLE))]),
+            np.array([math.cos(math.radians(UPPER_ANGLE)), math.sin(math.radians(UPPER_ANGLE))]), d3]
+    lens = [float(np.hypot(*(np.array(P[1]) - np.array(P[0])))) / 3, LOWER_LENGTH, UPPER_LENGTH,
+            float(np.hypot(*(np.array(P[3]) - np.array(P[2])))) / 3]
+    return [np.array(q) for q in P], dirs, lens
+
+
+def profile_curve(m=400):
+    """Points (height, radius) along the whole cross-section curve, bottom to top."""
+    P, d, l = profile_controls()
+    t = np.linspace(0, 1, m)[:, None]
+    pts = []
+    for i in range(3):
+        p0, p3 = P[i], P[i + 1]
+        p1 = p0 + d[i] * l[i]
+        p2 = p3 - d[i + 1] * l[i + 1]
+        seg = (1 - t) ** 3 * p0 + 3 * (1 - t) ** 2 * t * p1 + 3 * (1 - t) * t ** 2 * p2 + t ** 3 * p3
+        pts.append(seg if i == 0 else seg[1:])
+    return np.vstack(pts)
+
+
 class Tube:
     def __init__(self, n=3000):
-        rb, rm, rt = DIAMETER_BOTTOM / 2, DIAMETER_MIDDLE / 2, DIAMETER_TOP / 2
-        if HEIGHT <= 20:
-            raise SystemExit("The height must be more than 20 mm.")
-        if min(rb, rm, rt) < 10:
-            raise SystemExit("Every diameter must be at least 20 mm.")
+        rb, rt = DIAMETER_BOTTOM / 2, DIAMETER_TOP / 2
         H = HEIGHT
-        a = 2 * (rb + rt - 2 * rm) / H ** 2                 # profile r(z) = rb + b z + a z^2 through the three diameters
-        b = (rt - rb) / H - a * H
+        c = profile_curve()
+        if np.any(np.diff(c[:, 0]) <= 1e-9):
+            raise SystemExit("A tangent handle is so long or steep that the tube curve doubles back on itself. "
+                             "Shorten that handle or make its angle smaller.")
         self.z = np.linspace(0, H, n)
-        self.r = rb + b * self.z + a * self.z ** 2
+        self.r = np.interp(self.z, c[:, 0], c[:, 1])
         if self.r.min() < 10:
-            raise SystemExit("With these three diameters the profile gets too narrow between them. Make the middle wider.")
-        rz = b + 2 * a * self.z
+            raise SystemExit("The tube curve gets too narrow (under 20 mm across) somewhere. Widen a control point or lessen its tangent.")
+        rz = np.gradient(self.r, self.z)
         ds = np.sqrt(1 + rz ** 2)
         self.s = cumtrapz(ds, self.z)                      # arclength up the profile
         self.S = float(self.s[-1])
@@ -411,7 +459,7 @@ def build():
     if abs(edge_len / T.S - 1) > 0.05:
         warn.append(f"The flat side edge is {edge_len:.0f} mm but the tube is {T.S:.0f} mm tall along its surface "
                     f"({(edge_len / T.S - 1) * 100:+.0f}%). The shape is quite curved, so expect to ease the seam while sewing.")
-    d_mid = DIAMETER_MIDDLE
+    d_mid = 2 * float(T.r.min())
     info = dict(pieces=len(pieces), tube_s=T.S, edge_len=edge_len, tube_tight=sides[0] + 2 * SEAM, tube_long=sides[1] + 2 * SEAM,
                 bbox=(cb[2] - cb[0], cb[3] - cb[1]), circ_top=circ_top, circ_bottom=math.pi * DIAMETER_BOTTOM,
                 circ_mid=math.pi * d_mid, frill_len=Lf, frill_w=W, F=W - y_fringe, n_slits=n_slits, strand=strand,
@@ -425,11 +473,11 @@ def report(info):
     L += [f"  {k:<20} {v:g}" for k, v in settings().items()]
     L += ["", "Results:",
           f"  Tube                            {HEIGHT:g} mm tall (surface line {info['tube_s']:.0f} mm), {DIAMETER_BOTTOM:g} mm across at the bottom, "
-          f"{DIAMETER_MIDDLE:g} mm in the middle, {DIAMETER_TOP:g} mm at the top",
+          f"narrowest {info['circ_mid'] / math.pi:.0f} mm, {DIAMETER_TOP:g} mm at the top",
           f"  Tube piece, cut size            bounding box {info['bbox'][0]:.0f} x {info['bbox'][1]:.0f} mm, "
           f"tightest rectangle {info['tube_tight']:.0f} x {info['tube_long']:.0f} mm",
           f"  Straight seam                   one side seam, flat edge {info['edge_len']:.0f} mm long (surface line {info['tube_s']:.0f} mm)",
-          f"  Circumference                   bottom {info['circ_bottom']:.0f}, middle {info['circ_mid']:.0f}, top {info['circ_top']:.0f} mm",
+          f"  Circumference                   bottom {info['circ_bottom']:.0f}, narrowest {info['circ_mid']:.0f}, top {info['circ_top']:.0f} mm",
           f"  Cap disk                        {info['cap_d']:.0f} mm across with allowance ({DIAMETER_TOP:g} mm sew circle)",
           f"  Frill                           one strip {info['frill_len']:.0f} x {info['frill_w']:.0f} mm; {SEAM:g} mm seam allowance"
           + (f", {FRILL_BAND:g} mm solid band" if FRILL_BAND > 0 else "")

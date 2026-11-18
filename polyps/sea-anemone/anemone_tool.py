@@ -29,8 +29,15 @@ import sea_anemone as S
 FIELDS = [
     ("Tube shape", "HEIGHT", "Height", "mm", 50, 800, 5),
     ("Tube shape", "DIAMETER_BOTTOM", "Diameter at the bottom", "mm", 30, 400, 1),
-    ("Tube shape", "DIAMETER_MIDDLE", "Diameter in the middle", "mm", 30, 400, 1),
     ("Tube shape", "DIAMETER_TOP", "Diameter at the top", "mm", 30, 400, 1),
+    ("Lower control point", "LOWER_HEIGHT", "Height above the bottom", "mm", 5, 800, 1),
+    ("Lower control point", "LOWER_DIAMETER", "Diameter", "mm", 30, 400, 1),
+    ("Lower control point", "LOWER_ANGLE", "Tangent angle", "deg", -85, 85, 1),
+    ("Lower control point", "LOWER_LENGTH", "Tangent length", "mm", 0, 400, 1),
+    ("Upper control point", "UPPER_FROM_TOP", "Distance below the top", "mm", 5, 800, 1),
+    ("Upper control point", "UPPER_DIAMETER", "Diameter", "mm", 30, 400, 1),
+    ("Upper control point", "UPPER_ANGLE", "Tangent angle", "deg", -85, 85, 1),
+    ("Upper control point", "UPPER_LENGTH", "Tangent length", "mm", 0, 400, 1),
     ("Frill", "FRILL_LENGTH", "Frill length", "mm", 5, 200, 1),
     ("Frill", "FRILL_STRIP_LENGTH", "Strip length round the ring (0 = fits)", "mm", 0, 2000, 5),
     ("Frill", "FRINGE_WIDTH", "Fringe strip width", "mm", 3, 25, 0.5),
@@ -318,6 +325,7 @@ PAGE = r"""<!doctype html>
   #load { width:100%; margin-top:8px; font:inherit; padding:5px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
   .sw { display:inline-flex; align-items:center; gap:6px; font-weight:400; } .sw input { position:absolute; opacity:0; } .sw .track { width:36px; height:20px; border-radius:10px; background:var(--line); position:relative; transition:.15s; } .sw .track::after { content:''; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:.15s; } .sw input:checked + .track { background:var(--accent); } .sw input:checked + .track::after { left:18px; }
   .derived { font-size:13px; color:var(--mute); }
+  #xs { width:100%; height:520px; background:#1c1b1a; border-radius:8px; touch-action:none; margin-top:6px; user-select:none; } #xs text { font:11px system-ui, sans-serif; fill:#aaa; } #xs .pt { cursor:grab; } #xs .hd { cursor:crosshair; }
   .zoombar { display:flex; gap:6px; align-items:center; margin:4px 0 6px; } .zoombar button { width:34px; margin:0; padding:3px 0; } .zoombar button#zfit { width:auto; padding:3px 12px; }
   .viewer { background:#1c1b1a; border-radius:8px; overflow:auto; max-height:72vh; cursor:grab; } .viewer.drag { cursor:grabbing; } .viewer img { display:block; width:100%; max-width:none; margin:0; border-radius:0; background:none; user-select:none; }
   .viewer3d { background:#1c1b1a; border-radius:8px; margin-top:10px; } .viewer3d img { display:block; max-width:520px; width:100%; margin:0 auto; background:none; }
@@ -337,6 +345,8 @@ PAGE = r"""<!doctype html>
     <div id="sections"></div>
   </div>
   <div class="results">
+    <div class="card" id="xcard"><h2>Tube cross-section <span class="derived">Drag the dots to move the control points and the squares to set each tangent (direction and length). The numbers on the left follow.</span></h2>
+      <svg id="xs" viewBox="0 0 640 520" preserveAspectRatio="xMidYMid meet"></svg></div>
     <div class="card" id="card"><h2>Pattern <span id="busy" class="derived"></span></h2>
       <div id="warnings"></div>
       <div class="seg"><button id="v-detailed" class="on" type="button">Detailed</button><button id="v-outline" type="button">Laser cut</button></div>
@@ -362,7 +372,7 @@ let seq = 0, zoom = 1, shownView = '';
 const secs = {};
 let built = '', curKey = '', snapNames = [], view = 'detailed', named = null;   // named = {cfg, name}: the settings that already have a saved snapshot name
 
-function refreshBtn() { $('rebuild').disabled = JSON.stringify(vals) === built; }
+function refreshBtn() { $('rebuild').disabled = JSON.stringify(vals) === built; drawProfile(); }
 for (const [sec, name, label, unit, lo, hi, step] of META.fields) {
   if (!secs[sec]) { const c = document.createElement('div'); c.className = 'card'; c.style.marginTop = '12px'; c.innerHTML = `<h2>${sec}</h2>`; $('sections').appendChild(c); secs[sec] = c; }
   const d = document.createElement('div'); d.className = 'field';
@@ -461,6 +471,98 @@ let dragging = null;
 viewer.addEventListener('mousedown', e => { dragging = {x: e.clientX, y: e.clientY, l: viewer.scrollLeft, t: viewer.scrollTop}; viewer.classList.add('drag'); e.preventDefault(); });
 window.addEventListener('mousemove', e => { if (dragging) { viewer.scrollLeft = dragging.l - (e.clientX - dragging.x); viewer.scrollTop = dragging.t - (e.clientY - dragging.y); } });
 window.addEventListener('mouseup', () => { dragging = null; viewer.classList.remove('drag'); });
+// ---- tube cross-section: draw the curve from the boxes, drag points and tangent handles (like a CAD spline)
+const XS = {W: 640, H: 520, ml: 60, mr: 40, mt: 24, mb: 40};
+let xsFrozen = null;
+function profCtl(v) {
+  const H = v.HEIGHT, rad = a => a * Math.PI / 180;
+  const P = [[0, v.DIAMETER_BOTTOM / 2], [v.LOWER_HEIGHT, v.LOWER_DIAMETER / 2], [H - v.UPPER_FROM_TOP, v.UPPER_DIAMETER / 2], [H, v.DIAMETER_TOP / 2]];
+  const un = (a, b) => { const dz = b[0] - a[0], dr = b[1] - a[1], n = Math.hypot(dz, dr) || 1; return [dz / n, dr / n, n]; };
+  const u0 = un(P[0], P[1]), u3 = un(P[2], P[3]);
+  return {P, d: [[u0[0], u0[1]], [Math.cos(rad(v.LOWER_ANGLE)), Math.sin(rad(v.LOWER_ANGLE))], [Math.cos(rad(v.UPPER_ANGLE)), Math.sin(rad(v.UPPER_ANGLE))], [u3[0], u3[1]]],
+          l: [u0[2] / 3, v.LOWER_LENGTH, v.UPPER_LENGTH, u3[2] / 3]};
+}
+function profCurve(c, m = 60) {
+  const out = [];
+  for (let i = 0; i < 3; i++) {
+    const p0 = c.P[i], p3 = c.P[i + 1];
+    const p1 = [p0[0] + c.d[i][0] * c.l[i], p0[1] + c.d[i][1] * c.l[i]], p2 = [p3[0] - c.d[i + 1][0] * c.l[i + 1], p3[1] - c.d[i + 1][1] * c.l[i + 1]];
+    for (let k = (i ? 1 : 0); k <= m; k++) {
+      const t = k / m, a = (1 - t) ** 3, b = 3 * (1 - t) ** 2 * t, e = 3 * (1 - t) * t * t, f = t ** 3;
+      out.push([a * p0[0] + b * p1[0] + e * p2[0] + f * p3[0], a * p0[1] + b * p1[1] + e * p2[1] + f * p3[1]]);
+    }
+  }
+  return out;
+}
+function xsGeom(v, c, curve) {
+  if (xsFrozen) return xsFrozen;
+  let rmax = 20;
+  curve.forEach(q => rmax = Math.max(rmax, q[1]));
+  for (let i = 1; i <= 2; i++) for (const sg of [-1, 1]) rmax = Math.max(rmax, Math.abs(c.P[i][1] + sg * c.d[i][1] * c.l[i]));
+  rmax += 18;
+  const sc = Math.min((XS.W - XS.ml - XS.mr) / (2 * rmax), (XS.H - XS.mt - XS.mb) / (v.HEIGHT * 1.02));
+  return {sc, cx: XS.ml + (XS.W - XS.ml - XS.mr) / 2, z0: XS.H - XS.mb};
+}
+function drawProfile() {
+  const svg = $('xs'); if (!svg) return;
+  const v = vals, c = profCtl(v), curve = profCurve(c), g = xsGeom(v, c, curve);
+  const X = r => g.cx + r * g.sc, Y = z => g.z0 - z * g.sc;
+  let h = '';
+  const step = v.HEIGHT > 400 ? 100 : 50;
+  for (let z = 0; z <= v.HEIGHT + 0.1; z += step) h += `<line x1="${XS.ml - 8}" x2="${XS.W - XS.mr}" y1="${Y(z)}" y2="${Y(z)}" stroke="#ffffff" stroke-opacity=".08"/><text x="${XS.ml - 12}" y="${Y(z) + 4}" text-anchor="end">${z}</text>`;
+  h += `<line x1="${g.cx}" x2="${g.cx}" y1="${Y(0)}" y2="${Y(v.HEIGHT)}" stroke="#888" stroke-dasharray="6 5"/>`;
+  h += `<line x1="${X(-v.DIAMETER_TOP / 2) - 6}" x2="${X(v.DIAMETER_TOP / 2) + 6}" y1="${Y(v.HEIGHT)}" y2="${Y(v.HEIGHT)}" stroke="#bbb" stroke-dasharray="3 3"/><text x="${X(v.DIAMETER_TOP / 2) + 10}" y="${Y(v.HEIGHT) + 4}">cap</text>`;
+  const pathR = curve.map((q, i) => (i ? 'L' : 'M') + X(q[1]).toFixed(1) + ' ' + Y(q[0]).toFixed(1)).join(' ');
+  const pathL = curve.map((q, i) => (i ? 'L' : 'M') + X(-q[1]).toFixed(1) + ' ' + Y(q[0]).toFixed(1)).join(' ');
+  h += `<path d="${pathL}" fill="none" stroke="#6aa7e8" stroke-opacity=".55" stroke-width="2"/><path d="${pathR}" fill="none" stroke="#6aa7e8" stroke-width="2.5"/>`;
+  const names = ['bottom', 'lower', 'upper', 'top'];
+  for (let i = 0; i < 4; i++) {
+    const P = c.P[i], px = X(P[1]), py = Y(P[0]);
+    if (i === 1 || i === 2) {
+      for (const sg of [-1, 1]) {
+        const ex = X(P[1] + sg * c.d[i][1] * c.l[i]), ey = Y(P[0] + sg * c.d[i][0] * c.l[i]);
+        h += `<line x1="${px}" y1="${py}" x2="${ex}" y2="${ey}" stroke="#ffd23f" stroke-width="1.5"/>`;
+        h += `<rect class="hd" data-id="h${i}${sg > 0 ? 'p' : 'm'}" x="${ex - 6}" y="${ey - 6}" width="12" height="12" fill="#ffd23f" stroke="#1c1b1a"/>`;
+        const mx = X(-(P[1] + sg * c.d[i][1] * c.l[i])), my = ey;
+        h += `<line x1="${X(-P[1])}" y1="${py}" x2="${mx}" y2="${my}" stroke="#ffd23f" stroke-opacity=".35"/><rect x="${mx - 4}" y="${my - 4}" width="8" height="8" fill="#ffd23f" fill-opacity=".35"/>`;
+      }
+      h += `<circle class="pt" data-id="p${i}" cx="${px}" cy="${py}" r="8" fill="#ff6a5c" stroke="#1c1b1a" stroke-width="2"/><circle cx="${X(-P[1])}" cy="${py}" r="5" fill="#ff6a5c" fill-opacity=".4"/>`;
+      h += `<text x="${px + 14}" y="${py - 10}" fill="#eee">${names[i]}: Ø${Math.round(P[1] * 2)}, ${i === 1 ? v.LOWER_HEIGHT : v.UPPER_FROM_TOP} ${i === 1 ? 'up' : 'down'}</text>`;
+      h += `<text x="${px + 14}" y="${py + 4}">${i === 1 ? v.LOWER_ANGLE : v.UPPER_ANGLE}&deg;, handle ${i === 1 ? v.LOWER_LENGTH : v.UPPER_LENGTH}</text>`;
+    } else {
+      h += `<circle cx="${px}" cy="${py}" r="5" fill="none" stroke="#bbb" stroke-width="2"/><text x="${px + 10}" y="${py + (i ? -8 : 16)}">${names[i]} Ø${Math.round(P[1] * 2)}</text>`;
+    }
+  }
+  svg.innerHTML = h; svg._g = g;
+}
+let xsDrag = null;
+$('xs').addEventListener('pointerdown', e => {
+  const t = e.target.closest('[data-id]'); if (!t) return;
+  const svg = $('xs'); xsDrag = t.dataset.id; svg.setPointerCapture(e.pointerId);
+  const c = profCtl(vals); xsFrozen = xsGeom(vals, c, profCurve(c));          // keep the scale fixed while dragging
+  e.preventDefault();
+});
+$('xs').addEventListener('pointermove', e => {
+  if (!xsDrag) return;
+  const svg = $('xs'), pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  const q = pt.matrixTransform(svg.getScreenCTM().inverse()), g = xsFrozen;
+  const zmm = (g.z0 - q.y) / g.sc, rmm = (q.x - g.cx) / g.sc, H = vals.HEIGHT;
+  const clamp = (x, a, b) => Math.min(Math.max(x, a), b);
+  if (xsDrag === 'p1') {
+    vals.LOWER_HEIGHT = Math.round(clamp(zmm, 5, H - vals.UPPER_FROM_TOP - 5)); vals.LOWER_DIAMETER = Math.round(clamp(Math.abs(rmm) * 2, 30, 400));
+  } else if (xsDrag === 'p2') {
+    vals.UPPER_FROM_TOP = Math.round(clamp(H - zmm, 5, H - vals.LOWER_HEIGHT - 5)); vals.UPPER_DIAMETER = Math.round(clamp(Math.abs(rmm) * 2, 30, 400));
+  } else if (xsDrag[0] === 'h') {
+    const i = +xsDrag[1], sg = xsDrag[2] === 'p' ? 1 : -1, c = profCtl(vals);
+    const dz = (zmm - c.P[i][0]) * sg, dr = (rmm - c.P[i][1]) * sg;
+    const ang = clamp(Math.round(Math.atan2(dr, Math.max(dz, 0.5)) * 180 / Math.PI), -85, 85), len = Math.max(0, Math.round(Math.hypot(Math.max(dz, 0.5), dr)));
+    if (i === 1) { vals.LOWER_ANGLE = ang; vals.LOWER_LENGTH = len; } else { vals.UPPER_ANGLE = ang; vals.UPPER_LENGTH = len; }
+  }
+  sync(); refreshBtn();
+});
+function xsEnd() { if (!xsDrag) return; xsDrag = null; xsFrozen = null; drawProfile(); if (!$('rebuild').disabled) run(); }
+$('xs').addEventListener('pointerup', xsEnd); $('xs').addEventListener('pointercancel', xsEnd);
+drawProfile();
 showView();
 function askName(ext) {
   if (!curKey) return;
