@@ -2,12 +2,13 @@
 
 What it tries to show, in plain language:
   * The tube keeps the circumference of the flat pattern at every height (non-stretch fabric).
-  * The top is a cap disk sewn to the tube. Inflated, it puffs into a dome, and the sewn seam sits on the rounded
-    corner between the tube wall and the dome. The shape of that corner is found so that the fabric lengths match:
-    the tube fabric reaches exactly as far as the flat pattern says, and the cap fabric runs from the seam to the
-    centre of the dome with exactly the cap's radius.
-  * The seam ring is slightly smaller than the tube top, so a little fabric has to gather: you see small wrinkles
-    round the seam (the cap edge has no notches on purpose, so it wrinkles).
+  * The top is a cap disk sewn to the tube. The seam ring is held at a fixed size, just under the top diameter setting
+    (K_TOP, 96%), and does not collapse further. So the top keeps its shape and the cap only pouches into a shallow
+    dome: its fabric (seam to centre) is exactly the cap radius, which fixes how high it can rise.
+  * The tube wall follows the pattern's radius, eases in to the seam ring over the last 14 mm, and sits at the height
+    where the tube fabric (bottom to seam) is exactly the pattern's side-edge length.
+  * The ring is a little smaller than the tube top, so a little fabric gathers: small wrinkles are drawn round the seam
+    (the cap edge has no notches on purpose, so it wrinkles).
   * The frill strands leave the seam going outward and are blown upward by air coming from the base: randomly spread,
     trending up. Each strand keeps its real length.
 It is a drawing, not a physics simulation: the corner shape and the wind are chosen to look right.
@@ -20,8 +21,8 @@ import numpy as np
 from matplotlib.collections import PolyCollection
 from matplotlib.colors import to_rgb
 
-N_EXP = 2.5          # corner roundness of the dome profile (2 = ellipse, higher = squarer corner)
-PHI_SEAM = 0.5       # where on the corner the seam sits (radians along the corner curve, 0 = start of the corner)
+K_TOP = 0.96         # the seam ring is held at this fraction of the top diameter setting (just smaller) and does not collapse further
+TAPER = 14.0         # over the last this-many mm the tube wall eases in to the seam ring
 
 
 def _smooth(t):
@@ -33,55 +34,49 @@ def _arc(r, z):
     return float(np.hypot(np.diff(r), np.diff(z)).sum())
 
 
-def _corner(a, z0, b, phi0, phi1, n=80):
-    """Part of the dome profile: a superellipse starting vertical at the tube wall (radius a, height z0), semi-height b."""
-    phi = np.linspace(phi0, phi1, n)
-    e = 2.0 / N_EXP
-    return a * np.cos(phi) ** e, z0 + b * np.sin(phi) ** e
+def _dome_angle(k):
+    """Half-angle theta (radians) of a spherical cap whose fabric radius (arc) is 1 and whose base radius is k: sin(theta)/theta = k."""
+    lo, hi = 1e-6, math.pi - 1e-3
+    for _ in range(60):
+        m = (lo + hi) / 2
+        if math.sin(m) / m > k:
+            lo = m
+        else:
+            hi = m
+    return (lo + hi) / 2
 
 
 def profile(T, S_target, cap_radius):
-    """The inflated outline (radius, height) of tube + shoulder + dome, and the index of the seam point.
-    Solves for the height z0 where the tube wall ends and the dome height b so that
-    tube fabric length (bottom to seam) = S_target and cap fabric length (seam to centre) = cap_radius."""
-    def wall(z0, n=200):
-        z = np.linspace(0, z0, n)
-        return np.interp(z, T.z, T.r), z
+    """The inflated outline (radius, height) of the tube and the dome, and the index of the seam point.
+    The seam ring is held at K_TOP x the top radius. The cap is a shallow spherical dome whose fabric (seam to centre)
+    is exactly the cap radius. The tube wall follows the pattern's radius and eases in to the seam ring; the height where
+    the seam sits is solved so the tube fabric (bottom to seam) is exactly the pattern's side-edge length."""
+    r_s = K_TOP * cap_radius
 
-    def solve_b(a, z0):
-        lo, hi = 0.02 * a, 3.0 * a
-        for _ in range(50):
-            b = (lo + hi) / 2
-            r, z = _corner(a, z0, b, PHI_SEAM, math.pi / 2)
-            if _arc(r, z) > cap_radius:
-                hi = b
-            else:
-                lo = b
-        return (lo + hi) / 2
+    def wall(zs, n=240):
+        z = np.linspace(0, zs, n)
+        r_pat = np.interp(z, T.z, T.r)
+        r = r_pat + (r_s - r_pat) * _smooth((z - (zs - TAPER)) / TAPER)
+        return r, z
 
-    def tube_len(z0):
-        a = float(np.interp(z0, T.z, T.r))
-        b = solve_b(a, z0)
-        rw, zw = wall(z0)
-        rs, zs = _corner(a, z0, b, 0.0, PHI_SEAM)
-        return _arc(np.r_[rw, rs], np.r_[zw, zs]), a, b
-
-    lo, hi = 0.2 * T.z[-1], T.z[-1]
-    for _ in range(40):
-        z0 = (lo + hi) / 2
-        L, a, b = tube_len(z0)
-        if L > S_target:
-            hi = z0
+    lo, hi = 0.3 * T.z[-1], 1.2 * T.z[-1]
+    for _ in range(50):
+        zs = (lo + hi) / 2
+        rw, zw = wall(zs)
+        if _arc(rw, zw) > S_target:
+            hi = zs
         else:
-            lo = z0
-    z0 = (lo + hi) / 2
-    L, a, b = tube_len(z0)
-    rw, zw = wall(z0)
-    rc, zc = _corner(a, z0, b, 0.0, math.pi / 2, n=160)
-    r = np.r_[rw, rc[1:]]
-    z = np.r_[zw, zc[1:]]
-    i_seam = len(rw) - 1 + int(np.argmin(np.abs(np.linspace(0, math.pi / 2, 160) - PHI_SEAM)))
-    return r, z, i_seam
+            lo = zs
+    zs = (lo + hi) / 2
+    rw, zw = wall(zs)
+    theta = _dome_angle(min(r_s / cap_radius, 0.9999))
+    rho = cap_radius / theta                                 # sphere radius of the dome
+    a = np.linspace(theta, 0, 120)
+    rd = rho * np.sin(a)
+    zd = zs - rho * math.cos(theta) + rho * np.cos(a)
+    r = np.r_[rw, rd[1:]]
+    z = np.r_[zw, zd[1:]]
+    return r, z, len(rw) - 1
 
 
 def draw(ax, T, S_target, cap_radius, frill_len, strand, n_strands, wave, wave_len, azim=-58, elev=22, seed=11):
