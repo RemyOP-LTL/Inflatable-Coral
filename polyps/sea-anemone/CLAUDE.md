@@ -12,7 +12,7 @@ A third polyp design, started 2026-11-17 on branch `polyp-2026-11-17-sea-anemone
 - **Notch spacing is now a count between tabs**, not a distance: `TUBE_NOTCHES_BETWEEN_TABS` (default 3) and `FRILL_NOTCHES_BETWEEN_TABS` (default 7) = notches evenly spaced between each pair of neighbouring tabs. The old distance setting clashed with the tab positions. No notch goes in the corner where the side seam joins (or where the frill strip's ends meet), so with an even count the middle notch of that gap is left out.
 - **No seam allowance on the bottom edge of the tube** (Remy, 2026-11-17). The bottom edge has no notches either.
 - **Wavy, round-ended fringe (2026-11-17):** every fringe strand has a round tip and the slits are waves. `FRILL_WAVE` (slider in the app, mm of wave height, 0 = straight; releasing the slider rebuilds) and `FRILL_WAVE_LENGTH`. All slits are the same wave shifted sideways, so the strands nest exactly; the wave eases to zero at both ends of each strand so the tips are clean semicircles. The strip's two ends are the same wave, so they join into the ring. Strip is up to the wave height wider than the ring circumference at its ends. Defaults 3 mm / 40 mm are guesses.
-- Adjustable (top of each card in the app): height, diameter bottom / middle / top, frill length, frill width.
+- Adjustable (top of each card in the app): height, diameter bottom / middle / top, frill length (how far the fringe stands out; the strip's cut width is that plus the seam allowance and solid band), strip length round the ring (0 = fits the ring exactly).
 
 ## What's here
 | File | Job |

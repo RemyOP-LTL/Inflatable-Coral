@@ -43,8 +43,8 @@ HEIGHT = 250.0              # height of the tube (bottom opening to the cap), me
 DIAMETER_BOTTOM = 150.0     # ASSUMED. Slightly flared base
 DIAMETER_MIDDLE = 130.0     # narrowest part (halfway up). Larger than the ends = a bulge instead
 DIAMETER_TOP = 150.0        # ASSUMED. Slightly flared top. The cap disk and the frill ring match this
-FRILL_LENGTH = 0.0          # length of the frill strip. 0 = exactly the top circumference (pi x top diameter). More = it gathers
-FRILL_WIDTH = 60.0          # ASSUMED. Cut width of the frill strip: seam allowance + solid band + fringe
+FRILL_STRIP_LENGTH = 0.0    # length of the frill strip round the ring. 0 = exactly the top circumference (pi x top diameter). More = it gathers
+FRILL_LENGTH = 48.0         # ASSUMED. How far the frill stands out (the fringe). The strip's cut width is this + seam allowance + solid band
 FRINGE_WIDTH = 6.0          # the standing-out part of the frill is slit into strands this wide
 FRILL_WAVE = 3.0            # ASSUMED. How wavy the fringe strands are: height of the wave in mm (0 = straight). All strands wave the same way, so they still nest
 FRILL_WAVE_LENGTH = 40.0    # ASSUMED. Length of one wave along a strand
@@ -58,7 +58,7 @@ FABRIC_WIDTH = 1470.0       # ASSUMED usable fabric width (about 58 in), for the
 TAB_SIZE = 12.0             # alignment tabs are this-size squares
 TAB_SPACING = 125.0         # about one tab every this many mm of seam
 
-NAMES = ["HEIGHT", "DIAMETER_BOTTOM", "DIAMETER_MIDDLE", "DIAMETER_TOP", "FRILL_LENGTH", "FRILL_WIDTH", "FRINGE_WIDTH",
+NAMES = ["HEIGHT", "DIAMETER_BOTTOM", "DIAMETER_MIDDLE", "DIAMETER_TOP", "FRILL_STRIP_LENGTH", "FRILL_LENGTH", "FRINGE_WIDTH",
          "FRILL_WAVE", "FRILL_WAVE_LENGTH", "FRILL_BAND", "FRILL_NOTCH_DEPTH", "FRILL_NOTCHES_BETWEEN_TABS", "SEAM", "TUBE_NOTCH_DEPTH", "TUBE_NOTCHES_BETWEEN_TABS",
          "FABRIC_WIDTH", "TAB_SIZE", "TAB_SPACING"]
 
@@ -314,11 +314,11 @@ def build():
         cap.add("label", [p], txt)
     pieces.append(cap)
     # --- frill: one straight strip. y = 0 is the cut edge of the seam allowance, y = SEAM the sew line
-    Lf = FRILL_LENGTH if FRILL_LENGTH > 0 else circ_top
-    W = FRILL_WIDTH
+    Lf = FRILL_STRIP_LENGTH if FRILL_STRIP_LENGTH > 0 else circ_top
     y_fringe = SEAM + FRILL_BAND                           # fringe (slits) starts here
+    W = y_fringe + FRILL_LENGTH                            # cut width of the strip: allowance + band + how far the fringe stands out
     if W - y_fringe < FRINGE_WIDTH:
-        raise SystemExit(f"The frill is too narrow: it needs at least {y_fringe + FRINGE_WIDTH:g} mm for the allowance, the band and one strand.")
+        raise SystemExit(f"The frill length must be at least {FRINGE_WIDTH:g} mm (one strand wide).")
     if FRINGE_WIDTH < 1:
         raise SystemExit("Fringe strand width must be at least 1 mm.")
     n_slits = max(1, round(Lf / FRINGE_WIDTH))
