@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frame tool</title>
+<style>
+  :root { --bg:#f6f5f1; --panel:#fff; --ink:#1d2320; --mute:#66706a; --line:#dcdad2; --accent:#1f7a55; --warn:#c0281d; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#161a18; --panel:#1f2522; --ink:#e8ece9; --mute:#9aa69f; --line:#34403a; --accent:#4fc08d; --warn:#ff7b6e; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding:12px 20px; border-bottom:1px solid var(--line); background:var(--panel); display:flex; gap:16px; align-items:baseline; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:18px; } header span { color:var(--mute); font-size:13px; }
+  .wrap { display:grid; grid-template-columns:300px 1fr; gap:16px; padding:16px; align-items:start; }
+  .wrap > div:first-child { align-self:stretch; }
+  #rebuildCard { position:sticky; top:8px; z-index:20; box-shadow:0 4px 14px rgba(0,0,0,.35); }
+  #rebuildCard.need { border-color:var(--accent); }
+  #rebuildCard input[type=text], #rebuildCard select { width:100%; }
+  @media (max-width: 900px) { .wrap { grid-template-columns:1fr; } #rebuildCard { position:static; } }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:14px; }
+  .card h2 { margin:0 0 8px; font-size:14px; text-transform:uppercase; letter-spacing:.04em; color:var(--mute); }
+  label { display:block; margin:8px 0 2px; font-size:13px; color:var(--mute); }
+  select, input[type=number] { width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); font:inherit; }
+  input[type=range] { width:100%; }
+  .row { display:flex; gap:8px; align-items:center; } .row > * { flex:1; }
+  button { padding:7px 12px; border:1px solid var(--line); background:var(--bg); color:var(--ink); border-radius:6px; font:inherit; cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); } button:disabled { opacity:.5; cursor:default; }
+  .val { float:right; color:var(--ink); font-variant-numeric:tabular-nums; }
+  #three { width:100%; height:560px; border-radius:8px; background:#e9e7df; position:relative; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) #three { background:#101412; } }
+  #flat svg { width:100%; height:auto; max-height:600px; display:block; } #spine svg { width:100%; height:auto; display:block; }
+  .views { display:grid; grid-template-columns:1.25fr 1fr; gap:14px; } @media (max-width: 1300px) { .views { grid-template-columns:1fr; } }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(125px,1fr)); gap:10px; margin-top:10px; }
+  .stat b { display:block; font-size:20px; font-variant-numeric:tabular-nums; } .stat span { font-size:12px; color:var(--mute); }
+  .key { display:flex; flex-wrap:wrap; gap:6px 16px; font-size:12.5px; color:var(--mute); margin-top:8px; }
+  .key i { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:5px; vertical-align:-1px; }
+  .note { font-size:13px; color:var(--mute); } .bad { color:var(--warn); }
+  .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:8px; } .bar i { display:block; height:100%; background:var(--accent); width:30%; animation:slide 1.2s infinite alternate ease-in-out; }
+  @keyframes slide { from { margin-left:0; } to { margin-left:70%; } }
+  details summary { cursor:pointer; color:var(--mute); font-size:13px; } pre { white-space:pre-wrap; font-size:12px; max-height:140px; overflow:auto; background:var(--bg); padding:6px; border-radius:6px; }
+  .sz { display:grid; grid-template-columns: 1fr 78px 22px; gap:6px; align-items:center; margin:6px 0; }
+  .sz label { margin:0; } .sz input { width:100%; } .sz span { color:var(--mute); font-size:13px; }
+</style>
+</head>
+<body>
+<header><h1>Frame tool</h1><span>Spokes with round ends, pentagons as solid plates, loose spokes riveted at both ends, spine along the inside of the curve.</span>
+  <span id="ver" style="margin-left:auto"></span>
+  <button id="refresh-btn" title="Load the newest version of the tool (anything Claude changed or pushed)">Refresh tool</button>
+  <span id="refresh-msg"></span></header>
+<div class="wrap">
+  <div>
+    <div class="card" id="rebuildCard">
+      <button class="primary" id="rebuild" style="width:100%" disabled>Rebuild</button>
+      <div class="note" id="sizeNote" style="margin:6px 0">Nothing to rebuild.</div>
+      <label>Save this setup as</label>
+      <div class="row"><input type="text" id="cfgName" placeholder="name, e.g. tube 100 mm hole"><button id="cfgSave">Save</button></div>
+      <label>Saved setups</label>
+      <div class="row"><select id="cfgList" style="flex:3"></select><button id="cfgLoad">Load</button><button id="cfgDel" title="Delete the selected setup">&times;</button></div>
+      <div class="note" id="cfgNote"></div>
+    </div>
+    <div class="card">
+      <h2>Shape</h2>
+      <select id="layout"></select>
+      <div class="note" id="layoutInfo" style="margin-top:6px"></div>
+      <div style="margin-top:10px"><label>Add a surface from a STEP file</label>
+        <div class="row"><input type="file" id="stepFile" accept=".step,.stp,.STEP,.STP" style="display:none"><button id="upload" class="primary">Upload STEP file...</button></div>
+        <div id="runState" class="note"></div>
+        <div class="note">The file's name becomes the name in the list above. The file should hold a surface and a curve lying on it: the curve becomes the spine. The pattern is laid on the surface at the sizing below.</div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Sizing</h2>
+      <div class="sz"><label>Units</label><select id="units"><option value="mm">millimetres</option><option value="in">inches</option></select><span></span></div>
+      <div class="sz"><label>Polyp hole diameter</label><input type="number" id="pd" step="any"><span class="u"></span></div>
+      <div class="sz"><label>Pentagon offset</label><input type="number" id="po" step="any"><span class="u"></span></div>
+      <div class="note" id="pentNote"></div>
+      <div class="sz"><label>Pentagon coverage (target)</label><input type="number" id="pc" min="5" max="60" step="1"><span>%</span></div>
+      <div class="sz"><label>Most pentagons in a patch</label><input type="number" id="mp" min="1" max="60" step="1"><span></span></div>
+      <div class="sz"><label>Spoke width</label><input type="number" id="sw" step="any"><span class="u"></span></div>
+      <div class="sz"><label>Spoke tip diameter</label><input type="number" id="td" step="any"><span class="u"></span></div>
+      <div class="sz"><label>Tip transition radius</label><input type="number" id="tr" step="any"><span class="u"></span></div>
+      <div class="note">The offset is the gap between the polyp hole and the circle through the pentagon's corners. The pentagon's side is also the spoke spacing. The tip diameter cannot be smaller than the width. Where a spoke runs into a pentagon the radius is the transition radius but never more than a third of the hole diameter. Where two spokes meet at a node and their straight edges would run into each other inside the tip circle, that corner is rounded until it is tangent to the tip circle.</div>
+      <div class="sz"><label>Rivet hole diameter</label><input type="number" id="rh" step="any"><span class="u"></span></div>
+      <div class="sz"><label>Router gap between parts</label><input type="number" id="cl" step="any"><span class="u"></span></div>
+      <div class="sz"><label>Spine width (average)</label><input type="number" id="spw" step="any"><span class="u"></span></div>
+    </div>
+    <div class="card note">
+      <b>Reading the patch.</b> Grey = the parts of this patch: pentagon plates with their arms, joined into one flat piece. Each spoke keeps the direction it has seen from straight above the plate it hinges on, so nothing is stretched; the curve of the skin comes from folding. Dashed lines are bend lines: on a spoke leaving a pentagon, perpendicular to the spoke and tangent to the circle inscribed in the pentagon; on a free tip, across the spoke where the tip circle meets its edges. The number beside a pentagon spoke is how far it bends. Orange numbers and purple S mark where loose spokes and spine spokes rivet. Scroll to zoom, drag to pan, double-click to reset.</div>
+  </div>
+
+  <div>
+    <div class="views">
+      <div class="card"><h2>3D <span id="pentCount" style="color:var(--mute);font-weight:400;font-size:13px"></span></h2><div id="three"></div>
+        <div class="row" style="flex-wrap:wrap;gap:6px 14px;margin-top:8px">
+          <label><input type="checkbox" id="hiPatch"> Highlight current patch</label>
+          <label><input type="checkbox" id="hiSpine"> Highlight spine</label>
+          <label><input type="checkbox" id="hiRivet"> Highlight rivet points</label>
+          <label><input type="checkbox" id="onlySection"> Only the current patch</label>
+        </div>
+        <div class="note" id="redNote" style="margin-top:6px"></div><div class="row" style="margin-top:8px"><button id="focus">Zoom to section</button><button id="all">Show everything</button></div>
+      </div>
+      <div class="card"><h2>Patch</h2>
+        <div class="row"><button id="prev">&larr;</button><select id="pent" style="flex:4"></select><button id="next">&rarr;</button></div>
+        <div class="note" style="margin:6px 0">A patch is several parts (each a pentagon plate and its arms) joined into one flat piece, as many as fit a 4 x 8 ft sheet. Click a pentagon in the 3D view to pick its patch.</div>
+        <div id="flat"></div>
+        <div class="row" style="margin-top:8px"><button id="dl">Download patch SVG (1 unit = 1 in)</button></div>
+        <div class="stats" id="stats"></div>
+        <div class="note" id="fit" style="margin-top:8px"></div>
+      </div>
+    </div>
+    <div class="card" id="spineCard"><h2>Spine</h2><div id="spine"></div><div class="note" id="spineNote"></div>
+      <button id="dlSpine" style="margin-top:8px">Download spine SVG</button></div>
+    <div class="card" id="looseCard"><h2>The loose spokes, cut in bulk (true size)</h2><div id="loose"></div><div class="note" id="looseNote"></div>
+      <button id="dlLoose" style="margin-top:8px">Download loose-spoke sheet SVG</button></div>
+    <div class="card"><h2>Across the whole skin</h2><div id="summary" class="note"></div></div>
+  </div>
+</div>
+
+<script src="/vendor/three.min.js"></script>
+<script src="/vendor/OrbitControls.js"></script>
+<script src="/patch_draw.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const S = { layout:null, frame:null, pent:null, patch:null };
+const store = { get(k, d){ try { const v = localStorage.getItem('frame3.'+k); return v===null? d : v; } catch(e){ return d; } },
+                set(k, v){ try { localStorage.setItem('frame3.'+k, v); } catch(e){} } };
+const j = async (url, opt) => { const r = await fetch(url, opt); return r.json(); };
+const fmt = (x, n=2) => Number(x).toFixed(n);
+
+// ---------- zoom and pan for the drawings (scroll to zoom, drag to pan, double-click to reset) ----------
+function setSvg(el, text) {
+  el.innerHTML = text;
+  const svg = el.querySelector('svg'); if (!svg) return;
+  const base = svg.getAttribute('viewBox').split(' ').map(Number), key = base.join(',');
+  if (!el._z || el._z.key !== key) el._z = { key, base, vb:base.slice() };
+  svg.style.cursor = 'grab'; svg.removeAttribute('height'); svg.style.width = '100%'; svg.style.touchAction = 'none';
+  applyVb(el);
+  if (!el._wired) {
+    el._wired = true;
+    el.addEventListener('wheel', e => {
+      e.preventDefault(); const z = el._z, s = el.querySelector('svg').getBoundingClientRect(), k = e.deltaY < 0 ? 0.85 : 1 / 0.85;
+      const mx = z.vb[0] + (e.clientX - s.left) / s.width * z.vb[2], my = z.vb[1] + (e.clientY - s.top) / s.height * z.vb[3];
+      const nw = Math.min(Math.max(z.vb[2] * k, z.base[2] / 60), z.base[2] * 3), nh = nw * z.base[3] / z.base[2];
+      z.vb = [mx - (mx - z.vb[0]) * nw / z.vb[2], my - (my - z.vb[1]) * nh / z.vb[3], nw, nh]; applyVb(el);
+    }, { passive:false });
+    let drag = null;
+    el.addEventListener('pointerdown', e => { drag = { x:e.clientX, y:e.clientY, vb:el._z.vb.slice() }; el.setPointerCapture(e.pointerId); });
+    el.addEventListener('pointermove', e => { if (!drag) return; const s = el.querySelector('svg').getBoundingClientRect(); el._z.vb[0] = drag.vb[0] - (e.clientX - drag.x) / s.width * drag.vb[2]; el._z.vb[1] = drag.vb[1] - (e.clientY - drag.y) / s.height * drag.vb[3]; applyVb(el); });
+    el.addEventListener('pointerup', () => { drag = null; });
+    el.addEventListener('dblclick', () => { el._z.vb = el._z.base.slice(); applyVb(el); });
+  }
+}
+function applyVb(el) { const svg = el.querySelector('svg'); if (svg && el._z) svg.setAttribute('viewBox', el._z.vb.map(v => +v.toFixed(3)).join(' ')); }
+
+// ---------- 3D ----------
+let R = null;
+function init3d() {
+  const el = $('three');
+  const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+  renderer.setPixelRatio(window.devicePixelRatio || 1); renderer.setSize(el.clientWidth, el.clientHeight); el.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(40, el.clientWidth / el.clientHeight, 0.5, 3000);
+  camera.up.set(0, 0, 1);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x667766, 0.95));
+  const dl = new THREE.DirectionalLight(0xffffff, 0.6); dl.position.set(60, -80, 120); scene.add(dl);
+  R = { renderer, scene, camera, controls, group:null, pentMeshes:[], patchMeshes:[], spokeMeshes:[], spineMeshes:[] };
+  (function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); })();
+  window.addEventListener('resize', () => { renderer.setSize(el.clientWidth, el.clientHeight); camera.aspect = el.clientWidth / el.clientHeight; camera.updateProjectionMatrix(); });
+  let down = null;
+  renderer.domElement.addEventListener('pointerdown', e => down = [e.clientX, e.clientY]);
+  renderer.domElement.addEventListener('pointerup', e => {
+    if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    const m = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    const ray = new THREE.Raycaster(); ray.setFromCamera(m, camera);
+    const hit = ray.intersectObjects(R.patchMeshes.concat(R.pentMeshes).filter(x => x.visible))[0];
+    if (hit) { const u = hit.object.userData; if (u.patch !== undefined) { const id = u.pid[hit.face.a]; if (id >= 0) selectPent(id); else selectPatchIndex(u.patch); } else if (u.ok) selectPent(u.id); }
+  });
+}
+const COL = { white:0xf2f2f2, patch:0xb7c4ce, plateSel:0xe0752b, spine:0xb79ad6, rivet:0xd93025 };
+function basis(ex, n) { const ez = n.clone().normalize(); const e1 = ex.clone().sub(ez.clone().multiplyScalar(ex.dot(ez))).normalize(); return [e1, new THREE.Vector3().crossVectors(ez, e1), ez]; }
+// Each spoke is one solid (strip + both tips), laid straight between its nodes (spokes may flex and twist but not stretch).
+// Everything comes from the server (mesh3d.py); this only draws it.
+function meshOf(o) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(o.v, 3)); geo.setIndex(o.t);
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(o.v.length), 3)); geo.computeVertexNormals();
+  return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors:true, side:THREE.DoubleSide }));
+}
+function paint(mesh, hex) {
+  const c = new THREE.Color(hex), a = mesh.geometry.attributes.color;
+  for (let i = 0; i < a.count; i++) a.setXYZ(i, c.r, c.g, c.b);
+  a.needsUpdate = true;
+}
+async function build3d() {
+  const f = S.frame, token = S.t3 = (S.t3 || 0) + 1;
+  const m = await j('/api/mesh3d?' + baseQs());
+  if (token !== S.t3 || m.error) return;
+  if (R.group) R.scene.remove(R.group);
+  const g = new THREE.Group(); R.group = g; R.pentMeshes = []; R.spokeMeshes = []; R.spineMeshes = []; R.patchMeshes = [];
+  m.patches.forEach((p, i) => { const mesh = meshOf(p); mesh.userData = { patch:i, pid:p.pid, red:p.red, plates:p.plates }; g.add(mesh); R.patchMeshes.push(mesh); });
+  m.spokes.forEach(s => { const mesh = meshOf(s); mesh.userData = s; g.add(mesh); R.spokeMeshes.push(mesh); });
+  f.plates.forEach(p => { const pm = m.plates[String(p.id)]; if (!pm) return; const mesh = meshOf(pm); mesh.userData = { id:p.id, ok:p.ok }; g.add(mesh); R.pentMeshes.push(mesh); });
+  if (m.spine) { const mesh = meshOf(m.spine); g.add(mesh); R.spineMeshes.push(mesh); }
+  // rivet points: a disc at every place spokes meet and must be joined, lifted a little off the outside of the surface
+  R.rivets = null;
+  if (m.rivets && m.rivets.length) {
+    const inst = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 24), new THREE.MeshBasicMaterial({ color:COL.rivet, side:THREE.DoubleSide }), m.rivets.length);
+    m.rivets.forEach((r, i) => {
+      const n = new THREE.Vector3(...r.n).normalize(), ex = Math.abs(n.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+      const [e1, e2, ez] = basis(ex, n), mat = new THREE.Matrix4().makeBasis(e1, e2, ez); mat.scale(new THREE.Vector3(m.rivet_r, m.rivet_r, 1)); mat.setPosition(new THREE.Vector3(...r.p));
+      inst.setMatrixAt(i, mat);
+    });
+    inst.renderOrder = 10; g.add(inst); R.rivets = inst;
+  }
+  R.scene.add(g);
+  S.nRivets = (m.rivets || []).length;
+  if (!R.box) { R.box = new THREE.Box3().setFromPoints(f.vertices.map(v => new THREE.Vector3(...v))); showAll(); }
+  colour3d();
+}
+function paintPatch(mesh, sel) {
+  const a = mesh.geometry.attributes.color, pid = mesh.userData.pid, cp = new THREE.Color(sel ? COL.plateSel : COL.white), ca = new THREE.Color(sel ? COL.patch : COL.white);
+  for (let i = 0; i < a.count; i++) { const c = pid[i] >= 0 ? cp : ca; a.setXYZ(i, c.r, c.g, c.b); }
+  a.needsUpdate = true;
+}
+function colour3d() {
+  if (!R || !R.group) return;
+  const only = $('onlySection').checked && S.P, hp = $('hiPatch').checked, hs = $('hiSpine').checked, hr = $('hiRivet').checked;
+  R.patchMeshes.forEach(mm => { const sel = mm.userData.patch === S.patchId; paintPatch(mm, sel && hp); mm.visible = !only || sel; });
+  R.spokeMeshes.forEach(mesh => { paint(mesh, COL.white); mesh.visible = !only; });
+  R.pentMeshes.forEach(mm => { paint(mm, COL.white); mm.visible = !only; });
+  R.spineMeshes.forEach(mm => { paint(mm, hs ? COL.spine : COL.white); mm.visible = !only; });
+  if (R.rivets) R.rivets.visible = hr;
+  if ($('redNote')) $('redNote').textContent = hr ? `${S.nRivets} rivet points (red discs sit just outside the surface).` : '';
+}
+function showAll() {
+  const b = R.box, c = b.getCenter(new THREE.Vector3()), sz = b.getSize(new THREE.Vector3()), r = Math.max(sz.x, sz.y, sz.z);
+  R.controls.target.copy(c); R.camera.position.set(c.x, c.y - r * 1.4, c.z + r * 0.6); R.camera.lookAt(c); R.controls.update();
+}
+function zoomPatch() {                                   // look straight at the selected patch, from outside
+  const ids = S.patchPlates || []; const pls = S.frame.plates.filter(p => ids.includes(p.id)); if (!pls.length) return;
+  const c = new THREE.Vector3(), n = new THREE.Vector3(...pls[0].normal);
+  pls.forEach(p => c.add(new THREE.Vector3(...p.centre))); c.multiplyScalar(1 / pls.length);
+  const r = Math.max(...pls.map(p => c.distanceTo(new THREE.Vector3(...p.centre))), 8);
+  R.controls.target.copy(c); R.camera.position.copy(c.clone().add(n.multiplyScalar(r * 2.2 + 25))); R.camera.up.set(0, 0, 1); R.controls.update();
+}
+
+// ---------- data ----------
+const DEF = { sw:1.25, td:1.25, tr:50 / 25.4, rh:0.25, cl:0.125, pd:100 / 25.4, po:10 / 25.4, spw:4 };         // inches
+const IDS = Object.keys(DEF);
+const unit = () => $('units').value === 'mm' ? 25.4 : 1;
+const num = id => { const v = parseFloat($(id).value); return isNaN(v) ? 0 : v / unit(); };                // always inches
+const setv = (id, inches) => { $(id).value = +(inches * unit()).toFixed(unit() === 1 ? 4 : 2); };
+const showUnits = () => { document.querySelectorAll('.sz .u').forEach(e => e.textContent = $('units').value); IDS.forEach(id => { $(id).step = unit() === 1 ? 0.0625 : 0.5; }); };
+const opts = () => ({ spoke_width:num('sw'), tip:Math.max(num('td'), num('sw')), radius:num('tr'), rivet_hole:num('rh'), clearance:num('cl'), pd:num('pd'), po:num('po'), spine:num('spw') });
+const sizeQs = () => { const o = opts(); return `w=${o.spoke_width}&d=${o.tip}&f=${o.radius}&hole=${o.rivet_hole}`; };
+const baseQs = () => { const o = opts(); return `layout=${encodeURIComponent(S.layout)}&pd=${o.pd}&po=${o.po}&spine=${o.spine}&pc=${$('pc').value || 25}&mp=${$('mp').value || 5}&${sizeQs()}`; };
+const pentNote = () => { const o = opts(), Rc = o.pd / 2 + o.po, side = 2 * Rc * Math.sin(Math.PI / 5), u = $('units').value, k = unit();
+  $('pentNote').textContent = `Pentagon corners lie on a circle ${fmt(2 * Rc * k, 1)} ${u} across. Pentagon side and spoke spacing ${fmt(side * k, 1)} ${u}. Radius where spokes meet a pentagon: at most ${fmt(Math.min(o.radius, o.pd / 3) * k, 1)} ${u}.`; };
+async function loadLayouts(pick) {
+  const d = await j('/api/layouts');
+  $('layout').innerHTML = d.layouts.map(l => `<option value="${l.id}">${l.label}</option>`).join('');
+  const want = pick || store.get('layout', '');
+  if (want && d.layouts.some(l => l.id === want)) $('layout').value = want;
+  S.layout = $('layout').value;
+  await loadFrame();
+}
+async function loadFrame() {
+  if (!S.layout) return;
+  store.set('layout', S.layout);
+  $('layoutInfo').textContent = 'Building this shape at this sizing (about 30 seconds the first time)...';
+  const f = await j('/api/frame?' + baseQs());
+  if (f.error) { $('layoutInfo').textContent = f.error; return; }
+  S.frame = f; S.hasSpine = !!f.spine; $('pentCount').textContent = `\u00b7 ${f.summary.usable} pentagons` + (f.summary.on_spine ? ` (+${f.summary.on_spine} cut by the spine)` : '');
+  $('spw').disabled = !f.spine; $('spw').title = f.spine ? '' : 'This shape has no spine curve';
+  const s = f.summary;
+  $('layoutInfo').innerHTML = `Polyp hole ${fmt(f.hole * unit(), 1)} ${$('units').value} &middot; ${s.pentagons} pentagons: ${s.usable} complete parts` + (s.on_spine ? `, ${s.on_spine} cut by the spine (no polyp)` : '') + (f.spine ? ` &middot; ${f.spine.tabs.length} spine spokes, ${f.spine.partial} partial windows` : '');
+  $('summary').innerHTML = `<b>${s.loose}</b> loose spokes (the rule: all the same length): <b>${fmt(s.loose_mean)} in</b> on average, from ${fmt(s.loose_min)} to ${fmt(s.loose_max)} in, a spread of <b>${fmt(s.loose_std_pct, 1)} %</b>. ` +
+    `<b>${s.attached}</b> arm spokes (cut with their plate, any length): ${fmt(s.attached_min)} to ${fmt(s.attached_max)} in.` + (f.spine ? ` <b>${f.spine.tabs.length}</b> spine spokes (part of the spine piece): ${fmt(Math.min(...f.spine.tabs.map(t => t.L)))} to ${fmt(Math.max(...f.spine.tabs.map(t => t.L)))} in past the spine edge.` : '');
+  S.looseL = f.loose_lengths || [];
+  if (!R) init3d();
+  R.box = null;
+  S.pending3d = build3d();
+  await loadSized();
+  await S.pending3d;
+}
+// everything that depends on the sizing boxes (patches, spine piece, loose spokes)
+async function loadSized() {
+  if (!S.frame) return;
+  const token = S.token = (S.token || 0) + 1, o = opts();
+  const pl = await j('/api/patches?' + baseQs());
+  if (token !== S.token) return;
+  S.patches = pl.patches || [];
+  $('pent').innerHTML = S.patches.map(p => `<option value="${p.id}">Patch ${p.id + 1}: ${p.parts} part${p.parts === 1 ? '' : 's'}</option>`).join('');
+  const keep = S.patches.find(p => p.plates.includes(S.pent)) || S.patches[0];
+  if (keep) { S.patchId = keep.id; $('pent').value = keep.id; await loadPatch(!S.zoomed); S.zoomed = true; }
+  else { S.P = null; $('flat').innerHTML = '<div class="note">No pentagon is far enough from the ends and the spine to make a patch.</div>'; $('stats').innerHTML = ''; S.patch = null; S.patchPlates = []; colour3d(); }
+  const f = S.frame;
+  $('spineCard').style.display = f.spine ? '' : 'none';
+  if (f.spine) {
+    const sp = await j('/api/spine_outline?' + baseQs());
+    if (token !== S.token) return;
+    S.spineS = sp; setSvg($('spine'), PatchDraw.spineSvg(sp, false));
+    $('spineNote').textContent = `The spine strip (${fmt(num('spw') * unit(), 1)} ${$('units').value} average width, ${fmt(f.spine.length, 1)} in long, exactly the length of the surface). ${f.spine.tabs.length} short tabs (up to 1.5 in) stay on the spine; ${(f.spine.edges || []).length} longer ones are ordinary spokes that run from a node to the spine edge and rivet to the spine at the holes shown, instead of forming peninsulas. The pattern starts at the spine: no spoke crosses it.`;
+  }
+  drawLoose(o);
+}
+async function drawLoose(o) {
+  const Lz = S.looseL || [], Ed = S.frame.edge_d || [], R = Math.max(num('td'), num('sw')) / 2;
+  $('looseCard').style.display = (Lz.length || Ed.length) ? '' : 'none'; if (!Lz.length && !Ed.length) return;
+  const m = Lz.length ? Lz.reduce((a, b) => a + b, 0) / Lz.length : 0, el = Ed.map(d => +(d + R).toFixed(3));
+  const lengths = (Lz.length ? [m.toFixed(3)] : []).concat(el);
+  const T = (await j('/api/loose?' + baseQs() + '&Ls=' + lengths.join(','))).items || [];
+  const items = (Lz.length ? [{ t:T[0], n:Lz.length }] : []).concat(el.map((L, i) => ({ t:T[(Lz.length ? 1 : 0) + i], n:1 })));
+  S.looseItems = items;
+  const sh = PatchDraw.looseSheet(items, opts(), false); S.looseSheet = sh;
+  setSvg($('loose'), sh.svg);
+  $('looseNote').textContent = `${Lz.length} loose spokes, all about ${fmt(m)} in long (${Lz.length ? fmt(Math.min(...Lz)) : 0} to ${Lz.length ? fmt(Math.max(...Lz)) : 0}), plus ${Ed.length} edge spokes that run from a node to the spine (each its own length, ${Ed.length ? fmt(Math.min(...el)) + ' to ' + fmt(Math.max(...el)) : '-'} in). About ${sh.sheets} sheet${sh.sheets === 1 ? '' : 's'} of 4 x 8 ft in plain rows. Shown: the first sheet.`;
+}
+async function loadPatch(zoom) {
+  const p = S.patches.find(x => x.id === S.patchId); if (!p) return;
+  const P = await j('/api/patch?' + baseQs() + '&pent=' + p.plates[0]);
+  if (P.error) { $('flat').innerHTML = `<div class="bad">${P.error}</div>`; return; }
+  S.P = P; S.pent = p.plates[0]; S.patchPlates = p.plates; render(); if (zoom) zoomPatch();
+}
+function render() {
+  if (!S.P) return;
+  const P = S.P, o = opts(), sz = P.size;
+  S.patch = { vertices:P.vertices, spokes:P.spokes, cuts:[] };
+  setSvg($('flat'), PatchDraw.patchSvg(P, o, false));
+  const arms = P.parts.flatMap(x => x.arms), tilts = arms.map(a => Math.abs(a.tilt));
+  $('stats').innerHTML = [['Parts in this patch', P.parts.length], ['Arms', arms.length], ['Fold angles', arms.length ? fmt(Math.min(...tilts), 0) + ' to ' + fmt(Math.max(...tilts), 0) + ' degrees' : '-'],
+    ['Loose spokes rivet here', P.ends.filter(e => !e.spine).length], ['Spine spokes rivet here', P.ends.filter(e => e.spine).length], ['Patch size', fmt(sz.w, 1) + ' x ' + fmt(sz.h, 1) + ' in']]
+    .map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
+  $('fit').innerHTML = (sz.fits ? 'Fits a 4 x 8 ft sheet' : '<span class="bad">Does not fit a 4 x 8 ft sheet</span>') + ` (smallest box ${fmt(sz.w, 1)} x ${fmt(sz.h, 1)} in). Each part is grown into the patch only if it does not overlap and the patch still fits the sheet.`;
+  colour3d();
+}
+function selectPent(id) { const p = (S.patches || []).find(x => x.plates.includes(id)); if (p) selectPatchIndex(p.id); }
+function selectPatchIndex(i) { S.patchId = i; $('pent').value = i; loadPatch(false); }
+
+// ---------- controls ----------
+$('layout').onchange = async () => { S.layout = $('layout').value; S.zoomed = false; S.building = true; updateDirty(); try { await loadFrame(); } finally { S.building = false; S.applied = snap(); updateDirty(); } };
+$('pent').onchange = () => { S.patchId = Number($('pent').value); loadPatch(true); };
+const step = d => { const n = (S.patches || []).length; if (n) { S.patchId = ((S.patchId || 0) + d + n) % n; $('pent').value = S.patchId; loadPatch(true); } };
+$('prev').onclick = () => step(-1); $('next').onclick = () => step(1);
+const clampTip = () => { if (num('td') < num('sw')) setv('td', num('sw')); $('td').min = $('sw').value; };
+const values = () => { const v = { layout:S.layout, units:$('units').value, pc:+$('pc').value || 25, mp:+$('mp').value || 5 }; IDS.forEach(id => v[id] = +num(id).toFixed(5)); return v; };
+const snap = () => JSON.stringify(values());
+function updateDirty() {
+  const need = S.applied != null && snap() !== S.applied;
+  $('rebuild').disabled = !need; $('rebuildCard').classList.toggle('need', need);
+  $('sizeNote').textContent = S.building ? 'Rebuilding...' : need ? 'Something changed. Press Rebuild to apply it.' : 'Nothing to rebuild.';
+  pentNote();
+}
+IDS.forEach(id => { $(id).oninput = () => { store.set(id + '5', num(id)); updateDirty(); }; });
+$('units').onchange = () => { const cur = {}; IDS.forEach(id => cur[id] = num(id)); store.set('units5', $('units').value); showUnits(); IDS.forEach(id => setv(id, cur[id])); updateDirty(); };
+$('sw').addEventListener('change', () => { clampTip(); updateDirty(); }); $('td').addEventListener('change', () => { clampTip(); updateDirty(); });
+['pc', 'mp'].forEach(id => $(id).oninput = () => { store.set(id + '5', $(id).value); updateDirty(); });
+$('rebuild').onclick = async () => {
+  clampTip(); S.building = true; $('rebuild').disabled = true; updateDirty();
+  S.zoomed = false; if (R) R.box = null;
+  try { await loadFrame(); } finally { S.building = false; S.applied = snap(); updateDirty(); }
+};
+// saved setups (kept by the tool in saved_configs.json, so they survive closing the window)
+async function loadConfigs(pick) {
+  const d = await j('/api/configs'); S.configs = d.configs || {};
+  const names = Object.keys(S.configs).sort();
+  $('cfgList').innerHTML = names.length ? names.map(n => `<option>${n.replace(/</g, '&lt;')}</option>`).join('') : '<option value="">(none saved yet)</option>';
+  if (pick) $('cfgList').value = pick;
+}
+$('cfgSave').onclick = async () => {
+  const name = $('cfgName').value.trim(); if (!name) { $('cfgNote').textContent = 'Type a name first.'; return; }
+  if (S.configs && S.configs[name] && !confirm(`A setup called "${name}" exists. Replace it?`)) return;
+  const r = await j('/api/configs/save?name=' + encodeURIComponent(name), { method:'POST', body:JSON.stringify(values()) });
+  $('cfgNote').textContent = r.error || `Saved "${name}" (the values shown now${S.applied != null && snap() !== S.applied ? ', including changes not rebuilt yet' : ''}).`;
+  await loadConfigs(name);
+};
+$('cfgLoad').onclick = async () => {
+  const name = $('cfgList').value, c = (S.configs || {})[name]; if (!c) return;
+  $('units').value = c.units || 'mm'; showUnits(); IDS.forEach(id => { if (c[id] !== undefined) setv(id, c[id]); });
+  $('pc').value = c.pc ?? 25; $('mp').value = c.mp ?? 5; clampTip();
+  const lay = [...$('layout').options].some(o => o.value === c.layout);
+  if (lay) { $('layout').value = c.layout; S.layout = c.layout; } else $('cfgNote').textContent = `The shape "${c.layout}" is not in the list any more; loaded the sizes only.`;
+  if (lay) $('cfgNote').textContent = `Loaded "${name}".`;
+  $('cfgName').value = name;
+  $('rebuild').disabled = false; await $('rebuild').onclick();
+};
+$('cfgDel').onclick = async () => {
+  const name = $('cfgList').value; if (!name || !confirm(`Delete the saved setup "${name}"?`)) return;
+  await j('/api/configs/delete?name=' + encodeURIComponent(name), { method:'POST', body:'{}' });
+  $('cfgNote').textContent = `Deleted "${name}".`; await loadConfigs();
+};
+$('onlySection').onchange = () => { colour3d(); if ($('onlySection').checked) zoomPatch(); };
+['hiPatch', 'hiSpine', 'hiRivet'].forEach(id => $(id).onchange = colour3d);
+$('focus').onclick = zoomPatch; $('all').onclick = showAll;
+const save = (text, name) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type:'image/svg+xml' })); a.download = name; a.click(); };
+$('dl').onclick = () => { if (S.P) save(PatchDraw.patchSvg(S.P, opts(), true), `patch-${S.layout}-${(S.patchId || 0) + 1}.svg`); };
+$('dlSpine').onclick = () => { if (S.spineS) save(PatchDraw.spineSvg(S.spineS, true), `spine-${S.layout}.svg`); };
+$('dlLoose').onclick = () => { if (S.looseItems) save(PatchDraw.looseSheet(S.looseItems, opts(), true).svg, `loose-spokes-${S.layout}.svg`); };
+$('upload').onclick = () => $('stepFile').click();
+$('stepFile').onchange = async () => {
+  const f = $('stepFile').files[0]; if (!f) return;
+  const name = f.name.replace(/\.[^.]+$/, '');
+  $('upload').disabled = true; $('runState').textContent = 'Reading ' + f.name + '...';
+  const r = await j('/api/upload?name=' + encodeURIComponent(name), { method:'POST', body:f });
+  $('stepFile').value = ''; $('upload').disabled = false;
+  if (r.error) { $('runState').innerHTML = `<span class="bad">${r.error}</span>`; return; }
+  $('runState').textContent = `${name} added (${r.size}). ${r.curve || ''}`;
+  S.zoomed = false; await loadLayouts(r.id);
+};
+$('units').value = store.get('units5', 'mm');
+IDS.forEach(id => { const v = store.get(id + '5', null); $(id).dataset.inch = v === null ? DEF[id] : v; });
+showUnits(); IDS.forEach(id => setv(id, parseFloat($(id).dataset.inch))); $('pc').value = store.get('pc5', 25); $('mp').value = store.get('mp5', 5); clampTip(); pentNote();
+loadConfigs();
+loadLayouts().then(() => { S.applied = snap(); updateDirty(); });
+
+// --- version label and Refresh button (restarts the tool from the files on disk, then reloads this page) ---
+fetch('/api/version').then(r => r.json()).then(v => {
+  if (v.git) document.getElementById('ver').textContent = 'branch ' + v.branch + ' · ' + v.date + ' · ' + v.subject + (v.edited ? ' · (edited here, not saved to git)' : '');
+}).catch(() => {});
+document.getElementById('refresh-btn').onclick = async () => {
+  const btn = document.getElementById('refresh-btn'), msg = document.getElementById('refresh-msg');
+  btn.disabled = true; msg.textContent = 'Refreshing...';
+  const r = await fetch('/api/refresh', {method: 'POST', body: '{}'}).then(x => x.json()).catch(() => ({ok: false, log: 'Lost the connection.'}));
+  if (!r.ok) { msg.textContent = r.log; btn.disabled = false; return; }
+  msg.textContent = (r.log || '') + ' Restarting...';
+  await new Promise(res => setTimeout(res, 2000));
+  for (let i = 0; i < 60; i++) {
+    try { const v = await fetch('/api/version', {cache: 'no-store'}); if (v.ok) { location.reload(); return; } } catch (e) {}
+    await new Promise(res => setTimeout(res, 500));
+  }
+  msg.textContent = 'The tool did not come back. Close the window and open it again.'; btn.disabled = false;
+};
+</script>
+</body>
+</html>

@@ -64,6 +64,9 @@ Lessons carried over:
 - Explain things in plain language. The lead is a mechanical engineer, new to coding. Say what a script does before asking Remy to run it, and give one recommended path.
 - Several people work on this repo. Don't change files outside the task's folder without saying so.
 
+## Session start routine (Remy, 2026-11-16)
+Read `START-HERE.md` and tell Remy his start-of-session steps in your first message. He now works locally in the Claude desktop app and keeps the tool open in its own Mac window (Coral Frame Tool app, with a Refresh tool button).
+
 ## Cloud + local workflow (agreed with Remy, 2026-11-02)
 Remy works in the cloud with Claude and tests locally on his Mac. Keep it this way in every session:
 - **Claude works in the cloud and pushes to a branch.** Remy runs the simulators on his own Mac, from a copy of this repo in `~/coral-simulator`. It is set up once with `polyps/fabric-pattern/install-mac.sh`, and the simulator then runs all the time at **http://127.0.0.1:8800/** (bookmarked). The page has a branch box and a **Get latest changes** button that pulls whatever Claude pushed and restarts it. No terminal needed after setup.
