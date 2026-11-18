@@ -1,0 +1,88 @@
+# polyps/sea-anemone/
+
+**Branch `polyp-2026-11-18-stacked-cones` (2026-11-18): the tube is TWO STACKED CONES, each flattened exactly.** Branched from `polyp-2026-11-18-profile-editor` (4-point spline tube, one piece), which still exists on GitHub. Why: one flat piece without stretch can only be exact for a cone or cylinder (Remy asked for flat edges that are true arcs, and the spline tube cannot give that, see the analysis below), so the tube is cut into a lower cone (bottom ring to the central control point) and an upper cone (central point to the top), sewn at a circular ring seam. Remy's experience: fabric softens the corner at the seam when inflated. No curve control in this version: only three control points (bottom, central, top).
+
+**Branch `polyp-2026-11-18-profile-editor` (2026-11-18): the tube's cross-section is now a 4-point spline you can edit in a cross-section view.** The older branch `polyp-2026-11-17-sea-anemone` still has the simple three-diameter (bottom / middle / top) tube. See "Tube cross-section spline" below.
+
+## Purpose
+A third polyp design, started 2026-11-17 on branch `polyp-2026-11-17-sea-anemone` (branched from the cone worm branch). Same approach and app features as the cone worm (`../spiral-cone/`, not changed): a flat-pattern generator plus a small Mac window app. Motion is NOT simulated (Remy, 2026-11-17: of limited value).
+
+## The design (Remy, 2026-11-17)
+- **Tube:** one piece, ONE straight seam, sewn on the inside. Tubular, slightly flared at the base and at the tip: three diameters (bottom, middle, top) and a height. Everything in millimetres, fabric width too.
+- **Cap:** a flat disk that closes the top of the tube.
+- **Frill:** one straight strip sewn into the ring seam between the tube top and the cap, same idea as the cone worm. Its sewn edge is V-notched so the straight strip can bend into a circle. The free part is slit into 6 mm strands (laser cut).
+- **Frill notches:** about 9.5 mm (3/8 in) deep, leaving about 3 mm. Fallback if that is too weak: notch deeper and keep a solid, unslit band (setting `FRILL_BAND`, e.g. 6 mm = 1/4 in) between the sew line and the fringe.
+- **Tube notches (updated 2026-11-17):** V notches about 6 mm deep on the tube seam allowances that remain (both side edges and the top edge) because they are all curved. Only the cap edge has none: it is meant to wrinkle when the piece is turned inside out, which adds texture (Remy).
+- **Notch spacing is now a count between tabs**, not a distance: `TUBE_NOTCHES_BETWEEN_TABS` (default 3) and `FRILL_NOTCHES_BETWEEN_TABS` (default 7) = notches evenly spaced between each pair of neighbouring tabs. The old distance setting clashed with the tab positions. No notch goes in the corner where the side seam joins (or where the frill strip's ends meet), so with an even count the middle notch of that gap is left out.
+- **No seam allowance on the bottom edge of the tube** (Remy, 2026-11-17). The bottom edge has no notches either.
+- **Wavy, round-ended fringe (2026-11-17):** every fringe strand has a round tip and the slits are waves. `FRILL_WAVE` (slider in the app, mm of wave height, 0 = straight; releasing the slider rebuilds) and `FRILL_WAVE_LENGTH`. All slits are the same wave shifted sideways, so the strands nest exactly; the wave eases to zero at both ends of each strand so the tips are clean semicircles. The strip's two ends are the same wave, so they join into the ring. Strip is up to the wave height wider than the ring circumference at its ends. Defaults 3 mm / 40 mm are guesses.
+- Adjustable (top of each card in the app): height, diameter bottom / middle / top, frill length (how far the fringe stands out; the strip's cut width is that plus the seam allowance and solid band), strip length round the ring (0 = fits the ring exactly).
+
+## Tube cross-section spline (branch profile-editor, 2026-11-18)
+- The tube's profile (radius against height) is a spline through 4 control points: bottom (height 0, bottom diameter), **lower** point, **upper** point, top (height = tube height, top diameter). Between neighbours it is a cubic Bezier (CAD-style): start, start + handle, end - handle, end.
+- The lower and upper points each have: position (lower: height above the bottom + diameter; upper: distance below the top + diameter) and a tangent: **angle** in degrees from the tube's axis (0 = straight up the axis, + = widening going up, - = narrowing) and **length** (handle length in mm: how far the direction holds before the curve bends). The bottom and top points have NO handle of their own (2026-11-18, Remy): the curve reaches them at whatever angle the neighbouring middle point's handle gives, so nothing forces the curve to meet the cap or the bottom at a set angle and there is no extra inflection there.
+- Settings: `LOWER_HEIGHT, LOWER_DIAMETER, LOWER_ANGLE, LOWER_LENGTH, UPPER_FROM_TOP, UPPER_DIAMETER, UPPER_ANGLE, UPPER_LENGTH`. `DIAMETER_MIDDLE` is gone (old snapshots simply lose that value). Defaults (80 mm / 133 mm / -3 deg / 40, mirrored on top) reproduce the old smooth shape to within 0.22 mm.
+- Cross-section view (card above the pattern): drag a red dot to move that control point (height and diameter); drag a yellow square to set its tangent direction and length. The boxes on the left follow, and it rebuilds when you let go. Typing in the boxes redraws the view. The scale is true (equal mm both ways); the dashed line is the axis. The curve maths is the same in the page (JavaScript) and in `sea_anemone.py` (checked equal to 6 digits).
+- **Flat pattern edges are arcs (2026-11-18, Remy):** the top and bottom edges of the flat tube MUST be arcs like the flat pattern of a cut-off cone; a straight edge gives no flare, because the flare of the sewn tube comes from how much the edge curves. Each ring is drawn as an arc of the true local curvature (r'/r) centred on the straight middle line. That is exact for a cone, but on a waisted shape it makes the side edge too short, so the arcs are full strength only at the two ends and fade toward the middle (`exp(-(distance from end / reach)^2)`). The reach is solved so the side edge is exactly as long as the tube; a plain cone needs no fading. Edge shape near the ends therefore follows the cone-like flare exactly; in the middle it is the compromise.
+- **Flat pattern edges are arcs (2026-11-18, Remy):** the top and bottom edges of the flat tube are arcs like the flat pattern of a cut-off cone, because a straight edge gives no flare (the flare comes from how much the edge curves). Each ring is an arc of the true local curvature (r'/r) times a fraction `lam`, centred on the straight middle line. `lam` is solved so the side edge is exactly as long as the tube: a plain cone (straight taper) gives 100% and is exact; a waisted or flared-end shape gives much less (about 9% at the defaults, top and bottom arcs about 5 mm deep), because true curvature would make the side edge up to 40% too short. That is the physics of an hourglass made from one flat piece without stretch, not a bug: the rest of the flare has to come from the fabric easing. The report ("Flat edges") shows the percentage and the arc depths.
+- The ring bend is automatic only (the `RING_BEND` slider was removed 2026-11-18 at Remy's request: tweaking it only gave unrealistic patterns). When the profile curves too much for one flat piece (rings bent to under 60% of true curvature) the Checks list says so.
+- **One piece vs split (analysis 2026-11-18, not built):** one flat piece without stretch can only be exact for a cone or cylinder. Relative edge error depends on how wide the piece is (half the circumference each side), not on how tall. Split into **stacked pieces** (rings joined by circular seams): each piece is a cut-off cone, flat pattern exact with true arcs and straight side edges; 2 pieces stray at most 2.3 mm in radius from the smooth curve, 3 pieces 1.4 mm, 4 pieces 0.55 mm. Split into **longitudinal gores** (halves): the full-curvature edge shortfall drops from 41% (one piece) to 10% (two) and 2.6% (four), but is never exact.
+- The white bottom and top dots can be dragged in or out (diameter only; their heights stay fixed). Zoom in the flat-pattern preview is now only in the Laser cut view (removed from Detailed, Remy 2026-11-18).
+- Errors: a handle so long or steep that the curve doubles back, middle points out of order or outside the tube, or a profile narrower than 20 mm, give a clear message.
+
+## Stacked cones version (this branch)
+- Settings: `HEIGHT`, `DIAMETER_BOTTOM`, `DIAMETER_TOP`, `MID_HEIGHT` (central point, height above the bottom), `MID_DIAMETER`. The cross-section view has 3 draggable points: red centre (up/down and in/out), white bottom and top (in/out). The tube between points is straight (two cones).
+- Each cone piece is an exact flat ring sector (`Frustum` in `sea_anemone.py`): straight side edges (the seam, length = slant length), arcs top and bottom (true arcs, like a paper party hat with the tip cut off). A cylinder (equal diameters) is a plain rectangle. Defaults: both cones 125 mm tall, sector 28.7 degrees, arcs 25 to 29 mm deep, cut size about 504 x 165 and 504 x 188 mm.
+- Pieces to cut: 4 (lower cone, upper cone, cap, frill). Each cone has its own straight seam. The two cones are joined at the ring seam (both arcs are exactly one circumference long).
+- Tabs (2026-11-18, Remy): the tab SIZE is global (`TAB_SIZE`), the NUMBER of tabs is set per edge and they are evenly spaced along it (positions at (i+0.5)/n of the edge): `TABS_LOWER_SEAM` (default 2, on each of the two edges of the lower cone's straight seam, so they pair up, labelled `L1, L2`), `TABS_MID_RING` (3, lowercase `a, b, c` on both arcs of the ring seam between the cones), `TABS_UPPER_SEAM` (2, `U1, U2`), `TABS_TOP_RING` (4, capital `A..D` on the top arc of the upper cone, the cap and the frill, which all use the same count). The old `TAB_SPACING` setting is gone. Ring seams need at least 1 tab (the notches go between tabs), at most 26 (letters). A warning appears if tabs would sit closer than 1.6 tab sizes. No seam allowance on the open bottom edge of the lower cone (flush cut, as before).
+- Frill tabs (2026-11-18, Remy): the tabs on the frill are loops for a hoop. `FRILL_TAB_LENGTH` (box in the Tabs card, default 30 mm = 2.5 x the 12 mm tab size) sets their length separately; their width stays `TAB_SIZE`. They hang off the allowance edge of the frill strip and overlap the strip by 5 mm.
+- Notches (6 mm deep, `TUBE_NOTCHES_BETWEEN_TABS` between each pair of ring tabs): on the arc edges that have allowance (ring seam, both sides, and the top edge). None on the straight seams (straight now), the open bottom edge or the cap.
+- 3D picture: the profile is the two cones, with the ring seam between them drawn as a darker line with a few small gathers (the corner softened), drawn with the corner at the ring seam softened by the picture's usual smoothing. Same inflated cap and wind-blown frill as before.
+- Checked 2026-11-18: DXF read back with ezdxf (units mm, 4 closed loops, sizes match the report), PDF read back with pymupdf (4 paths, black 0.001 in). Odd shapes run: cylinders, widening cones, narrowing cones, a deep pinch (sector 216 degrees), tall tube.
+- Not done: more than two cones (the analysis says 3 would stray 1.4 mm instead of 2.3 mm from a smooth curve, 4 would stray 0.55 mm); real sample not sewn yet; the Mac window not tested.
+
+## What's here
+| File | Job |
+|---|---|
+| `sea_anemone.py` | The pattern maths and all outputs (settings are module variables at the top). `build()`, `export_items()`, `write_svg/pdf/dxf`, `draw_png*`, `report()`. Run alone: `python3 sea_anemone.py --out folder`; override with `ANEMONE="HEIGHT=300,DIAMETER_TOP=170"`. |
+| `anemone_3d.py` | The right-hand picture of the finished, inflated anemone (see below). Drawn by hand with a depth-sorted painter, because matplotlib's own 3D mixes up what is in front when surfaces and ribbons overlap. |
+| `anemone_tool.py` | Local web server and the page (`FIELDS` lists every input box). Port **8830** (window app picks the first free of 8830-8839). Same sticky Rebuild / snapshot tile, Detailed / Laser cut switch, Save PDF / DXF / SVG (asks where, via the Mac Save window), Refresh tool button as the cone worm. |
+| `anemone_window.py` | The Mac window (pywebview), starts the server and restarts it if it dies. |
+| `install-app.sh` | One-time setup: `.venv`, libraries, builds `~/Applications/Sea Anemone.app`. |
+| `icon/` | Logo (SVG, PNG, icns). |
+
+## How the flat tube is found
+The profile is a smooth curve (quadratic) through the three diameters. A smooth hourglass cannot unroll flat without distortion. We keep the line opposite the seam straight and true length, make each ring an arc of its true circumference, and bend those arcs by a fraction of the true curvature. That fraction is solved so the flat side edge is exactly as long as the tube's surface line. A plain cone (all three diameters on a straight line) comes out exact. The distortion lands on the in-between lines. If the edge cannot match (a bulge: middle wider than the ends) the report shows the difference.
+
+## Previews in the app (2026-11-17)
+- Dark background previews (exports for the laser are unchanged: white page, black lines). The flat-pattern preview is a vector SVG (`preview-detailed.svg`, `preview-outline.svg`) that can be zoomed: scroll wheel, +/- buttons, drag to move, double-click or Fit to reset. Lines keep their thickness when zoomed. The zoom resets when switching between Detailed and Laser cut.
+- The inflated picture (`picture-3d.png`) is all white on the dark background and shows under the Detailed view only.
+
+## The 3D picture (2026-11-17, a drawing, not a physics simulation, no motion)
+- (Updated 2026-11-18, Remy) The top diameter is fixed: the seam ring is held at 96% of the top diameter setting (`K_TOP` in `anemone_3d.py`) and does not collapse further, so the top keeps its shape and the cap pouches out less. The cap is a shallow spherical dome whose fabric (seam to centre) is exactly the cap radius (about 18 mm high at the defaults). The tube wall follows the pattern's radius, eases in to the seam ring over 14 mm, and the seam height is solved so the tube fabric equals the flat pattern's side-edge length. The ring is 4% smaller than the tube top, so a little fabric gathers: wrinkles are drawn round the seam (decoration).
+- Frill: one ribbon per strand, leaving the seam going outward and blown upward by air from the base. Each strand keeps its real length (the frill length) and the pattern's wave; direction is random but trends up (about 52 degrees on average, spread by a smooth random pattern round the ring plus per-strand noise; fixed random seed so it does not change on every rebuild).
+- Not done: no real inflation or cloth simulation; the dome height and corner roundness come from the length rules above, not from pressure. The wrinkles are decoration.
+
+## Checked (2026-11-17, defaults: height 250, diameters 150 / 130 / 150)
+- Flat side edge 251 mm = surface line 251 mm. Circumferences 471 / 408 / 471 mm. Tube cut size 510 x 287 mm, cap 174 mm across, frill 471 x 60 mm (79 strands of 6 mm, 78 slits of 48 mm), 3 pieces.
+- DXF read back with ezdxf: units mm, layer CUT only on the laser file, 3 closed loops, sizes match the report. PDF read back with pymupdf: 3 paths, all black 0.072 pt (0.001 in), no fill, no text. The frill loop is not a "valid" polygon only because the slits are doubled lines, as intended.
+- Odd settings run (bulge, long frill, band, no notches, strong taper); too-narrow settings give a clear error.
+
+## Assumed, not decided (confirm with Remy)
+- Defaults: bottom and top 150 mm, middle 130 mm; frill width 60 mm; seam allowance 12 mm on every edge except the tube's bottom edge (none); fabric 1470 mm; tabs 12 mm every 125 mm.
+- The profile is a quadratic through the three diameters (smooth, no straight middle section).
+- Frill length 0 = exactly the top circumference (pi x top diameter). A longer strip gathers, a shorter one leaves a gap (the tool warns).
+- Frill notch width is worked out from the circle (each notch takes out its share of the extra allowance length), not a fixed angle. Tube notches use a fixed 50 degree V like the cone worm. Default counts (3 and 7) are guesses.
+- No notches on the cap disk edge (on purpose, see above).
+- The two ends of the frill strip are left to be joined by hand (no extra allowance for an end seam).
+- Ring tabs: lettered A, B, ... on the tube top edge, cap and frill; side seam tabs numbered 1, 2, ...
+
+## Not done / not verified
+- Not run as the real Mac app (`install-app.sh` not run; the window and the Mac Save dialog are untested). Tool checked in a browser on a spare port.
+- No test cut or sew. Laser bed size and fabric still open.
+- No 3D surface for Fusion 360 (deferred, as for the whole project).
+
+## Next
+- (2026-11-18) Remy is sewing a real sample and will send a photo. Then rework the 3D picture / simulation of the inflated shape against it (dome height, corner roundness, how the tube and gathers really sit, how the frill really hangs). Useful to note with the photo: settings used (a saved snapshot name), fabric, whether it was inflated, and any measurements (height, widest diameter, dome height).
+- Remy runs `./install-app.sh` here, opens Sea Anemone, tries a test cut on paper or cheap fabric.
+- Settle notch depths and the frill band from the test sew.

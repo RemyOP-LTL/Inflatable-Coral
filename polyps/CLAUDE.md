@@ -6,6 +6,7 @@ Inflatable polyps. One sits in each pentagon panel of the skin.
 ## Sub-folders
 - `air/` — blowers, ducting and pressure (a separate workstream).
 - `fabric-pattern/` — the sewn nylon pattern, including string channels.
+- `sea-anemone/` — a tube-shaped polyp: two stacked cones, a cap disk and a wavy fringed frill, with a Mac pattern app (flat laser patterns, 3D picture). Its own tool, see its `CLAUDE.md`. Added 2026-11-18.
 - `motor/` — the motor that winds the string.
 - `electronics/` — custom board with motor controllers and LEDs; controller, power.
 
