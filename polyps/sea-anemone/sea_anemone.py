@@ -56,7 +56,8 @@ SEAM = 12.0                 # seam allowance on every edge
 TUBE_NOTCH_DEPTH = 6.0      # Remy: about 6 mm. V notches in the allowance of the curved (arc) edges of the two cone pieces: the ring seam between them and the top edge (0 = none). Their straight side edges and the open bottom edge have none
 TUBE_NOTCHES_BETWEEN_TABS = 3.0   # ASSUMED. How many notches go between each pair of neighbouring ring tabs along those arc edges
 FABRIC_WIDTH = 1470.0       # ASSUMED usable fabric width (about 58 in), for the fit check
-TAB_SIZE = 12.0             # alignment tabs are this-size squares
+TAB_SIZE = 12.0             # alignment tabs are this-size squares (and the width of the frill tabs)
+FRILL_TAB_LENGTH = 30.0     # length of the tabs on the frill (2.5 x the normal tab size). Fold them over to make loops for a hoop. Their width is TAB_SIZE
 TABS_LOWER_SEAM = 2.0       # number of alignment tabs along each straight seam edge of the lower cone (the same number on both edges, so they pair up), evenly spaced
 TABS_MID_RING = 3.0         # number of tabs round the ring seam between the two cones (on both arcs), evenly spaced
 TABS_UPPER_SEAM = 2.0       # number of tabs along each straight seam edge of the upper cone
@@ -64,7 +65,7 @@ TABS_TOP_RING = 4.0         # number of tabs round the top ring: the top arc of 
 
 NAMES = ["HEIGHT", "DIAMETER_BOTTOM", "DIAMETER_TOP", "MID_HEIGHT", "MID_DIAMETER", "FRILL_STRIP_LENGTH", "FRILL_LENGTH", "FRINGE_WIDTH",
          "FRILL_WAVE", "FRILL_WAVE_LENGTH", "FRILL_BAND", "FRILL_NOTCH_DEPTH", "FRILL_NOTCHES_BETWEEN_TABS", "SEAM", "TUBE_NOTCH_DEPTH", "TUBE_NOTCHES_BETWEEN_TABS",
-         "FABRIC_WIDTH", "TAB_SIZE", "TABS_LOWER_SEAM", "TABS_MID_RING", "TABS_UPPER_SEAM", "TABS_TOP_RING"]
+         "FABRIC_WIDTH", "TAB_SIZE", "FRILL_TAB_LENGTH", "TABS_LOWER_SEAM", "TABS_MID_RING", "TABS_UPPER_SEAM", "TABS_TOP_RING"]
 
 
 def settings():
@@ -333,8 +334,8 @@ def build():
     for f, lab in zip(ring_f, ring_lab):
         x = f * Lf
         tab_x.append(x)
-        ftabs.append(tab_square(np.array([x, 0.0]), np.array([1.0, 0.0]), np.array([0.0, -1.0]), 0.0, TAB_SIZE))
-        flabs.append((np.array([x, -h]), lab))
+        ftabs.append(Polygon([(x - h, 5.0), (x + h, 5.0), (x + h, -FRILL_TAB_LENGTH), (x - h, -FRILL_TAB_LENGTH)]))     # frill tab: TAB_SIZE wide, FRILL_TAB_LENGTH long, overlapping the strip by 5 mm
+        flabs.append((np.array([x, -FRILL_TAB_LENGTH / 2]), lab))
     fcut = unary_union([rect] + ftabs)
     n_fn = 0
     fdepth = min(FRILL_NOTCH_DEPTH, SEAM - 1.5)
@@ -353,7 +354,7 @@ def build():
                 n_fn += 1
         if fcutters:
             fcut = fcut.difference(unary_union(fcutters))
-    shift = np.array([0.0, TAB_SIZE])                      # tabs hang above the strip's allowance edge, so lift everything
+    shift = np.array([0.0, FRILL_TAB_LENGTH])              # tabs hang above the strip's allowance edge, so lift everything
     pts = [tuple(q) for q in fcut.exterior.coords][:-1]
     i0 = min(range(len(pts)), key=lambda i: abs(pts[i][0]) + abs(pts[i][1] - y_fringe))
     pts = pts[i0:] + pts[:i0]
@@ -443,7 +444,7 @@ def report(info):
           else "  Frill seam notches              none",
           (f"  Tube seam notches               {info['n_tube_notches']} V notches, {TUBE_NOTCHES_BETWEEN_TABS:g} between each pair of tabs, {min(TUBE_NOTCH_DEPTH, SEAM - 2.0):g} mm deep, "
            f"on the ring seam between the cones and the top edge (none on the straight seams, the open bottom edge or the cap)") if info["n_tube_notches"] else "  Tube seam notches               none",
-          f"  Alignment tabs                  {TAB_SIZE:g} mm squares: {info['side_tabs'][0]} (L) and {info['side_tabs'][1]} (U) numbered pairs on the straight seams, "
+          f"  Alignment tabs                  {TAB_SIZE:g} mm squares (frill tabs {TAB_SIZE:g} x {FRILL_TAB_LENGTH:g} mm, long enough to fold into loops for a hoop): {info['side_tabs'][0]} (L) and {info['side_tabs'][1]} (U) numbered pairs on the straight seams, "
           f"{info['mid_tabs']} lowercase sets on the ring seam between the cones, {info['ring_tabs']} capital sets (top of the tube, cap, frill)",
           f"  Pieces to cut                   {info['pieces']}", ""]
     L += ["Checks:"] + (["  " + w for w in info["warnings"]] or ["  none"])

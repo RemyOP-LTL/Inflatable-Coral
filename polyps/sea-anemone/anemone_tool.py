@@ -45,6 +45,7 @@ FIELDS = [
     ("Seam", "TUBE_NOTCHES_BETWEEN_TABS", "Tube notches between tabs", "", 0, 20, 1),
     ("Seam", "FABRIC_WIDTH", "Fabric width (fit check)", "mm", 300, 3000, 10),
     ("Tabs", "TAB_SIZE", "Tab size", "mm", 6, 25, 1),
+    ("Tabs", "FRILL_TAB_LENGTH", "Frill tab length (loops for a hoop)", "mm", 5, 200, 1),
     ("Tabs", "TABS_LOWER_SEAM", "Lower cone seam (each edge)", "tabs", 0, 12, 1),
     ("Tabs", "TABS_MID_RING", "Central ring seam", "tabs", 1, 24, 1),
     ("Tabs", "TABS_UPPER_SEAM", "Upper cone seam (each edge)", "tabs", 0, 12, 1),
