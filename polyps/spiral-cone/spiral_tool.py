@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -68,6 +69,38 @@ def run_pattern(params):
         info, text = S.make(folder, "spiral-cone")
     shown = text[:text.index("\nSettings:")] + "\n" + text[text.index("Results:"):]      # the settings stay in the .txt file, not on the page
     return key, {"text": shown, "warnings": info["warnings"], "seam": info["seam_total"], "turns": info["turns"]}
+
+
+# --- asking where to save an export (the standard Mac "Save" window, started from here so it works in the app and in a browser)
+SAVED = set()
+LASTDIR = os.path.join(HERE, "snapshots", ".last-save-folder")
+
+
+def remember_folder(d):
+    try:
+        os.makedirs(os.path.dirname(LASTDIR), exist_ok=True)
+        open(LASTDIR, "w").write(d)
+    except OSError:
+        pass
+
+
+def ask_save_path(default_name):
+    """Show the Mac save dialog; returns the chosen path, or None if cancelled. Opens in the last folder used (first time: Downloads)."""
+    folder = os.path.expanduser("~/Downloads")
+    try:
+        d = open(LASTDIR).read().strip()
+        if os.path.isdir(d):
+            folder = d
+    except OSError:
+        pass
+    script = ('tell current application to activate\n'
+              'set f to choose file name with prompt "Save the pattern as" default name (item 1 of argv) '
+              'default location (POSIX file (item 2 of argv))\n'
+              'return POSIX path of f')
+    script = 'on run argv\n' + script + '\nend run'
+    r = subprocess.run(["osascript", "-e", script, default_name, folder], capture_output=True, text=True)
+    out = r.stdout.strip()
+    return out if r.returncode == 0 and out else None
 
 
 # --- saved snapshots (named sets of sizes, kept as small files in the snapshots/ folder)
@@ -193,10 +226,10 @@ class Handler(BaseHTTPRequestHandler):
                 ext = f.rsplit(".", 1)[-1]
                 ctype = {"png": "image/png", "svg": "image/svg+xml", "dxf": "application/dxf", "pdf": "application/pdf", "txt": "text/plain"}.get(ext, "application/octet-stream")
                 extra = None
-                if ext in ("svg", "dxf", "pdf") and "dl=1" in self.path:      # named: detailed_ or outline_ + the saved snapshot name + units
+                if ext in ("svg", "dxf", "pdf") and "dl=1" in self.path:      # named: the saved snapshot name + _detailed or _outline + units
                     nm = snap_clean(parse_qs(urlparse(self.path).query).get("name", [""])[0]).replace(" ", "_")
                     view = "outline" if "-outline." in parts[1] else "detailed"
-                    extra = {"Content-Disposition": f'attachment; filename="{view}_{nm}_mm.{ext}"'}
+                    extra = {"Content-Disposition": f'attachment; filename="{nm}_{view}_mm.{ext}"'}
                 self.send(200, open(f, "rb").read(), ctype, extra)
             else:
                 self.send(404, "not found", "text/plain")
@@ -211,6 +244,30 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200, json.dumps({"ok": ok, "log": log}), "application/json")
             if ok:
                 restart_soon()
+        elif path == "/api/export":                  # ask where to save (Mac save dialog), then copy the file there
+            try:
+                key, view, ext = str(body.get("key", "")), str(body.get("view", "")), str(body.get("ext", ""))
+                if not (re.fullmatch(r"[0-9a-f]{12}", key) and view in ("detailed", "outline") and ext in ("pdf", "dxf", "svg")):
+                    raise ValueError("bad request")
+                src = os.path.join(OUT, key, f"spiral-cone-{view}.{ext}")
+                nm = snap_clean(body.get("name", "")).replace(" ", "_")
+                dest = ask_save_path(f"{nm}_{view}_mm.{ext}")
+                if not dest:
+                    self.send(200, json.dumps({"cancelled": True}), "application/json")
+                    return
+                if not dest.lower().endswith("." + ext):
+                    dest += "." + ext
+                shutil.copyfile(src, dest)
+                SAVED.add(os.path.realpath(dest))
+                remember_folder(os.path.dirname(dest))
+                self.send(200, json.dumps({"ok": True, "file": os.path.basename(dest), "folder": os.path.dirname(dest), "path": dest}), "application/json")
+            except (ValueError, OSError) as e:
+                self.send(400, json.dumps({"error": f"Could not save the file: {e}"}), "application/json")
+        elif path == "/api/reveal":                  # show a file this tool saved in Finder
+            p = os.path.realpath(str(body.get("path", "")))
+            if p in SAVED and os.path.isfile(p):
+                subprocess.run(["open", "-R", p])
+            self.send(200, json.dumps({"ok": True}), "application/json")
         elif path == "/api/snapshot":
             name = snap_save(body.get("name"), body.get("params", {}))
             self.send(200, json.dumps({"name": name, "names": snap_names()}), "application/json")
@@ -255,6 +312,7 @@ PAGE = r"""<!doctype html>
   .reset { background:none; border:none; color:var(--mute); text-decoration:underline; font-weight:400; width:auto; padding:0; margin:8px 0 0; }
   .sticky { position:sticky; top:0; z-index:5; }
   button:disabled { opacity:.4; cursor:default; }
+  .saved { color:#2e8b57; font-weight:600; margin:6px 0; }
   .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-bottom:8px; } .seg button { width:auto; margin:0; border:0; border-radius:0; background:var(--bg); color:var(--ink); padding:6px 14px; cursor:pointer; font:inherit; } .seg button.on { background:var(--ink); color:var(--bg); }
   dialog { border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); padding:16px; max-width:380px; } dialog input[type=text] { width:100%; box-sizing:border-box; font:inherit; padding:6px; margin-top:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
   .row { display:flex; gap:6px; margin-top:8px; } .row input { flex:1; min-width:0; font:inherit; padding:4px 6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); } .row button { width:auto; margin:0; }
@@ -262,7 +320,7 @@ PAGE = r"""<!doctype html>
   .sw { display:inline-flex; align-items:center; gap:6px; font-weight:400; } .sw input { position:absolute; opacity:0; } .sw .track { width:36px; height:20px; border-radius:10px; background:var(--line); position:relative; transition:.15s; } .sw .track::after { content:''; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:.15s; } .sw input:checked + .track { background:var(--accent); } .sw input:checked + .track::after { left:18px; }
   .derived { font-size:13px; color:var(--mute); }
 </style></head><body>
-<header><h1>Cone worm</h1><span class="derived">Spiral-cone polyp pattern. Sizes in millimetres. Type them, press Rebuild, pick Detailed or Laser cut, download the PDF for the laser.</span>
+<header><h1>Cone worm</h1><span class="derived">Spiral-cone polyp pattern. Sizes in millimetres. Type them, press Rebuild, pick Detailed or Laser cut, save the PDF for the laser.</span>
   <span id="ver" class="derived" style="margin-left:auto"></span>
   <button id="refresh-btn" title="Load the newest version of the tool (anything Claude changed or pushed)">Refresh tool</button>
   <span id="refresh-msg" class="derived"></span></header>
@@ -282,12 +340,13 @@ PAGE = r"""<!doctype html>
       <div class="seg"><button id="v-detailed" class="on" type="button">Detailed</button><button id="v-outline" type="button">Laser cut</button></div>
       <img id="pic" alt="">
       <p id="dlhelp" class="derived"></p>
-      <p><a id="pdf" href="#">Download PDF</a> &nbsp; <a id="dxf" href="#">Download DXF</a> &nbsp; <a id="svg" href="#">Download SVG</a></p>
+      <p><a id="pdf" href="#">Save PDF</a> &nbsp; <a id="dxf" href="#">Save DXF</a> &nbsp; <a id="svg" href="#">Save SVG</a></p>
+      <div id="dlmsg" class="derived"></div>
       <dialog id="dlg"><form method="dialog" id="dlgform"><h2>Name this snapshot</h2>
-        <p class="derived">Every download is saved as a snapshot first, so you can come back to exactly this pattern. The name goes in the file name.</p>
+        <p class="derived">Every new pattern is saved as a snapshot before its first export, so you can come back to it. The name goes at the start of the file name; later exports of the same settings reuse it.</p>
         <input type="text" id="dlgname" maxlength="60" placeholder="e.g. test cone 1" autocomplete="off">
         <div id="dlgwarn" class="derived"></div>
-        <div class="row"><button type="submit" id="dlgok" disabled>Save and download</button><button type="button" id="dlgcancel" class="secondary">Cancel</button></div></form></dialog>
+        <div class="row"><button type="submit" id="dlgok" disabled>Save and export</button><button type="button" id="dlgcancel" class="secondary">Cancel</button></div></form></dialog>
       <pre id="text"></pre></div>
   </div>
 </main>
@@ -297,7 +356,8 @@ const $ = id => document.getElementById(id);
 const vals = {...META.defaults};
 let seq = 0;
 const secs = {};
-let built = '', curKey = '', snapNames = [], view = 'detailed';
+let built = '', curKey = '', snapNames = [], view = 'detailed', named = null;   // named = {cfg, name}: the settings that already have a saved snapshot name
+
 function refreshBtn() { $('rebuild').disabled = JSON.stringify(vals) === built; }
 for (const [sec, name, label, unit, lo, hi, step] of META.fields) {
   if (!secs[sec]) { const c = document.createElement('div'); c.className = 'card'; c.style.marginTop = '12px'; c.innerHTML = `<h2>${sec}</h2>`; $('sections').appendChild(c); secs[sec] = c; }
@@ -336,13 +396,13 @@ async function loadSnaps(select) {
 $('save').onclick = async () => {
   const r = await fetch('/api/snapshot', {method: 'POST', body: JSON.stringify({name: $('snapname').value, params: vals})}).then(x => x.json()).catch(() => null);
   if (!r) { $('snapmsg').textContent = 'Could not save.'; return; }
-  $('snapmsg').textContent = 'Saved "' + r.name + '".'; $('snapname').value = ''; loadSnaps(r.name);
+  named = {cfg: JSON.stringify(vals), name: r.name}; $('snapmsg').textContent = 'Saved "' + r.name + '".'; $('snapname').value = ''; loadSnaps(r.name);
 };
 $('load').onchange = async () => {
   const name = $('load').value; if (!name) return;
   const p = await fetch('/api/snapshot?name=' + encodeURIComponent(name)).then(x => x.ok ? x.json() : null).catch(() => null);
   if (!p) { $('snapmsg').textContent = 'Could not load "' + name + '".'; return; }
-  Object.assign(vals, META.defaults, p); sync(); $('snapmsg').textContent = 'Loaded "' + name + '".'; run();
+  Object.assign(vals, META.defaults, p); named = {cfg: JSON.stringify(vals), name}; sync(); $('snapmsg').textContent = 'Loaded "' + name + '".'; run();
 };
 loadSnaps();
 async function run() {
@@ -371,7 +431,8 @@ $('v-outline').onclick = () => { view = 'outline'; showView(); };
 showView();
 function askName(ext) {
   if (!curKey) return;
-  wantExt = ext; $('dlgname').value = ''; $('dlgok').disabled = true; $('dlgwarn').textContent = '';
+  wantExt = ext;
+  if (named && named.cfg === built) { fetchFile(named.name); return; }      // already named: no question, just download $('dlgname').value = ''; $('dlgok').disabled = true; $('dlgwarn').textContent = '';
   $('dlg').showModal(); $('dlgname').focus();
 }
 $('pdf').onclick = e => { e.preventDefault(); askName('pdf'); };
@@ -387,11 +448,21 @@ $('dlgform').onsubmit = async e => {
   const name = $('dlgname').value.trim(); if (!name) return;
   const r = await fetch('/api/snapshot', {method: 'POST', body: JSON.stringify({name, params: JSON.parse(built)})}).then(x => x.json()).catch(() => null);
   if (!r) { $('dlgwarn').textContent = 'Could not save the snapshot, so nothing was downloaded.'; return; }
+  named = {cfg: built, name: r.name};
   $('dlg').close(); $('snapmsg').textContent = 'Saved "' + r.name + '".'; loadSnaps(r.name);
-  const a = document.createElement('a');
-  a.href = '/out/' + curKey + '/spiral-cone-' + view + '.' + wantExt + '?dl=1&name=' + encodeURIComponent(r.name);
-  document.body.appendChild(a); a.click(); a.remove();
+  fetchFile(r.name);
 };
+async function fetchFile(name) {
+  const msg = $('dlmsg'); msg.className = 'derived'; msg.textContent = 'Choose where to save the file in the window that opened...';
+  const r = await fetch('/api/export', {method: 'POST', body: JSON.stringify({key: curKey, view, ext: wantExt, name})}).then(x => x.json()).catch(() => ({error: 'Lost the connection to the tool.'}));
+  if (r.error) { msg.className = 'warn err'; msg.textContent = r.error; return; }
+  if (r.cancelled) { msg.className = 'derived'; msg.textContent = 'Not saved (you cancelled the save window).'; return; }
+  msg.className = 'saved'; msg.textContent = '';
+  msg.append('Saved ' + r.file + ' in ' + r.folder + '. ');
+  const b = document.createElement('a'); b.href = '#'; b.textContent = 'Show in Finder';
+  b.onclick = e => { e.preventDefault(); fetch('/api/reveal', {method: 'POST', body: JSON.stringify({path: r.path})}); };
+  msg.append(b);
+}
 fetch('/api/version').then(r => r.json()).then(v => {
   if (v.git) $('ver').textContent = 'branch ' + v.branch + ' · ' + v.date + ' · ' + v.subject + (v.edited ? ' · (edited here, not saved to git)' : '');
 }).catch(() => {});

@@ -411,13 +411,14 @@ def write_svg(path, cut, pieces, detailed):
 
 def write_pdf(path, cut, pieces, detailed):
     """True-size PDF: the page is exactly as big as the drawing (1 PDF point = 1/72 inch = 0.3528 mm), no margins
-    added by the program, no grid, no scales. Laser version: red hairlines, nothing else."""
+    added by the program, no grid, no scales. Laser version: black 0.001 in lines, nothing else."""
     items, w, h = export_items(cut, pieces, detailed)
     fig = plt.figure(figsize=(w / 25.4, h / 25.4))
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set_xlim(0, w); ax.set_ylim(h, 0); ax.axis("off")
     fig.patch.set_visible(False)                      # no white background rectangle for the laser software to pick up
-    sty = {"cut": ("#ff0000", "-", 0.5 if detailed else 0.1), "sew": ("#1d4ed8", (0, (4, 3)), 0.4), "mark": ("#777777", ":", 0.4)}
+    # laser PDF: pure black, 0.001 in wide (= 0.072 pt), which is the line the cutter software expects
+    sty = {"cut": ("#d00000", "-", 0.5) if detailed else ("#000000", "-", 0.001 * 72), "sew": ("#1d4ed8", (0, (4, 3)), 0.4), "mark": ("#777777", ":", 0.4)}
     for k, a, t in items:
         if k == "label":
             ax.text(a[0][0], a[0][1], t, fontsize=5, ha="center", va="center", color="#d00000")
