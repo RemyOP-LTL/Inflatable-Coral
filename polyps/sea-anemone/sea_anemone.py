@@ -50,7 +50,7 @@ FRINGE_WIDTH = 6.0          # the standing-out part of the frill is slit into st
 FRILL_WAVE = 3.0            # ASSUMED. How wavy the fringe strands are: height of the wave in mm (0 = straight). All strands wave the same way, so they still nest
 FRILL_WAVE_LENGTH = 40.0    # ASSUMED. Length of one wave along a strand
 FRILL_BAND = 0.0            # solid (unslit) band between the sew line and the fringe. 0 = fringe starts at the sew line
-FRILL_NOTCH_DEPTH = 9.0     # ASSUMED (Remy: 3/8 in = 9.5 mm leaving 3 mm). V notches in the frill's seam allowance (0 = none)
+FRILL_NOTCH_DEPTH = 0.0     # V notches in the frill's seam allowance (0 = none: Remy chose a plain strip for easier handling, accepting some bunching; was 9 mm = 3/8 in, leaving 3 mm)
 FRILL_NOTCHES_BETWEEN_TABS = 7.0  # ASSUMED. How many notches go between each pair of neighbouring ring tabs on the frill (0 = none). Their width is worked out from the circle
 SEAM = 12.0                 # seam allowance on every edge
 TUBE_NOTCH_DEPTH = 6.0      # Remy: about 6 mm. V notches in the allowance of the curved (arc) edges of the two cone pieces: the ring seam between them and the top edge (0 = none). Their straight side edges and the open bottom edge have none
@@ -232,6 +232,15 @@ def circle_points(cx, cy, d, n=None):
     return np.vstack([pts, pts[:1]])
 
 
+
+def v_notch_open(p, t, n, depth, half_w, out=2.0, reach=40.0):
+    """Like v_notch, but the V keeps going straight out past the allowance's edge. A notch right on a corner would otherwise sit
+    wholly inside the mitred corner of the allowance and leave a closed hole."""
+    w = half_w * (depth + out) / depth
+    return Polygon([p + n * (SEAM - depth), p + n * (SEAM + out) - t * w, p + n * (SEAM + reach) - t * w,
+                    p + n * (SEAM + reach) + t * w, p + n * (SEAM + out) + t * w])
+
+
 class Piece:
     def __init__(self, name):
         self.name, self.items = name, []
@@ -326,17 +335,23 @@ def build():
                 if fr is None:
                     continue
                 r_ring = F.r_b if which == "b" else F.r_a
-                for f in ring_notch_fracs(fr, n_between):
-                    if min(f, 1 - f) * 2 * math.pi * r_ring < 1.5 * SEAM:          # not in the corner where the straight seam joins
-                        continue
-                    p, t = F.ring_frame(which, f)
-                    n = outward(p, t, outline)
-                    c = v_notch(p, t, n, depth, half_w)
-                    if c.distance(tabs_union) < 1.5:
-                        n_skipped += 1
-                        continue
-                    cutters.append(c)
-                    n_tube_notches += 1
+                for f0 in ring_notch_fracs(fr, n_between):
+                    # a notch right on the corner (where the straight seam meets the arc) is cut on both ends of the arc: each is half a notch
+                    # that reaches into the straight seam's allowance, and the two halves join into one notch when the seam is sewn
+                    for f in ([0.0, 1.0] if min(f0, 1 - f0) < 1e-6 else [f0]):
+                        corner = min(f, 1 - f) < 1e-6
+                        p, t = F.ring_frame(which, f)
+                        n = outward(p, t, outline)
+                        if corner:                                          # right on a corner the inside/outside test is unreliable: point away from the piece's centre
+                            ctr = np.array(outline.centroid.coords[0])
+                            if float(np.dot(p - ctr, n)) < 0:
+                                n = -n
+                        c = (v_notch_open if corner else v_notch)(p, t, n, depth, half_w)
+                        if c.distance(tabs_union) < 1.5:
+                            n_skipped += 1
+                            continue
+                        cutters.append(c)
+                        n_tube_notches += 1
             if cutters:
                 cut = cut.difference(unary_union(cutters))
         if cut.geom_type != "Polygon" or len(cut.interiors) > 0:
