@@ -79,7 +79,7 @@ def profile(T, S_target, cap_radius):
     return r, z, len(rw) - 1
 
 
-def draw(ax, T, S_target, cap_radius, frill_len, strand, n_strands, wave, wave_len, azim=-58, elev=22, seed=11, mid_frac=None):
+def draw(ax, T, S_target, cap_radius, frill_len, strand, n_strands, wave, wave_len, azim=-58, elev=22, seed=11, mid_frac=None, cap_hole=0.0):
     rng = np.random.default_rng(seed)
     pr, pz, i_seam = profile(T, S_target, cap_radius)
     # resample the profile evenly by arc length so the patches are even
@@ -147,6 +147,8 @@ def draw(ax, T, S_target, cap_radius, frill_len, strand, n_strands, wave, wave_l
         k = seamdark if (abs(sc[i] - s_seam) < 2.0 or (s_mid is not None and abs(sc[i] - s_mid) < 1.6)) else 1.0
         for j in range(ntheta):
             col = shade(nrm[i, j], body, k)
+            if cap_hole > 0 and R0[i] <= cap_hole / 2 + 0.3:                 # the centre hole in the cap: a dark disc at the top of the dome
+                col = np.array([0.1, 0.1, 0.1])
             polys.append(sx[i, j])
             depth.append(float((cen[i, j] @ cam)))
             colors.append(col)

@@ -65,10 +65,20 @@ TABS_LOWER_SEAM = 2.0       # number of alignment tabs along each straight seam 
 TABS_MID_RING = 3.0         # number of tabs round the ring seam between the two cones (on both arcs), evenly spaced
 TABS_UPPER_SEAM = 2.0       # number of tabs along each straight seam edge of the upper cone
 TABS_TOP_RING = 4.0         # number of tabs round the top ring: the top arc of the upper cone, the cap and the frill all get this many, matching
+CAP_HOLE_DIAMETER = 6.0     # hole in the centre of the cap disk for the string (0 = none)
+AIR_HOLE_DIAMETER = 0.5     # tiny holes round the top of the upper cone that blow air onto the frill (0 or count 0 = none)
+AIR_HOLE_DISTANCE = 6.0     # how far below the top seam (along the cone surface, from the sew line) the air holes sit
+AIR_HOLE_COUNT = 80.0       # how many air holes, evenly spaced round the top
+GUIDE_TABS = 4.0            # long string-guide tabs at the ring seam between the cones: the total, shared out alternately between the two cones so they cannot overlap in the flat pattern
+GUIDE_TAB_WIDTH = 6.0       # width of the stem of a guide tab
+GUIDE_RING_DIAMETER = 12.0  # diameter of the round end of a guide tab
+GUIDE_HOLE_DIAMETER = 4.0   # hole in that round end; the tips overlap on the tube's axis and are pinned together there
+GUIDE_TAB_EXTRA = 0.0       # extra length of the guide tabs: 0 = the hole centre lands exactly on the axis (tab length from the sew line = the radius at the ring seam)
 
 NAMES = ["HEIGHT", "DIAMETER_BOTTOM", "DIAMETER_TOP", "MID_HEIGHT", "MID_DIAMETER", "FRILL_STRIP_LENGTH", "FRILL_LENGTH", "FRINGE_WIDTH",
          "FRILL_WAVE", "FRILL_WAVE_LENGTH", "FRILL_BAND", "FRILL_NOTCH_DEPTH", "FRILL_NOTCHES_BETWEEN_TABS", "SEAM", "TUBE_NOTCH_DEPTH", "TUBE_NOTCHES_BETWEEN_TABS",
-         "FABRIC_WIDTH", "LASER_BED_SHORT", "LASER_BED_LONG", "NEST_GAP", "TAB_SIZE", "FRILL_TAB_LENGTH", "TABS_LOWER_SEAM", "TABS_MID_RING", "TABS_UPPER_SEAM", "TABS_TOP_RING"]
+         "FABRIC_WIDTH", "LASER_BED_SHORT", "LASER_BED_LONG", "NEST_GAP", "TAB_SIZE", "FRILL_TAB_LENGTH", "TABS_LOWER_SEAM", "TABS_MID_RING", "TABS_UPPER_SEAM", "TABS_TOP_RING",
+         "CAP_HOLE_DIAMETER", "AIR_HOLE_DIAMETER", "AIR_HOLE_DISTANCE", "AIR_HOLE_COUNT", "GUIDE_TABS", "GUIDE_TAB_WIDTH", "GUIDE_RING_DIAMETER", "GUIDE_HOLE_DIAMETER", "GUIDE_TAB_EXTRA"]
 
 
 def settings():
@@ -112,12 +122,16 @@ class Frustum:
             self.rho_b = r_b * self.L / abs(d)
             self.theta = 2 * math.pi * abs(d) / self.L             # angle of the sector
 
-    def ring_point(self, which, f):
-        """Flat position of the point a fraction f (0..1) of the way round the bottom ('a') or top ('b') ring."""
+    def ring_point(self, which, f, dist=0.0):
+        """Flat position of the point a fraction f (0..1) of the way round the bottom ('a') or top ('b') ring, optionally `dist` mm
+        along the cone surface from that ring toward the other ring."""
         r = self.r_a if which == "a" else self.r_b
         if self.cyl:
-            return np.array([-math.pi * r + f * 2 * math.pi * r, self.h if which == "a" else 0.0])
+            y = self.h - dist if which == "a" else dist
+            return np.array([-math.pi * r + f * 2 * math.pi * r, y])
         rho = self.rho_a if which == "a" else self.rho_b
+        other = self.rho_b if which == "a" else self.rho_a
+        rho = rho + (dist if other > rho else -dist)
         phi = -self.theta / 2 + f * self.theta
         sgn = -1.0 if self.r_b > self.r_a else 1.0                   # widening upward: the tip is below the piece, so "up" is -y
         return np.array([rho * math.sin(phi), sgn * rho * math.cos(phi)])
@@ -206,6 +220,14 @@ def v_notch(p, t, n, depth, half_w, out=2.0):
                     p + n * (SEAM + out) + t * half_w * (depth + out) / depth])
 
 
+def circle_points(cx, cy, d, n=None):
+    """A closed polyline for a circle of diameter d (more points for bigger circles)."""
+    n = n or int(min(96, max(12, 8 * d)))
+    a = np.linspace(0, 2 * math.pi, n, endpoint=False)
+    pts = np.column_stack([cx + d / 2 * np.cos(a), cy + d / 2 * np.sin(a)])
+    return np.vstack([pts, pts[:1]])
+
+
 class Piece:
     def __init__(self, name):
         self.name, self.items = name, []
@@ -237,10 +259,21 @@ def build():
     depth = min(TUBE_NOTCH_DEPTH, SEAM - 2.0)
     n_between = int(round(TUBE_NOTCHES_BETWEEN_TABS))
     half_w = max(depth, 0.1) * math.tan(math.radians(25))                # a 50 degree V
+    n_air = int(round(AIR_HOLE_COUNT)) if AIR_HOLE_DIAMETER > 0 else 0
+    if n_air > 0 and not (0 < AIR_HOLE_DISTANCE < T.upper.L - 2):
+        raise SystemExit(f"The air holes must sit between 0 and {T.upper.L - 2:.0f} mm below the top seam (the upper cone is {T.upper.L:.0f} mm along its surface).")
+    n_guide = int(round(GUIDE_TABS))
+    if n_guide < 0 or n_guide > 24:
+        raise SystemExit("Between 0 and 24 string-guide tabs, please.")
+    if n_guide > 0 and (GUIDE_RING_DIAMETER <= GUIDE_HOLE_DIAMETER + 1 or GUIDE_TAB_WIDTH <= 0 or GUIDE_HOLE_DIAMETER <= 0):
+        raise SystemExit("A guide tab's round end must be bigger than its hole (and both above zero).")
+    # guide tabs: tab j sits at fraction (j + 0.5) / n round the ring seam; even j on the lower cone's top arc, odd j on the upper cone's bottom arc
+    guide_lo = [("b", (j + 0.5) / n_guide, f"G{j + 1}") for j in range(n_guide) if j % 2 == 0] if n_guide else []
+    guide_up = [("a", (j + 0.5) / n_guide, f"G{j + 1}") for j in range(n_guide) if j % 2 == 1] if n_guide else []
     n_tube_notches = n_skipped = 0
     cone_pieces = []                                                       # (piece, cut polygon, outline polygon)
 
-    def make_cone(F, name, prefix, n_side, bottom_flush, top_f, top_lab, bot_f, bot_lab):
+    def make_cone(F, name, prefix, n_side, bottom_flush, top_f, top_lab, bot_f, bot_lab, guides=(), air=False):
         """Flat cut piece for one cone. Tabs: numbered along the straight seam; lettered round the arcs that get sewn to
         something. Notches: on the arc edges that have a seam allowance, between the tabs."""
         nonlocal n_tube_notches, n_skipped
@@ -264,6 +297,23 @@ def build():
                 n = outward(p, t, outline)
                 squares.append(tab_square(p, t, n, SEAM, TAB_SIZE))
                 labels.append((p + n * (SEAM + h), lt))
+        guide_polys, guide_holes = [], []
+        for which, f, lab in guides:                                       # long string-guide tabs: stem + round end with a hole on the tube's axis
+            p, t = F.ring_frame(which, f)
+            n = outward(p, t, outline)
+            ln = T.rm + GUIDE_TAB_EXTRA                                    # from the sew line to the hole centre
+            c = p + n * ln
+            stem = Polygon([p + t * (-GUIDE_TAB_WIDTH / 2) + n * (SEAM - 5), p + t * (GUIDE_TAB_WIDTH / 2) + n * (SEAM - 5), c + t * (GUIDE_TAB_WIDTH / 2), c + t * (-GUIDE_TAB_WIDTH / 2)])
+            gp = unary_union([stem, Point(c).buffer(GUIDE_RING_DIAMETER / 2, 48)])
+            guide_polys.append(gp)
+            guide_holes.append(circle_points(c[0], c[1], GUIDE_HOLE_DIAMETER))
+            labels.append((p + n * (ln * 0.5) + t * (GUIDE_TAB_WIDTH / 2 + 7), lab))
+        for gi, gp in enumerate(guide_polys):
+            others = squares + [g for gj, g in enumerate(guide_polys) if gj != gi]
+            if any(gp.intersects(o) for o in others) or gp.intersects(outline):
+                warn.append(f"A string-guide tab on the {name} cone overlaps another tab or the piece itself in the flat pattern. Change the number of guide tabs or of central ring alignment tabs (they should not land on the same spot), or use a smaller tab width.")
+                break
+        squares = squares + guide_polys                                    # so the notches keep clear of them
         cut = unary_union([body] + squares)
         if depth > 0.5 and n_between > 0:
             tabs_union = unary_union(squares)
@@ -292,12 +342,19 @@ def build():
         pc = Piece(name)
         pc.add("cut", np.array(cut.exterior.coords))
         pc.add("sew", np.array(outline.exterior.coords))
+        for hole in guide_holes:
+            pc.add("cut", hole)                                            # holes are separate closed loops inside the piece
+        n_air_here = 0
+        if air:                                                            # tiny air holes a set distance below the top seam, evenly spaced round the ring
+            for i in range(n_air):
+                pc.add("cut", circle_points(*F.ring_point("b", (i + 0.5) / n_air, AIR_HOLE_DISTANCE), AIR_HOLE_DIAMETER))
+            n_air_here = n_air
         for p, txt in labels:
             pc.add("label", [p], txt)
         return pc, cut, outline, len(side_l)
 
-    lower, cut_lo, outline_lo, side_lo = make_cone(T.lower, "lower", "L", n_lo, True, mid_f, mid_lab, None, None)
-    upper, cut_up, outline_up, side_up = make_cone(T.upper, "upper", "U", n_up, False, ring_f, ring_lab, mid_f, mid_lab)
+    lower, cut_lo, outline_lo, side_lo = make_cone(T.lower, "lower", "L", n_lo, True, mid_f, mid_lab, None, None, guides=guide_lo)
+    upper, cut_up, outline_up, side_up = make_cone(T.upper, "upper", "U", n_up, False, ring_f, ring_lab, mid_f, mid_lab, guides=guide_up, air=True)
     if n_skipped:
         warn.append(f"{n_skipped} tube notch(es) were left out because they would run into a tab. Use fewer notches between tabs.")
     pieces = [lower, upper]
@@ -321,6 +378,10 @@ def build():
     cap.add("sew", np.array(Point(ccx, ccy).buffer(R_top, 180).exterior.coords))
     for p, txt in clab:
         cap.add("label", [p], txt)
+    if CAP_HOLE_DIAMETER > 0:
+        if CAP_HOLE_DIAMETER >= 2 * R_top - 10:
+            raise SystemExit("The cap's centre hole is too big for the cap.")
+        cap.add("cut", circle_points(ccx, ccy, CAP_HOLE_DIAMETER))        # centre hole for the string
     pieces.append(cap)
     # --- frill: one straight strip. y = 0 is the cut edge of the seam allowance, y = SEAM the sew line
     Lf = FRILL_STRIP_LENGTH if FRILL_STRIP_LENGTH > 0 else circ_top
@@ -426,7 +487,7 @@ def build():
     if not fits_bed:
         warn.append(f"The nested pieces need {ext_w:.0f} x {ext_h:.0f} mm but the laser bed is {LASER_BED_SHORT:g} x {LASER_BED_LONG:g} mm (with 5 mm kept free at the edges): "
                     "they will not fit in one go. Use a smaller tube, or cut the pieces in two batches.")
-    info = dict(laser_extent=(ext_w, ext_h), fits_bed=fits_bed, pieces=len(pieces), tube_s=T.S, cones=cones, circ_top=circ_top, circ_bottom=math.pi * DIAMETER_BOTTOM, circ_mid=circ_mid,
+    info = dict(n_air=n_air, n_guide=n_guide, guide_len=T.rm + GUIDE_TAB_EXTRA, laser_extent=(ext_w, ext_h), fits_bed=fits_bed, pieces=len(pieces), tube_s=T.S, cones=cones, circ_top=circ_top, circ_bottom=math.pi * DIAMETER_BOTTOM, circ_mid=circ_mid,
                 frill_len=Lf, frill_w=W, F=W - y_fringe, n_slits=n_slits, strand=strand,
                 n_tube_notches=n_tube_notches, n_frill_notches=n_fn, notch_w=notch_w, side_tabs=(side_lo, side_up), ring_tabs=n_ring, mid_tabs=n_mid,
                 cap_d=2 * (R_top + SEAM), warnings=warn)
@@ -444,7 +505,11 @@ def report(info):
         L.append(f"  {c['name'].capitalize() + ' cone':<31} {c['r_a'] * 2:.0f} to {c['r_b'] * 2:.0f} mm across over {c['h']:g} mm; straight seam {c['L']:.0f} mm; "
                  f"{shape}; cut size {c['bbox'][0]:.0f} x {c['bbox'][1]:.0f} mm")
     L += [f"  Circumference                   bottom {info['circ_bottom']:.0f}, centre {info['circ_mid']:.0f}, top {info['circ_top']:.0f} mm",
-          f"  Cap disk                        {info['cap_d']:.0f} mm across with allowance ({DIAMETER_TOP:g} mm sew circle)",
+          f"  Cap disk                        {info['cap_d']:.0f} mm across with allowance ({DIAMETER_TOP:g} mm sew circle)"
+          + (f"; {CAP_HOLE_DIAMETER:g} mm centre hole for the string" if CAP_HOLE_DIAMETER > 0 else ""),
+          (f"  Air holes                       {info['n_air']} holes {AIR_HOLE_DIAMETER:g} mm across, evenly spaced, {AIR_HOLE_DISTANCE:g} mm below the top seam on the upper cone") if info["n_air"] else "  Air holes                       none",
+          (f"  String guide tabs               {info['n_guide']} tabs at the ring seam, shared alternately between the cones; {GUIDE_TAB_WIDTH:g} mm wide, {info['guide_len']:.0f} mm from the sew line to the "
+           f"hole centre (on the axis); round end {GUIDE_RING_DIAMETER:g} mm with a {GUIDE_HOLE_DIAMETER:g} mm hole") if info["n_guide"] else "  String guide tabs               none",
           f"  Frill                           one strip {info['frill_len']:.0f} x {info['frill_w']:.0f} mm; {SEAM:g} mm seam allowance"
           + (f", {FRILL_BAND:g} mm solid band" if FRILL_BAND > 0 else "")
           + f", {info['F']:.0f} mm of fringe slit into {info['n_slits']} strands {info['strand']:.1f} mm wide",
@@ -685,7 +750,7 @@ def draw_picture(path, T, info):
     ax = fig.add_axes([0, 0, 1, 1], facecolor=BG)
     import anemone_3d
     anemone_3d.draw(ax, T, T.S, DIAMETER_TOP / 2, info["F"], info["strand"], info["n_slits"], FRILL_WAVE, FRILL_WAVE_LENGTH,
-                    mid_frac=T.lower.L / T.S)
+                    mid_frac=T.lower.L / T.S, cap_hole=CAP_HOLE_DIAMETER)
     fig.savefig(path, dpi=130, facecolor=BG)
     plt.close(fig)
 
