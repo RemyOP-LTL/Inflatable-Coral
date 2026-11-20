@@ -74,11 +74,15 @@ GUIDE_TAB_WIDTH = 6.0       # width of the stem of a guide tab
 GUIDE_RING_DIAMETER = 12.0  # diameter of the round end of a guide tab
 GUIDE_HOLE_DIAMETER = 4.0   # hole in that round end; the tips overlap on the tube's axis and are pinned together there
 GUIDE_TAB_EXTRA = 0.0       # extra length of the guide tabs: 0 = the hole centre lands exactly on the axis (tab length from the sew line = the radius at the ring seam)
+SACRIFICE_STRIP_WIDTH = 2.0       # sacrificial strip along the free ends of the fringe strands: it holds all the loose strands together while you handle and sew the frill; you cut it off afterwards (0 = none)
+SACRIFICE_CONNECTOR_WIDTH = 1.5   # width of the little bridge that joins each strand tip to the strip
+SACRIFICE_CONNECTOR_LENGTH = 1.5  # length of that bridge: the gap between a strand tip and the strip
 
 NAMES = ["HEIGHT", "DIAMETER_BOTTOM", "DIAMETER_TOP", "MID_HEIGHT", "MID_DIAMETER", "FRILL_STRIP_LENGTH", "FRILL_LENGTH", "FRINGE_WIDTH",
          "FRILL_WAVE", "FRILL_WAVE_LENGTH", "FRILL_BAND", "FRILL_NOTCH_DEPTH", "FRILL_NOTCHES_BETWEEN_TABS", "SEAM", "TUBE_NOTCH_DEPTH", "TUBE_NOTCHES_BETWEEN_TABS",
          "FABRIC_WIDTH", "LASER_BED_SHORT", "LASER_BED_LONG", "NEST_GAP", "TAB_SIZE", "FRILL_TAB_LENGTH", "TABS_LOWER_SEAM", "TABS_MID_RING", "TABS_UPPER_SEAM", "TABS_TOP_RING",
-         "CAP_HOLE_DIAMETER", "AIR_HOLE_DIAMETER", "AIR_HOLE_DISTANCE", "AIR_HOLE_COUNT", "GUIDE_TABS", "GUIDE_TAB_WIDTH", "GUIDE_RING_DIAMETER", "GUIDE_HOLE_DIAMETER", "GUIDE_TAB_EXTRA"]
+         "CAP_HOLE_DIAMETER", "AIR_HOLE_DIAMETER", "AIR_HOLE_DISTANCE", "AIR_HOLE_COUNT", "GUIDE_TABS", "GUIDE_TAB_WIDTH", "GUIDE_RING_DIAMETER", "GUIDE_HOLE_DIAMETER", "GUIDE_TAB_EXTRA",
+         "SACRIFICE_STRIP_WIDTH", "SACRIFICE_CONNECTOR_WIDTH", "SACRIFICE_CONNECTOR_LENGTH"]
 
 
 def settings():
@@ -441,22 +445,59 @@ def build():
 
     def curve(k):
         return np.column_stack([k * strand + wave, ys])
-    loop = list(top_path) + curve(n_slits).tolist()        # ONE closed loop: down the right end, then along the free edge
-    ang = np.linspace(0, math.pi, 28)
-    for j in range(n_slits - 1, -1, -1):
-        cx = (j + 0.5) * strand
-        loop += [[cx + r_end * math.cos(a_), y_e + r_end * math.sin(a_)] for a_ in ang]       # round tip of strand j
-        c = curve(j)
-        loop += (c[::-1].tolist() + c.tolist()) if j > 0 else c[::-1].tolist()                  # each slit up and back down (doubled); the left end only up
-    clean = [loop[0]]
-    for q in loop[1:]:
-        if math.hypot(q[0] - clean[-1][0], q[1] - clean[-1][1]) > 1e-9:
-            clean.append(q)
-    if math.hypot(clean[-1][0] - clean[0][0], clean[-1][1] - clean[0][1]) > 1e-9:
-        clean.append(clean[0])
-    loop = clean
+    def dedupe(pts):
+        out = [pts[0]]
+        for q in pts[1:]:
+            if math.hypot(q[0] - out[-1][0], q[1] - out[-1][1]) > 1e-9:
+                out.append(q)
+        if math.hypot(out[-1][0] - out[0][0], out[-1][1] - out[0][1]) > 1e-9:
+            out.append(out[0])
+        return out
+    holes = []
+    sacrifice = SACRIFICE_STRIP_WIDTH > 0
+    if not sacrifice:
+        loop = list(top_path) + curve(n_slits).tolist()        # ONE closed loop: down the right end, then along the free edge
+        ang = np.linspace(0, math.pi, 28)
+        for j in range(n_slits - 1, -1, -1):
+            cx = (j + 0.5) * strand
+            loop += [[cx + r_end * math.cos(a_), y_e + r_end * math.sin(a_)] for a_ in ang]       # round tip of strand j
+            c = curve(j)
+            loop += (c[::-1].tolist() + c.tolist()) if j > 0 else c[::-1].tolist()                  # each slit up and back down (doubled); the left end only up
+        loop = dedupe(loop)
+    else:
+        # A sacrificial strip across the free ends: each strand tip is joined to it by a small bridge. The outline is then the
+        # outside of everything (allowance edge, ends, strip) plus one closed loop per gap between two neighbouring bridges
+        # (it includes the doubled slit between those two strands), so no loose slit lines are left for the laser.
+        cw, gap, sw = SACRIFICE_CONNECTOR_WIDTH, SACRIFICE_CONNECTOR_LENGTH, SACRIFICE_STRIP_WIDTH
+        if cw <= 0 or gap <= 0:
+            raise SystemExit("The sacrificial strip's bridges need a width and a length above zero (or set the strip width to 0 for no strip).")
+        if cw > 0.9 * strand:
+            raise SystemExit("The bridges must be narrower than a fringe strand (about 90% of its width at most).")
+        d = cw / 2
+        y_c = y_e + math.sqrt(r_end ** 2 - d ** 2)          # where a bridge's side meets the round tip
+        y_s = W + gap                                       # top of the strip
+        y_b = y_s + sw                                      # bottom of the strip
+        a_r = math.acos(d / r_end)                          # tip arc angle at the right side of a bridge (the left side is pi - a_r)
+        cxs = [(j + 0.5) * strand for j in range(n_slits)]
+
+        def tip_arc(j, a0, a1, m=10):
+            return [[cxs[j] + r_end * math.cos(a_), y_e + r_end * math.sin(a_)] for a_ in np.linspace(a0, a1, m)]
+        loop = list(top_path) + curve(n_slits).tolist()                                           # down the right end of the last strand
+        j = n_slits - 1
+        loop += tip_arc(j, 0.0, a_r) + [[cxs[j] + d, y_c], [cxs[j] + d, y_s]]                   # its tip, then down its bridge
+        loop += [[Lf, y_s], [Lf, y_b], [0.0, y_b], [0.0, y_s]]                                   # along the strip: right end, bottom, left end
+        loop += [[cxs[0] - d, y_s], [cxs[0] - d, y_c]] + tip_arc(0, math.pi - a_r, math.pi)       # up the first strand's bridge and round its tip
+        loop += curve(0)[::-1].tolist()                                                           # up the left end of the first strand
+        loop = dedupe(loop)
+        for j in range(n_slits - 1):                                                              # the gap between strand j and j + 1
+            hp = [[cxs[j] + d, y_s], [cxs[j] + d, y_c]] + tip_arc(j, a_r, 0.0)                    # up bridge j, along tip j to the point where the strands meet
+            hp += curve(j + 1)[::-1].tolist() + curve(j + 1).tolist()                              # the slit between them, up and back down
+            hp += tip_arc(j + 1, math.pi, math.pi - a_r) + [[cxs[j + 1] - d, y_c], [cxs[j + 1] - d, y_s]]
+            holes.append(dedupe(hp))
     frill = Piece("frill")
     frill.add("cut", np.array(loop) + shift)
+    for hp in holes:
+        frill.add("cut", np.array(hp) + shift)
     frill.add("sew", np.array([[0, SEAM], [Lf, SEAM]]) + shift)
     if FRILL_BAND > 0:
         frill.add("mark", np.array([[0, y_fringe], [Lf, y_fringe]]) + shift)
@@ -513,6 +554,8 @@ def report(info):
           f"  Frill                           one strip {info['frill_len']:.0f} x {info['frill_w']:.0f} mm; {SEAM:g} mm seam allowance"
           + (f", {FRILL_BAND:g} mm solid band" if FRILL_BAND > 0 else "")
           + f", {info['F']:.0f} mm of fringe slit into {info['n_slits']} strands {info['strand']:.1f} mm wide",
+          (f"  Sacrificial strip               a {SACRIFICE_STRIP_WIDTH:g} mm strip joins all the strand tips through {SACRIFICE_CONNECTOR_WIDTH:g} x {SACRIFICE_CONNECTOR_LENGTH:g} mm bridges; cut it off after sewing "
+           f"(the frill outline then has {info['n_slits'] - 1} extra closed loops, one per gap between strands)") if SACRIFICE_STRIP_WIDTH > 0 else "  Sacrificial strip               none",
           (f"  Frill seam notches              {info['n_frill_notches']} V notches, {FRILL_NOTCHES_BETWEEN_TABS:g} between each pair of tabs, {min(FRILL_NOTCH_DEPTH, SEAM - 1.5):g} mm deep, "
            f"{info['notch_w']:.1f} mm wide at the cut edge (width worked out from the circle)") if info["n_frill_notches"]
           else "  Frill seam notches              none",
@@ -554,7 +597,7 @@ def title(name):
     return {"lower": "LOWER CONE (cut 1). Sew its two straight edges together; its top arc goes to the upper cone's bottom arc",
             "upper": "UPPER CONE (cut 1). Sew its two straight edges together; its top arc goes to the cap and frill",
             "cap": "CAP DISK (cut 1)",
-            "frill": "FRILL STRIP (cut 1). Sew along the blue line; the slits make the fringe"}[name]
+            "frill": "FRILL STRIP (cut 1). Sew along the blue line; the slits make the fringe" + ("; cut off the thin strip at the free ends afterwards" if SACRIFICE_STRIP_WIDTH > 0 else "")}[name]
 
 
 def nest_transforms(pieces):
