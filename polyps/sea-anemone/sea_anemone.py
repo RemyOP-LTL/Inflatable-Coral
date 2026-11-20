@@ -77,12 +77,13 @@ GUIDE_TAB_EXTRA = 0.0       # extra length of the guide tabs: 0 = the hole centr
 SACRIFICE_STRIP_WIDTH = 2.0       # sacrificial strip along the free ends of the fringe strands: it holds all the loose strands together while you handle and sew the frill; you cut it off afterwards (0 = none)
 SACRIFICE_CONNECTOR_WIDTH = 1.5   # width of the little bridge that joins each strand tip to the strip
 SACRIFICE_CONNECTOR_LENGTH = 1.5  # length of that bridge: the gap between a strand tip and the strip
+SLIT_SINGLE_LINE = 1.0            # 1 = every slit between two fringe strands is cut ONCE, as a single open line (halves the cutting path of the slits); 0 = the older way: slits walked down and back up inside closed loops (each cut twice)
 
 NAMES = ["HEIGHT", "DIAMETER_BOTTOM", "DIAMETER_TOP", "MID_HEIGHT", "MID_DIAMETER", "FRILL_STRIP_LENGTH", "FRILL_LENGTH", "FRINGE_WIDTH",
          "FRILL_WAVE", "FRILL_WAVE_LENGTH", "FRILL_BAND", "FRILL_NOTCH_DEPTH", "FRILL_NOTCHES_BETWEEN_TABS", "SEAM", "TUBE_NOTCH_DEPTH", "TUBE_NOTCHES_BETWEEN_TABS",
          "FABRIC_WIDTH", "LASER_BED_SHORT", "LASER_BED_LONG", "NEST_GAP", "TAB_SIZE", "FRILL_TAB_LENGTH", "TABS_LOWER_SEAM", "TABS_MID_RING", "TABS_UPPER_SEAM", "TABS_TOP_RING",
          "CAP_HOLE_DIAMETER", "AIR_HOLE_DIAMETER", "AIR_HOLE_DISTANCE", "AIR_HOLE_COUNT", "GUIDE_TABS", "GUIDE_TAB_WIDTH", "GUIDE_RING_DIAMETER", "GUIDE_HOLE_DIAMETER", "GUIDE_TAB_EXTRA",
-         "SACRIFICE_STRIP_WIDTH", "SACRIFICE_CONNECTOR_WIDTH", "SACRIFICE_CONNECTOR_LENGTH"]
+         "SACRIFICE_STRIP_WIDTH", "SACRIFICE_CONNECTOR_WIDTH", "SACRIFICE_CONNECTOR_LENGTH", "SLIT_SINGLE_LINE"]
 
 
 def settings():
@@ -469,6 +470,8 @@ def build():
             out.append(out[0])
         return out
     holes = []
+    slit_lines = []
+    single = SLIT_SINGLE_LINE >= 0.5
     sacrifice = SACRIFICE_STRIP_WIDTH > 0
     if not sacrifice:
         loop = list(top_path) + curve(n_slits).tolist()        # ONE closed loop: down the right end, then along the free edge
@@ -477,7 +480,10 @@ def build():
             cx = (j + 0.5) * strand
             loop += [[cx + r_end * math.cos(a_), y_e + r_end * math.sin(a_)] for a_ in ang]       # round tip of strand j
             c = curve(j)
-            loop += (c[::-1].tolist() + c.tolist()) if j > 0 else c[::-1].tolist()                  # each slit up and back down (doubled); the left end only up
+            if not single:
+                loop += (c[::-1].tolist() + c.tolist()) if j > 0 else c[::-1].tolist()              # each slit up and back down (doubled); the left end only up
+            elif j == 0:
+                loop += c[::-1].tolist()                                                            # single-line slits: only the left end of the first strand goes up here
         loop = dedupe(loop)
     else:
         # A sacrificial strip across the free ends: each strand tip is joined to it by a small bridge. The outline is then the
@@ -506,13 +512,20 @@ def build():
         loop = dedupe(loop)
         for j in range(n_slits - 1):                                                              # the gap between strand j and j + 1
             hp = [[cxs[j] + d, y_s], [cxs[j] + d, y_c]] + tip_arc(j, a_r, 0.0)                    # up bridge j, along tip j to the point where the strands meet
-            hp += curve(j + 1)[::-1].tolist() + curve(j + 1).tolist()                              # the slit between them, up and back down
+            if not single:
+                hp += curve(j + 1)[::-1].tolist() + curve(j + 1).tolist()                          # the slit between them, up and back down
             hp += tip_arc(j + 1, math.pi, math.pi - a_r) + [[cxs[j + 1] - d, y_c], [cxs[j + 1] - d, y_s]]
             holes.append(dedupe(hp))
+    if single:                                                                                       # each slit is one open line, from where the strands meet up to the solid part
+        slit_lines = [curve(k)[::-1].tolist() for k in range(1, n_slits)]
+    slit_len = sum(float(np.hypot(*np.diff(np.array(l), axis=0).T).sum()) for l in slit_lines) if single else \
+        2 * sum(float(np.hypot(*np.diff(curve(k), axis=0).T).sum()) for k in range(1, n_slits))
     frill = Piece("frill")
     frill.add("cut", np.array(loop) + shift)
     for hp in holes:
         frill.add("cut", np.array(hp) + shift)
+    for sl in slit_lines:
+        frill.add("cut", np.array(sl) + shift)                                                       # single-line slits (open lines)
     frill.add("sew", np.array([[0, SEAM], [Lf, SEAM]]) + shift)
     if FRILL_BAND > 0:
         frill.add("mark", np.array([[0, y_fringe], [Lf, y_fringe]]) + shift)
@@ -543,7 +556,7 @@ def build():
     if not fits_bed:
         warn.append(f"The nested pieces need {ext_w:.0f} x {ext_h:.0f} mm but the laser bed is {LASER_BED_SHORT:g} x {LASER_BED_LONG:g} mm (with 5 mm kept free at the edges): "
                     "they will not fit in one go. Use a smaller tube, or cut the pieces in two batches.")
-    info = dict(n_air=n_air, n_guide=n_guide, guide_len=T.rm + GUIDE_TAB_EXTRA, laser_extent=(ext_w, ext_h), fits_bed=fits_bed, pieces=len(pieces), tube_s=T.S, cones=cones, circ_top=circ_top, circ_bottom=math.pi * DIAMETER_BOTTOM, circ_mid=circ_mid,
+    info = dict(slit_len=slit_len, slit_single=single, n_air=n_air, n_guide=n_guide, guide_len=T.rm + GUIDE_TAB_EXTRA, laser_extent=(ext_w, ext_h), fits_bed=fits_bed, pieces=len(pieces), tube_s=T.S, cones=cones, circ_top=circ_top, circ_bottom=math.pi * DIAMETER_BOTTOM, circ_mid=circ_mid,
                 frill_len=Lf, frill_w=W, F=W - y_fringe, n_slits=n_slits, strand=strand,
                 n_tube_notches=n_tube_notches, n_frill_notches=n_fn, notch_w=notch_w, side_tabs=(side_lo, side_up), ring_tabs=n_ring, mid_tabs=n_mid,
                 cap_d=2 * (R_top + SEAM), warnings=warn)
@@ -569,6 +582,8 @@ def report(info):
           f"  Frill                           one strip {info['frill_len']:.0f} x {info['frill_w']:.0f} mm; {SEAM:g} mm seam allowance"
           + (f", {FRILL_BAND:g} mm solid band" if FRILL_BAND > 0 else "")
           + f", {info['F']:.0f} mm of fringe slit into {info['n_slits']} strands {info['strand']:.1f} mm wide",
+          (f"  Fringe slits                    {info['n_slits'] - 1} slits, each cut once as a single open line (SLITS layer in the DXF); total slit cutting path {info['slit_len'] / 1000:.2f} m"
+           if info["slit_single"] else f"  Fringe slits                    {info['n_slits'] - 1} slits, each walked down and back up inside closed loops (cut twice); total slit cutting path {info['slit_len'] / 1000:.2f} m"),
           (f"  Sacrificial strip               a {SACRIFICE_STRIP_WIDTH:g} mm strip joins all the strand tips through {SACRIFICE_CONNECTOR_WIDTH:g} x {SACRIFICE_CONNECTOR_LENGTH:g} mm bridges; cut it off after sewing "
            f"(the frill outline then has {info['n_slits'] - 1} extra closed loops, one per gap between strands)") if SACRIFICE_STRIP_WIDTH > 0 else "  Sacrificial strip               none",
           (f"  Frill seam notches              {info['n_frill_notches']} V notches, {FRILL_NOTCHES_BETWEEN_TABS:g} between each pair of tabs, {min(FRILL_NOTCH_DEPTH, SEAM - 1.5):g} mm deep, "
@@ -722,7 +737,7 @@ def write_dxf(path, pieces, detailed):
             ents.append(("LABELS" if k == "label" else "TITLES", "text", a[0], t))
             continue
         closed = len(a) > 3 and np.allclose(a[0], a[-1])
-        layer = {"cut": "CUT", "sew": "SEW", "mark": "MARK"}[k]
+        layer = {"cut": "CUT" if (closed or k != "cut") else "SLITS", "sew": "SEW", "mark": "MARK"}[k]
         ents.append((layer, "poly", a[:-1] if closed else a, closed))
     put(0, "SECTION"); put(2, "HEADER")
     put(9, "$ACADVER"); put(1, "AC1009")
@@ -731,7 +746,7 @@ def write_dxf(path, pieces, detailed):
     put(9, "$EXTMIN"); put(10, "0.0"); put(20, f"{-h:.4f}"); put(30, 0)
     put(9, "$EXTMAX"); put(10, f"{w:.4f}"); put(20, "0.0"); put(30, 0)
     put(0, "ENDSEC")
-    layers = {"CUT": 1, "SEW": 5, "MARK": 8, "LABELS": 1, "TITLES": 8}
+    layers = {"CUT": 1, "SLITS": 1, "SEW": 5, "MARK": 8, "LABELS": 1, "TITLES": 8}
     put(0, "SECTION"); put(2, "TABLES"); put(0, "TABLE"); put(2, "LAYER"); put(70, len(layers))
     for nm, col in layers.items():
         put(0, "LAYER"); put(2, nm); put(70, 0); put(62, col); put(6, "CONTINUOUS")

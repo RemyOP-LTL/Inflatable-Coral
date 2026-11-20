@@ -38,6 +38,7 @@ FIELDS = [
     ("Frill", "FRILL_WAVE", "Frill waviness", "slider", 0, 15, 0.5),
     ("Frill", "FRILL_WAVE_LENGTH", "Wave length", "mm", 10, 200, 1),
     ("Frill", "FRILL_BAND", "Solid band beside the sew line", "mm", 0, 30, 1),
+    ("Frill", "SLIT_SINGLE_LINE", "Slits cut once as single lines", "switch", 0, 1, 1),
     ("Frill", "FRILL_NOTCH_DEPTH", "Frill notch depth (0 = none)", "mm", 0, 25, 0.5),
     ("Frill", "FRILL_NOTCHES_BETWEEN_TABS", "Frill notches between tabs", "", 0, 30, 1),
     ("Sacrificial strip", "SACRIFICE_STRIP_WIDTH", "Strip width (0 = none)", "mm", 0, 10, 0.5),
@@ -399,6 +400,15 @@ for (const [sec, name, label, unit, lo, hi, step] of META.fields) {
     sl.onchange = () => { if (!$('rebuild').disabled) run(); };
     continue;
   }
+  if (unit === 'switch') {          // plain on/off (value 1 = on)
+    d.innerHTML = `<label>${label}<span class="sw"><span id="t-${name}-txt"></span><input type="checkbox" id="n-${name}"><span class="track"></span></span></label>`;
+    secs[sec].appendChild(d);
+    const cb = d.querySelector('input');
+    const show = () => { cb.checked = vals[name] >= 0.5; $('t-' + name + '-txt').textContent = cb.checked ? 'Yes' : 'No'; };
+    show();
+    cb.onchange = () => { vals[name] = cb.checked ? 1 : 0; show(); refreshBtn(); };
+    continue;
+  }
   if (unit === 'toggle') {          // Separate cuff: Yes = the cuff is its own band (CUFF_IN_STRIP = 0)
     d.innerHTML = `<label>${label}<span class="sw"><span id="t-${name}-txt"></span><input type="checkbox" id="n-${name}"><span class="track"></span></span></label>`;
     secs[sec].appendChild(d);
@@ -418,7 +428,8 @@ for (const [sec, name, label, unit, lo, hi, step] of META.fields) {
 function sync() {
   for (const [, name, , unit] of META.fields) {
     const el = $('n-' + name);
-    if (unit === 'toggle') { el.checked = vals[name] === 0; $('t-' + name + '-txt').textContent = el.checked ? 'Yes' : 'No'; }
+    if (unit === 'switch') { el.checked = vals[name] >= 0.5; $('t-' + name + '-txt').textContent = el.checked ? 'Yes' : 'No'; }
+    else if (unit === 'toggle') { el.checked = vals[name] === 0; $('t-' + name + '-txt').textContent = el.checked ? 'Yes' : 'No'; }
     else el.value = +(+vals[name]).toFixed(3);
     if (unit === 'slider') $('v-' + name).textContent = vals[name];
   }
