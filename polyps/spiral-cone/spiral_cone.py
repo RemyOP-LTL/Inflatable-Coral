@@ -14,7 +14,7 @@ edges and the frill) and along the straight seam. Tack the tabs together, then s
 
 Outputs, in the folder given with --out:
   <name>-detailed.pdf/.svg/.dxf   every line, tab numbers included, true size in mm
-  <name>-outline.pdf/.svg/.dxf    only the cut lines for the laser (frill = one closed loop doubling back along each slit), true size in mm
+  <name>-outline.pdf/.svg/.dxf    only the cut lines for the laser (the frill outline plus one closed loop per gap between strands), true size in mm
   <name>.png (flat pieces + 3D sketch) and <name>-outline.png   the two previews
   <name>.txt      the numbers and the checks
 
@@ -47,8 +47,8 @@ PITCH_CURVE = 1.0           # 1 = pitch changes evenly with height; >1 stays ope
 STRAIGHT_LENGTH = 50.0      # the last this-many mm of the cone have a straight seam (Remy)
 TRANSITION = 50.0           # the spiral fades into the straight seam over this length (0 = sharp corner)
 SEAM = 12.0                 # seam allowance (every edge except the open end of the cuff)
-NOTCH_DEPTH = 8.0           # ASSUMED. V notches cut into the seam allowance along the curved edges so it lies flat round the curve (0 = none)
-NOTCH_SPACING_BASE = 60.0   # ASSUMED. Distance between notches along the seam at the base (cuff) end
+NOTCH_DEPTH = 6.0           # Remy (sea anemone): about 6 mm. V notches cut into the seam allowance along the curved edges so it lies flat round the curve (0 = none)
+NOTCH_SPACING_BASE = 60.0   # ASSUMED. About one notch every this many mm along the seam at the base (cuff) end; they are spread evenly between the tabs
 NOTCH_SPACING_TIP = 20.0    # ASSUMED. Same at the tip end of the spiral (closer together where the curve is tighter)
 RUFFLE_WIDTH = 75.0         # cut width of the frill strip: solid seam allowance + (width - seam) of fringe standing out
 FRILL_START = 75.0          # where the frill starts, in mm up the axis from the cuff line (Remy)
@@ -60,10 +60,16 @@ FABRIC_WIDTH = 1473.2       # ASSUMED usable width of the fabric: 58 in (the one
 TAB_SIZE = 12.0             # alignment tabs are this-size squares
 TAB_SPACING = 125.0         # about one tab every this many mm of seam
 FRINGE_WIDTH = 6.0          # the standing-out part of the frill is slit into strands this wide
+FRILL_WAVE = 3.0            # ASSUMED (from the sea anemone). Wave height of the fringe slits in mm (0 = straight). Strand tips are always round
+FRILL_WAVE_LENGTH = 40.0    # ASSUMED (from the sea anemone). Length of one wave in mm
+SACRIFICE_STRIP_WIDTH = 2.0       # sacrificial strip across the free ends of the strands: holds the loose fringe together while you handle and sew; cut it off after (0 = none)
+SACRIFICE_CONNECTOR_WIDTH = 1.5   # width of the little bridge that joins each strand tip to that strip
+SACRIFICE_CONNECTOR_LENGTH = 1.5  # length of the bridge: the gap between a strand tip and the strip
 
 NAMES = ["LENGTH", "BASE_DIAMETER", "TIP_DIAMETER", "PITCH_BASE", "PITCH_TIP", "PITCH_CURVE", "STRAIGHT_LENGTH",
          "TRANSITION", "SEAM", "NOTCH_DEPTH", "NOTCH_SPACING_BASE", "NOTCH_SPACING_TIP", "RUFFLE_WIDTH", "FRILL_START", "FRILL_END_FROM_TIP", "CUFF_HEIGHT", "CUFF_IN_STRIP", "HEM",
-         "FABRIC_WIDTH", "TAB_SIZE", "TAB_SPACING", "FRINGE_WIDTH"]
+         "FABRIC_WIDTH", "TAB_SIZE", "TAB_SPACING", "FRINGE_WIDTH", "FRILL_WAVE", "FRILL_WAVE_LENGTH",
+         "SACRIFICE_STRIP_WIDTH", "SACRIFICE_CONNECTOR_WIDTH", "SACRIFICE_CONNECTOR_LENGTH"]
 
 
 def settings():
@@ -194,6 +200,17 @@ def outward(p, t, poly):
     return -n if poly.contains(Point(p + n * 0.8)) else n
 
 
+def v_notch(p, t, n, depth, half_w, out=2.0, open_=False, reach=40.0):
+    """A V cut into the seam allowance (from the sea anemone tool): tip `depth` in from the cut edge, opening beyond it.
+    p = point on the sew line, n = outward direction, t = along the edge. open_=True keeps the V going straight out past the
+    allowance edge, for a notch right on a corner (it would otherwise sit inside the mitred corner and leave a closed hole)."""
+    w = half_w * (depth + out) / depth
+    if open_:
+        return Polygon([p + n * (SEAM - depth), p + n * (SEAM + out) - t * w, p + n * (SEAM + reach) - t * w,
+                        p + n * (SEAM + reach) + t * w, p + n * (SEAM + out) + t * w])
+    return Polygon([p + n * (SEAM - depth), p + n * (SEAM + out) - t * w, p + n * (SEAM + out) + t * w])
+
+
 def tab_positions(lo, hi, spacing):
     """Tab centres between lo and hi: both ends and about one every `spacing`."""
     if hi <= lo:
@@ -249,24 +266,42 @@ def build():
                 squares.append(tab_square(p, t, n, SEAM, TAB_SIZE))
                 labels.append((p + n * (SEAM + h), f"S{j}"))
     cut = unary_union([body] + squares)
-    # --- notches in the seam allowance along the two curved edges: closer together toward the tip
+    # --- notches in the seam allowance along the two curved edges, spread evenly between the tabs (the way the sea anemone tool does it),
+    #     closer together toward the tip. The last one sits right on the corner where the spiral seam meets the straight seam: it is cut as a
+    #     half notch on each edge, and the two halves join into one notch when the straight seam is sewn.
     n_notches = 0
     depth = min(NOTCH_DEPTH, SEAM - 2.0)
     if depth > 0.5:
         if NOTCH_SPACING_BASE < 3 or NOTCH_SPACING_TIP < 3:
             raise SystemExit("Notch spacing must be at least 3 mm.")
-        tab_s = [c.s_f0 + x for x in rel_all]
-        half_w = (depth + 2.0) * math.tan(math.radians(25))               # a 50 degree V
+        half_w = depth * math.tan(math.radians(25))                      # a 50 degree V
+        anchors = [0.0] + sorted(c.s_f0 + x for x in rel_all if 0 < c.s_f0 + x < c.s_total) + [c.s_total]
+        tabs_union = unary_union(squares)
         cutters = []
-        sn = 15.0
-        while sn < c.s_total - 15.0:
-            if all(abs(sn - ts) > 1.2 * TAB_SIZE for ts in tab_s):
+        for a_, b_ in zip(anchors[:-1], anchors[1:]):
+            g = b_ - a_
+            if g < 4.0:
+                continue
+            sp = NOTCH_SPACING_BASE + (NOTCH_SPACING_TIP - NOTCH_SPACING_BASE) * min(((a_ + b_) / 2) / c.s_total, 1.0)
+            k_n = max(2, round(g / sp))                                   # the gap is cut into k_n equal parts; a notch at each joint
+            last_gap = b_ >= c.s_total - 1e-9
+            for k in range(1, k_n + 1 if last_gap else k_n):
+                sn = a_ + g * k / k_n
+                if sn < 6.0:
+                    continue
+                corner = last_gap and k == k_n
                 for top in (False, True):
                     p, t = c.edge_frame(sn, top)
-                    n = outward(p, t, outline)
-                    cutters.append(Polygon([p + n * (SEAM - depth), p + n * (SEAM + 2.0) - t * half_w, p + n * (SEAM + 2.0) + t * half_w]))
-                n_notches += 2
-            sn += NOTCH_SPACING_BASE + (NOTCH_SPACING_TIP - NOTCH_SPACING_BASE) * min(sn / c.s_total, 1.0)
+                    if corner:                                            # right on a corner the inside/outside test is unreliable: take the direction from 4 mm back along the edge
+                        pb, tb = c.edge_frame(sn - 4.0, top)
+                        n = outward(pb, tb, outline)
+                    else:
+                        n = outward(p, t, outline)
+                    cn = v_notch(p, t, n, depth, half_w, open_=corner)
+                    if cn.distance(tabs_union) < 1.5:
+                        continue
+                    cutters.append(cn)
+                    n_notches += 1
         if cutters:
             cut = cut.difference(unary_union(cutters))
     if cut.geom_type != "Polygon" or len(cut.interiors) > 0:
@@ -282,12 +317,13 @@ def build():
     for p, txt in labels:
         cone.add("label", [p], txt)
     pieces = [cone]
-    # --- the frill: one long straight strip, solid along the seam, fringe on the free part
+    # --- the frill: one long straight strip, solid along the seam, fringe on the free part (built like the sea anemone frill).
+    #     y = 0 is the cut edge of the seam allowance, y = SEAM the sew line, y = W the free tips of the strands.
     F = RUFFLE_WIDTH - SEAM                                # fringe length (the part that stands out)
     W = RUFFLE_WIDTH
     n_slits = max(1, round(frill_len / FRINGE_WIDTH))
     strand = frill_len / n_slits
-    rect = Polygon([[0, 0], [frill_len, 0], [frill_len, W], [0, W]])
+    rect = Polygon([[0, 0], [frill_len, 0], [frill_len, SEAM], [0, SEAM]])    # the solid allowance; the fringe is added below
     tabs = []
     labs = []
     for i, r_ in enumerate(rel_all, start=1):
@@ -296,23 +332,84 @@ def build():
             labs.append((np.array([r_, -h]), str(i)))
     fcut = unary_union([rect] + tabs)
     shift = np.array([0.0, TAB_SIZE])                      # tabs hang below the strip, so lift everything
+    pts = [tuple(q) for q in fcut.exterior.coords][:-1]
+    i0 = min(range(len(pts)), key=lambda i: abs(pts[i][0]) + abs(pts[i][1] - SEAM))
+    pts = pts[i0:] + pts[:i0]
+    if abs(pts[1][1] - SEAM) < 1e-9 and pts[1][0] > 1:     # ring runs along the fringe side first: turn it round
+        pts = [pts[0]] + pts[:0:-1]
+    top_path = [list(q) for q in pts]                      # from (0, SEAM) round the allowance edge (tabs included) to (frill_len, SEAM)
+    r_end = strand / 2                                     # every strand has a round tip
+    y_e = W - r_end                                        # where the straight-sided part of a strand ends and its tip starts
+    fl = y_e - SEAM
+    if fl < 2:
+        raise SystemExit("The fringe is too short for its round ends: make the frill wider or the strands narrower.")
+    ramp = min(10.0, 0.35 * fl)                            # the wave eases in and out so the tips are clean
+    ys = np.linspace(SEAM, y_e, max(24, math.ceil(fl / 1.5)))
+
+    def smooth(u):
+        u = np.clip(u, 0, 1)
+        return u * u * (3 - 2 * u)
+    wave = FRILL_WAVE * smooth((ys - SEAM) / ramp) * smooth((y_e - ys) / ramp) * np.sin(2 * math.pi * (ys - SEAM) / max(FRILL_WAVE_LENGTH, 5.0))
+
+    def curve(k):                                          # slit k (k = 0 and n_slits are the two ends of the strip); all slits are the same wave
+        return np.column_stack([k * strand + wave, ys])
+
+    def dedupe(pp):
+        out = [pp[0]]
+        for q in pp[1:]:
+            if math.hypot(q[0] - out[-1][0], q[1] - out[-1][1]) > 1e-9:
+                out.append(q)
+        if math.hypot(out[-1][0] - out[0][0], out[-1][1] - out[0][1]) > 1e-9:
+            out.append(out[0])
+        return out
+    holes = []
+    cxs = [(j + 0.5) * strand for j in range(n_slits)]
+
+    def tip_arc(j, a0, a1, m=10):
+        return [[cxs[j] + r_end * math.cos(a_), y_e + r_end * math.sin(a_)] for a_ in np.linspace(a0, a1, m)]
+    if SACRIFICE_STRIP_WIDTH <= 0:
+        loop = list(top_path) + curve(n_slits).tolist()    # ONE closed loop: down the right end, then along the free edge
+        for j in range(n_slits - 1, -1, -1):
+            loop += tip_arc(j, 0.0, math.pi, 28)           # round tip of strand j
+            cj = curve(j)
+            loop += (cj[::-1].tolist() + cj.tolist()) if j > 0 else cj[::-1].tolist()               # each slit up and back down (doubled); the left end only up
+        loop = dedupe(loop)
+    else:
+        # A sacrificial strip across the free ends: each strand tip is joined to it by a small bridge. The outline is the outside of
+        # everything (allowance edge, ends, strip) plus one closed loop per gap between two neighbouring bridges (it includes the
+        # doubled slit between those two strands), so no loose slit lines are left for the laser.
+        cw, gap, sw = SACRIFICE_CONNECTOR_WIDTH, SACRIFICE_CONNECTOR_LENGTH, SACRIFICE_STRIP_WIDTH
+        if cw <= 0 or gap <= 0:
+            raise SystemExit("The sacrificial strip's bridges need a width and a length above zero (or set the strip width to 0 for no strip).")
+        if cw > 0.9 * strand:
+            raise SystemExit("The bridges must be narrower than a fringe strand (about 90% of its width at most).")
+        d = cw / 2
+        y_c = y_e + math.sqrt(r_end ** 2 - d ** 2)         # where a bridge's side meets the round tip
+        y_s = W + gap                                      # top of the strip
+        y_b = y_s + sw                                     # far side of the strip
+        a_r = math.acos(d / r_end)                         # tip arc angle at the right side of a bridge (the left side is pi - a_r)
+        loop = list(top_path) + curve(n_slits).tolist()                                           # down the right end of the last strand
+        j = n_slits - 1
+        loop += tip_arc(j, 0.0, a_r) + [[cxs[j] + d, y_c], [cxs[j] + d, y_s]]                   # its tip, then along its bridge
+        x_hi, x_lo = frill_len + FRILL_WAVE, -FRILL_WAVE
+        loop += [[x_hi, y_s], [x_hi, y_b], [x_lo, y_b], [x_lo, y_s]]                             # along the strip: right end, far side, left end
+        loop += [[cxs[0] - d, y_s], [cxs[0] - d, y_c]] + tip_arc(0, math.pi - a_r, math.pi)       # back along the first strand's bridge and round its tip
+        loop += curve(0)[::-1].tolist()                                                           # up the left end of the first strand
+        loop = dedupe(loop)
+        for j in range(n_slits - 1):                                                              # the gap between strand j and j + 1
+            hp = [[cxs[j] + d, y_s], [cxs[j] + d, y_c]] + tip_arc(j, a_r, 0.0)
+            hp += curve(j + 1)[::-1].tolist() + curve(j + 1).tolist()                              # the slit between them, up and back down
+            hp += tip_arc(j + 1, math.pi, math.pi - a_r) + [[cxs[j + 1] - d, y_c], [cxs[j + 1] - d, y_s]]
+            holes.append(dedupe(hp))
     pc = Piece("frill")
-    ring = [tuple(q) for q in fcut.exterior.coords]
-    loop = []                                              # ONE closed loop: each slit is walked down and back up on the free edge
-    for (xa, ya), (xb, yb) in zip(ring[:-1], ring[1:]):
-        loop.append((xa, ya))
-        if abs(ya - W) < 1e-9 and abs(yb - W) < 1e-9 and xa != xb:
-            ks = [k for k in range(1, n_slits) if min(xa, xb) < k * strand < max(xa, xb)]
-            ks.sort(key=lambda k: abs(k * strand - xa))
-            for k in ks:
-                x = k * strand
-                loop += [(x, W), (x, SEAM), (x, W)]
-    loop.append(ring[-1])
     pc.add("cut", np.array(loop) + shift)
+    for hp in holes:
+        pc.add("cut", np.array(hp) + shift)
     pc.add("sew", np.array([[0, SEAM], [frill_len, SEAM]]) + shift)
     for p, txt in labs:
         pc.add("label", [p + shift], txt)
-    pc.w, pc.h = frill_len, W + TAB_SIZE
+    pc.w = frill_len + 2 * FRILL_WAVE
+    pc.h = W + TAB_SIZE + (SACRIFICE_CONNECTOR_LENGTH + SACRIFICE_STRIP_WIDTH if SACRIFICE_STRIP_WIDTH > 0 else 0)
     frills = [pc]
     pieces += frills
     circ = math.pi * BASE_DIAMETER
@@ -361,7 +458,12 @@ def report(info):
           f"  Cone strip, cut size            bounding box {info['bbox'][0]:.0f} x {info['bbox'][1]:.0f} mm, "
           f"tightest rectangle {info['strip_tight']:.0f} x {info['strip_long']:.0f} mm",
           f"  Frill                           one strip {info['frill_len']:.0f} x {info['frill_w']:.0f} mm; solid {SEAM:g} mm seam allowance, "
-          f"{info['F']:.0f} mm of fringe slit into {info['n_slits']} strands {info['strand']:.1f} mm wide"]
+          f"{info['F']:.0f} mm of fringe slit into {info['n_slits']} strands {info['strand']:.1f} mm wide, round tips, "
+          + (f"waves {FRILL_WAVE:g} mm high every {FRILL_WAVE_LENGTH:g} mm" if FRILL_WAVE > 0 else "straight slits")]
+    L.append("  Sacrificial strip               " + (
+        f"a {SACRIFICE_STRIP_WIDTH:g} mm strip joins all strand tips through {SACRIFICE_CONNECTOR_WIDTH:g} x {SACRIFICE_CONNECTOR_LENGTH:g} mm bridges; "
+        f"cut it off after sewing (the frill outline has {info['n_slits'] - 1} extra closed loops, one per gap between strands)"
+        if SACRIFICE_STRIP_WIDTH > 0 else "none (the frill is one closed loop that doubles back along each slit)"))
     L.append("  Cuff                            " + (
         f"part of the cone strip: {BASE_DIAMETER:.0f} mm across at the cuff line, {info['d_bottom']:.0f} mm at the open end, "
         f"{CUFF_HEIGHT:g} mm tall, no seam allowance on the open end" if CUFF_IN_STRIP
@@ -401,7 +503,7 @@ def title(name):
 
 def export_items(cut, pieces, detailed):
     """Everything an export file draws, at true size in mm, y pointing down, shifted so the drawing starts 10 mm in
-    from the corner. detailed=False keeps only the cut lines (what the laser follows): one closed outline per piece (the frill loop doubles back along each slit).
+    from the corner. detailed=False keeps only the cut lines (what the laser follows): closed outlines only (the frill: its outline plus one closed loop per gap between strands).
     Returns (items, width, height); items are (kind, points, text) with kind cut / sew / mark / label / title."""
     place, _ = layout(cut, pieces)
     items = []
@@ -523,7 +625,7 @@ def draw_png_outline(path, cut, pieces):
     ax.set_xlabel("mm"); ax.set_ylabel("mm")
     sx = ax.secondary_xaxis("top", functions=(lambda v: v / 25.4, lambda v: v * 25.4)); sx.set_xlabel("inches")
     sy = ax.secondary_yaxis("right", functions=(lambda v: v / 25.4, lambda v: v * 25.4)); sy.set_ylabel("inches")
-    ax.set_title("Laser cut view: only the lines the laser follows (the frill is one closed loop that doubles back along each slit)", fontsize=10)
+    ax.set_title("Laser cut view: only the lines the laser follows (frill: outline plus one closed loop per gap between strands)", fontsize=10)
     fig.tight_layout()
     fig.savefig(path, dpi=100)
     plt.close(fig)

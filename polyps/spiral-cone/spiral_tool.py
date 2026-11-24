@@ -40,13 +40,18 @@ FIELDS = [
     ("Seam", "TRANSITION", "Spiral to straight blend", "mm", 0, 150, 5),
     ("Seam", "SEAM", "Seam allowance", "mm", 6, 25, 1),
     ("Seam", "NOTCH_DEPTH", "Seam notch depth (0 = none)", "mm", 0, 25, 1),
-    ("Seam", "NOTCH_SPACING_BASE", "Notch spacing at the base", "mm", 10, 300, 5),
-    ("Seam", "NOTCH_SPACING_TIP", "Notch spacing at the tip end", "mm", 5, 150, 5),
+    ("Seam", "NOTCH_SPACING_BASE", "Notch spacing at the base (about)", "mm", 10, 300, 5),
+    ("Seam", "NOTCH_SPACING_TIP", "Notch spacing at the tip end (about)", "mm", 5, 150, 5),
     ("Seam", "FABRIC_WIDTH", "Fabric width (fit check)", "in", 20, 120, 1),
     ("Frill", "FRILL_START", "Frill starts at (up from cuff line)", "mm", 0, 225, 5),
     ("Frill", "FRILL_END_FROM_TIP", "Frill ends at (distance from tip)", "mm", 0, 300, 5),
     ("Frill", "RUFFLE_WIDTH", "Frill strip width (cut)", "mm", 25, 150, 1),
     ("Frill", "FRINGE_WIDTH", "Fringe strip width", "mm", 3, 25, 0.5),
+    ("Frill", "FRILL_WAVE", "Fringe wave height (0 = straight)", "mm", 0, 10, 0.5),
+    ("Frill", "FRILL_WAVE_LENGTH", "Fringe wave length", "mm", 10, 100, 5),
+    ("Sacrificial strip", "SACRIFICE_STRIP_WIDTH", "Strip width (0 = none)", "mm", 0, 10, 0.5),
+    ("Sacrificial strip", "SACRIFICE_CONNECTOR_WIDTH", "Bridge width", "mm", 0.5, 5, 0.5),
+    ("Sacrificial strip", "SACRIFICE_CONNECTOR_LENGTH", "Bridge length", "mm", 0.5, 5, 0.5),
     ("Tabs", "TAB_SIZE", "Tab size", "mm", 6, 25, 1),
     ("Tabs", "TAB_SPACING", "Tab spacing", "mm", 50, 300, 5),
 ]
@@ -423,7 +428,7 @@ async function run() {
 // Downloads: name and save a snapshot of the built pattern first (the name goes into the file name)
 let wantExt = '';
 const HELP = {detailed: 'Exports every line shown (cut, sew, cuff line, numbered tabs), true size in mm, no scales or grid.',
-              outline: 'Exports only the cut lines the laser follows (the frill is one closed loop that doubles back along each slit), true size in mm, no scales or grid.'};
+              outline: 'Exports only the cut lines the laser follows (the frill is its outline plus one closed loop per gap between strands), true size in mm, no scales or grid.'};
 function showView() {
   $('v-detailed').classList.toggle('on', view === 'detailed'); $('v-outline').classList.toggle('on', view === 'outline');
   if (curKey) $('pic').src = '/out/' + curKey + '/spiral-cone' + (view === 'outline' ? '-outline' : '') + '.png';
