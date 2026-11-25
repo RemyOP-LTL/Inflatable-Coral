@@ -27,6 +27,7 @@ import sea_anemone as S
 
 # (section, setting, label, unit, min, max, step)  -- everything is in millimetres
 FIELDS = [
+    ("Method", "PATTERN_METHOD", "Pattern method", "method", 0, 1, 1),
     ("Tube shape", "HEIGHT", "Height", "mm", 50, 800, 5),
     ("Tube shape", "DIAMETER_BOTTOM", "Diameter at the bottom", "mm", 30, 400, 1),
     ("Tube shape", "DIAMETER_TOP", "Diameter at the top", "mm", 30, 400, 1),
@@ -65,6 +66,7 @@ FIELDS = [
     ("Tabs", "TABS_LOWER_SEAM", "Lower cone seam (each edge)", "tabs", 0, 12, 1),
     ("Tabs", "TABS_MID_RING", "Central ring seam", "tabs", 1, 24, 1),
     ("Tabs", "TABS_UPPER_SEAM", "Upper cone seam (each edge)", "tabs", 0, 12, 1),
+    ("Tabs", "TABS_HALF_SEAM", "Hourglass halves: each seam edge", "tabs", 0, 12, 1),
     ("Tabs", "TABS_TOP_RING", "Cap ring (tube top, cap, frill)", "tabs", 1, 24, 1),
 ]
 DEFAULTS = {k: getattr(S, k) for k in S.NAMES}
@@ -352,6 +354,7 @@ PAGE = r"""<!doctype html>
 <main>
   <div>
     <div class="card sticky">
+      <div class="seg" id="mseg" style="margin-bottom:6px"><button id="m-0" type="button" class="on">Two cones</button><button id="m-1" type="button">Hourglass halves</button></div>
       <button id="rebuild" disabled>Rebuild</button>
       <button class="reset" id="reset">Reset to the starting values</button>
       <div class="row"><input type="text" id="snapname" placeholder="Snapshot name (optional)" maxlength="60"><button id="save" class="secondary">Save</button></div>
@@ -390,7 +393,8 @@ let built = '', curKey = '', snapNames = [], view = 'detailed', named = null;   
 function refreshBtn() { $('rebuild').disabled = JSON.stringify(vals) === built; drawProfile(); }
 for (const [sec, name, label, unit, lo, hi, step] of META.fields) {
   if (!secs[sec]) { const c = document.createElement('div'); c.className = 'card'; c.style.marginTop = '12px'; c.innerHTML = `<h2>${sec}</h2>`; $('sections').appendChild(c); secs[sec] = c; }
-  const d = document.createElement('div'); d.className = 'field';
+  if (unit === 'method') continue;                // set by the switch at the top, not a box
+  const d = document.createElement('div'); d.className = 'field'; d.dataset.field = name;
   if (unit === 'slider' || unit === 'sliderx') {          // a slider with its value shown; rebuilds when you let go
     d.innerHTML = `<label>${label}<span><span id="v-${name}"></span>${unit === 'slider' ? ' mm' : ''}</span></label><input type="range" id="n-${name}" min="${lo}" max="${hi}" step="${step}">`;
     secs[sec].appendChild(d);
@@ -427,13 +431,26 @@ for (const [sec, name, label, unit, lo, hi, step] of META.fields) {
 }
 function sync() {
   for (const [, name, , unit] of META.fields) {
+    if (unit === 'method') continue;
     const el = $('n-' + name);
     if (unit === 'switch') { el.checked = vals[name] >= 0.5; $('t-' + name + '-txt').textContent = el.checked ? 'Yes' : 'No'; }
     else if (unit === 'toggle') { el.checked = vals[name] === 0; $('t-' + name + '-txt').textContent = el.checked ? 'Yes' : 'No'; }
     else el.value = +(+vals[name]).toFixed(3);
     if (unit === 'slider') $('v-' + name).textContent = vals[name];
   }
+  updateMethodUI();
 }
+// pattern method switch: which fields apply to which method
+const METHOD_HIDE = {0: ['TABS_HALF_SEAM'],
+                     1: ['TABS_LOWER_SEAM', 'TABS_UPPER_SEAM', 'TABS_MID_RING', 'GUIDE_TABS', 'GUIDE_TAB_WIDTH', 'GUIDE_RING_DIAMETER', 'GUIDE_HOLE_DIAMETER', 'GUIDE_TAB_EXTRA']};
+function updateMethodUI() {
+  const m = vals.PATTERN_METHOD >= 0.5 ? 1 : 0;
+  $('m-0').classList.toggle('on', m === 0); $('m-1').classList.toggle('on', m === 1);
+  document.querySelectorAll('#sections .field').forEach(el => { el.style.display = METHOD_HIDE[m].includes(el.dataset.field) ? 'none' : ''; });
+  document.querySelectorAll('#sections .card').forEach(c => { c.style.display = [...c.querySelectorAll('.field')].some(f => f.style.display !== 'none') ? '' : 'none'; });
+}
+$('m-0').onclick = () => { vals.PATTERN_METHOD = 0; updateMethodUI(); refreshBtn(); run(); };
+$('m-1').onclick = () => { vals.PATTERN_METHOD = 1; updateMethodUI(); refreshBtn(); run(); };
 $('reset').onclick = () => { Object.assign(vals, META.defaults); sync(); run(); };
 $('rebuild').onclick = () => run();
 async function loadSnaps(select) {
@@ -551,6 +568,7 @@ $('xs').addEventListener('pointermove', e => {
 function xsEnd() { if (!xsDrag) return; xsDrag = null; xsFrozen = null; drawProfile(); if (!$('rebuild').disabled) run(); }
 $('xs').addEventListener('pointerup', xsEnd); $('xs').addEventListener('pointercancel', xsEnd);
 drawProfile();
+updateMethodUI();
 showView();
 function askName(ext) {
   if (!curKey) return;

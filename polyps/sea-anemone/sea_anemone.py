@@ -78,12 +78,14 @@ SACRIFICE_STRIP_WIDTH = 2.0       # sacrificial strip along the free ends of the
 SACRIFICE_CONNECTOR_WIDTH = 1.5   # width of the little bridge that joins each strand tip to the strip
 SACRIFICE_CONNECTOR_LENGTH = 1.5  # length of that bridge: the gap between a strand tip and the strip
 SLIT_SINGLE_LINE = 1.0            # 1 = every slit between two fringe strands is cut ONCE, as a single open line (halves the cutting path of the slits); 0 = the older way: slits walked down and back up inside closed loops (each cut twice)
+PATTERN_METHOD = 0.0              # 0 = two stacked cones (exact flat pattern); 1 = two hourglass-shaped halves (two vertical seams, not exact: bunching at the neck)
+TABS_HALF_SEAM = 3.0              # hourglass method: number of alignment tabs along each seam edge of a half, evenly spaced
 
 NAMES = ["HEIGHT", "DIAMETER_BOTTOM", "DIAMETER_TOP", "MID_HEIGHT", "MID_DIAMETER", "FRILL_STRIP_LENGTH", "FRILL_LENGTH", "FRINGE_WIDTH",
          "FRILL_WAVE", "FRILL_WAVE_LENGTH", "FRILL_BAND", "FRILL_NOTCH_DEPTH", "FRILL_NOTCHES_BETWEEN_TABS", "SEAM", "TUBE_NOTCH_DEPTH", "TUBE_NOTCHES_BETWEEN_TABS",
          "FABRIC_WIDTH", "LASER_BED_SHORT", "LASER_BED_LONG", "NEST_GAP", "TAB_SIZE", "FRILL_TAB_LENGTH", "TABS_LOWER_SEAM", "TABS_MID_RING", "TABS_UPPER_SEAM", "TABS_TOP_RING",
          "CAP_HOLE_DIAMETER", "AIR_HOLE_DIAMETER", "AIR_HOLE_DISTANCE", "AIR_HOLE_COUNT", "GUIDE_TABS", "GUIDE_TAB_WIDTH", "GUIDE_RING_DIAMETER", "GUIDE_HOLE_DIAMETER", "GUIDE_TAB_EXTRA",
-         "SACRIFICE_STRIP_WIDTH", "SACRIFICE_CONNECTOR_WIDTH", "SACRIFICE_CONNECTOR_LENGTH", "SLIT_SINGLE_LINE"]
+         "SACRIFICE_STRIP_WIDTH", "SACRIFICE_CONNECTOR_WIDTH", "SACRIFICE_CONNECTOR_LENGTH", "SLIT_SINGLE_LINE", "PATTERN_METHOD", "TABS_HALF_SEAM"]
 
 
 def settings():
@@ -115,8 +117,8 @@ class Frustum:
     side edges (the seam) and arcs for the top and bottom edges, like a paper party hat with the tip cut off. A cylinder
     (r_a = r_b) is a plain rectangle."""
 
-    def __init__(self, r_a, r_b, h):
-        self.r_a, self.r_b, self.h = r_a, r_b, h
+    def __init__(self, r_a, r_b, h, frac=1.0):
+        self.r_a, self.r_b, self.h, self.frac = r_a, r_b, h, frac     # frac = the part of the way round the cone this piece covers (1 = all, 0.5 = a half)
         self.L = math.hypot(h, r_b - r_a)                          # slant length = length of the straight seam
         d = r_b - r_a
         self.cyl = abs(d) < 1e-6
@@ -125,7 +127,7 @@ class Frustum:
         else:
             self.rho_a = r_a * self.L / abs(d)                     # flat distance from the cone's tip to the bottom ring
             self.rho_b = r_b * self.L / abs(d)
-            self.theta = 2 * math.pi * abs(d) / self.L             # angle of the sector
+            self.theta = 2 * math.pi * abs(d) / self.L * frac      # angle of the sector
 
     def ring_point(self, which, f, dist=0.0):
         """Flat position of the point a fraction f (0..1) of the way round the bottom ('a') or top ('b') ring, optionally `dist` mm
@@ -133,7 +135,7 @@ class Frustum:
         r = self.r_a if which == "a" else self.r_b
         if self.cyl:
             y = self.h - dist if which == "a" else dist
-            return np.array([-math.pi * r + f * 2 * math.pi * r, y])
+            return np.array([-math.pi * r * self.frac + f * 2 * math.pi * r * self.frac, y])
         rho = self.rho_a if which == "a" else self.rho_b
         other = self.rho_b if which == "a" else self.rho_a
         rho = rho + (dist if other > rho else -dist)
@@ -169,6 +171,68 @@ class Frustum:
             return body.intersection(Polygon([(-1e4, self.h), (1e4, self.h), (1e4, -1e4), (-1e4, -1e4)]))
         disc = Point(0, 0).buffer(self.rho_a, 1024)
         return body.difference(disc) if self.r_b > self.r_a else body.intersection(disc)
+
+
+class HourglassHalf:
+    """One half of the whole tube (half the circumference at every height) as a single hourglass-shaped piece: the half of the lower
+    cone and the half of the upper cone, each flattened exactly, joined at the middle of the neck. The two neck arcs curve
+    opposite ways, so at the sides they overlap a little: that fabric is lost, the seam edges come out shorter than the centre line
+    and the fabric bunches round the neck. NOT exact, by design. The seam edges are straight up to where the two cones' edges cross
+    (the pinch of the neck) and then straight again."""
+
+    def __init__(self, rb, rm, rt, h1, h2):
+        self.lo, self.up = Frustum(rb, rm, h1, 0.5), Frustum(rm, rt, h2, 0.5)
+        self.shift = np.array([0.0, self.lo.ring_point("b", 0.5)[1] - self.up.ring_point("a", 0.5)[1]])       # upper half moved so the middles of the neck arcs touch
+        self.r_a, self.r_b, self.h, self.cyl = rb, rt, h1 + h2, False
+        self.left, self.right = self._edge(0.0), self._edge(1.0)
+        seg = np.hypot(*np.diff(self.left, axis=0).T)
+        self.cum = np.concatenate([[0.0], np.cumsum(seg)])
+        self.L = float(self.cum[-1])                                    # length of a seam edge
+        self.S_centre = self.lo.L + self.up.L                           # length up the middle of the half
+        self.overlap = float(abs(self.lo.ring_point("b", 0.0)[1] - (self.up.ring_point("a", 0.0) + self.shift)[1]))   # how far the two neck arcs overlap at the sides
+
+    def _edge(self, f):
+        bl, n1 = self.lo.ring_point("a", f), self.lo.ring_point("b", f)
+        n2, tl = self.up.ring_point("a", f) + self.shift, self.up.ring_point("b", f) + self.shift
+        d1, d2 = n1 - bl, tl - n2
+        den = d1[0] * d2[1] - d1[1] * d2[0]
+        if abs(den) > 1e-12:
+            t = ((n2[0] - bl[0]) * d2[1] - (n2[1] - bl[1]) * d2[0]) / den
+            u = ((n2[0] - bl[0]) * d1[1] - (n2[1] - bl[1]) * d1[0]) / den
+            if 0 <= t <= 1 and 0 <= u <= 1:
+                return np.array([bl, bl + d1 * t, tl])                  # the two edges cross: the pinch of the neck
+        pts = [bl, n1, n2, tl]
+        return np.array([q for k, q in enumerate(pts) if k == 0 or np.hypot(*(q - pts[k - 1])) > 1e-9])
+
+    def ring_point(self, which, f, dist=0.0):
+        return self.lo.ring_point("a", f, dist) if which == "a" else self.up.ring_point("b", f, dist) + self.shift
+
+    def ring_frame(self, which, f):
+        d = 1e-4
+        p0, p1 = self.ring_point(which, f - d), self.ring_point(which, f + d)
+        return self.ring_point(which, f), unit(p1 - p0)
+
+    def _at(self, side, lam):
+        pl = self.left if side < 0 else self.right
+        lam = min(max(lam, 0.0), self.L)
+        k = min(int(np.searchsorted(self.cum, lam, side="right")) - 1, len(pl) - 2)
+        seg = pl[k + 1] - pl[k]
+        return pl[k] + seg * ((lam - self.cum[k]) / max(self.cum[k + 1] - self.cum[k], 1e-12)), unit(seg)
+
+    def side_point(self, side, lam):
+        return self._at(side, lam)[0]
+
+    def side_frame(self, side, lam):
+        return self._at(side, lam)
+
+    def outline(self, n=400):
+        fs = np.linspace(0, 1, n)
+        bottom = [self.ring_point("a", f) for f in fs]
+        top = [self.ring_point("b", f) for f in fs][::-1]
+        return np.array(bottom + list(self.right[1:]) + top[1:] + list(self.left[::-1][1:-1]))
+
+    def flush_bottom(self, body):
+        return self.lo.flush_bottom(body)
 
 
 class StackedTube:
@@ -260,6 +324,9 @@ def build():
     circ_mid = 2 * math.pi * T.rm
     n_ring, n_mid = int(round(TABS_TOP_RING)), int(round(TABS_MID_RING))
     n_lo, n_up = int(round(TABS_LOWER_SEAM)), int(round(TABS_UPPER_SEAM))
+    hourglass = PATTERN_METHOD >= 0.5
+    if hourglass and n_ring % 2:
+        n_ring += 1                                                        # each half carries half of the top ring tabs
     if n_ring < 1 or n_mid < 1:
         raise SystemExit("The ring seams need at least 1 tab each (the notches are placed between the tabs).")
     if n_lo < 0 or n_up < 0:
@@ -276,7 +343,9 @@ def build():
     n_air = int(round(AIR_HOLE_COUNT)) if AIR_HOLE_DIAMETER > 0 else 0
     if n_air > 0 and not (0 < AIR_HOLE_DISTANCE < T.upper.L - 2):
         raise SystemExit(f"The air holes must sit between 0 and {T.upper.L - 2:.0f} mm below the top seam (the upper cone is {T.upper.L:.0f} mm along its surface).")
-    n_guide = int(round(GUIDE_TABS))
+    if hourglass and n_air % 2:
+        n_air += 1                                                         # half of the air holes on each half
+    n_guide = 0 if hourglass else int(round(GUIDE_TABS))
     if n_guide < 0 or n_guide > 24:
         raise SystemExit("Between 0 and 24 string-guide tabs, please.")
     if n_guide > 0 and (GUIDE_RING_DIAMETER <= GUIDE_HOLE_DIAMETER + 1 or GUIDE_TAB_WIDTH <= 0 or GUIDE_HOLE_DIAMETER <= 0):
@@ -287,7 +356,7 @@ def build():
     n_tube_notches = n_skipped = 0
     cone_pieces = []                                                       # (piece, cut polygon, outline polygon)
 
-    def make_cone(F, name, prefix, n_side, bottom_flush, top_f, top_lab, bot_f, bot_lab, guides=(), air=False):
+    def make_cone(F, name, prefix, n_side, bottom_flush, top_f, top_lab, bot_f, bot_lab, guides=(), air_n=0, side_prefix=None):
         """Flat cut piece for one cone. Tabs: numbered along the straight seam; lettered round the arcs that get sewn to
         something. Notches: on the arc edges that have a seam allowance, between the tabs."""
         nonlocal n_tube_notches, n_skipped
@@ -302,7 +371,7 @@ def build():
                 p, t = F.side_frame(side, lam)
                 n = outward(p, t, outline)
                 squares.append(tab_square(p, t, n, SEAM, TAB_SIZE))
-                labels.append((p + n * (SEAM + h), f"{prefix}{i}"))
+                labels.append((p + n * (SEAM + h), f"{prefix if side_prefix is None else side_prefix[0 if side < 0 else 1]}{i}"))
         for which, fr, lab in (("b", top_f, top_lab), ("a", bot_f, bot_lab)):
             if fr is None:
                 continue
@@ -356,7 +425,7 @@ def build():
             if cutters:
                 cut = cut.difference(unary_union(cutters))
         if cut.geom_type != "Polygon" or len(cut.interiors) > 0:
-            warn.append(f"The {name} cone piece's cut outline touches itself. Make the seam allowance smaller or move the notches apart.")
+            warn.append(f"The {name} piece's cut outline touches itself. Make the seam allowance smaller or move the notches apart.")
             if cut.geom_type != "Polygon":
                 cut = max(cut.geoms, key=lambda g: g.area)
         pc = Piece(name)
@@ -364,22 +433,40 @@ def build():
         pc.add("sew", np.array(outline.exterior.coords))
         for hole in guide_holes:
             pc.add("cut", hole)                                            # holes are separate closed loops inside the piece
-        n_air_here = 0
-        if air:                                                            # tiny air holes a set distance below the top seam, evenly spaced round the ring
-            for i in range(n_air):
-                pc.add("cut", circle_points(*F.ring_point("b", (i + 0.5) / n_air, AIR_HOLE_DISTANCE), AIR_HOLE_DIAMETER))
-            n_air_here = n_air
+        if air_n > 0:                                                      # tiny air holes a set distance below the top seam, evenly spaced round the ring
+            for i in range(air_n):
+                pc.add("cut", circle_points(*F.ring_point("b", (i + 0.5) / air_n, AIR_HOLE_DISTANCE), AIR_HOLE_DIAMETER))
         for p, txt in labels:
             pc.add("label", [p], txt)
         return pc, cut, outline, len(side_l)
 
-    lower, cut_lo, outline_lo, side_lo = make_cone(T.lower, "lower", "L", n_lo, True, mid_f, mid_lab, None, None, guides=guide_lo)
-    upper, cut_up, outline_up, side_up = make_cone(T.upper, "upper", "U", n_up, False, ring_f, ring_lab, mid_f, mid_lab, guides=guide_up, air=True)
+    if not hourglass:
+        lower, cut_lo, outline_lo, side_lo = make_cone(T.lower, "lower", "L", n_lo, True, mid_f, mid_lab, None, None, guides=guide_lo)
+        upper, cut_up, outline_up, side_up = make_cone(T.upper, "upper", "U", n_up, False, ring_f, ring_lab, mid_f, mid_lab, guides=guide_up, air_n=n_air)
+        pieces = [lower, upper]
+        parts = [(T.lower, "lower", cut_lo, outline_lo), (T.upper, "upper", cut_up, outline_up)]
+        crowd = (("lower cone's straight seam", T.lower.L, n_lo), ("upper cone's straight seam", T.upper.L, n_up),
+                 ("central ring seam", circ_mid, n_mid), ("top ring", circ_top, n_ring))
+        HG = None
+    else:
+        # two hourglass halves (identical shape, cut 2): each has half of the top ring tabs and air holes; the straight seams are P (left edge) and Q (right edge)
+        HG = HourglassHalf(T.rb, T.rm, T.rt, T.lower.h, T.upper.h)
+        n_h = int(round(TABS_HALF_SEAM))
+        if n_h < 0:
+            raise SystemExit("Tab counts cannot be negative.")
+        m = n_ring // 2
+        parts, pieces = [], []
+        for j in range(2):
+            pc, cut_j, outline_j, side_j = make_cone(HG, f"half{j + 1}", "", n_h, True, [(i + 0.5) / m for i in range(m)], ring_lab[j * m:(j + 1) * m], None, None,
+                                                     air_n=n_air // 2, side_prefix=("P", "Q"))
+            pieces.append(pc)
+            parts.append((HG, f"half{j + 1}", cut_j, outline_j))
+        side_lo = side_up = n_h
+        n_mid = 0
+        crowd = (("seam edge of a half", HG.L, n_h), ("top ring", circ_top, n_ring))
     if n_skipped:
         warn.append(f"{n_skipped} tube notch(es) were left out because they would run into a tab. Use fewer notches between tabs.")
-    pieces = [lower, upper]
-    for lab_, ln_, cnt_ in (("lower cone's straight seam", T.lower.L, n_lo), ("upper cone's straight seam", T.upper.L, n_up),
-                            ("central ring seam", circ_mid, n_mid), ("top ring", circ_top, n_ring)):
+    for lab_, ln_, cnt_ in crowd:
         if cnt_ > 0 and ln_ / cnt_ < 1.6 * TAB_SIZE:
             warn.append(f"The {lab_} has {cnt_} tabs in {ln_:.0f} mm: they are only {ln_ / cnt_:.0f} mm apart and will crowd each other. Use fewer or smaller tabs.")
     # --- cap disk
@@ -534,16 +621,20 @@ def build():
     pieces.append(frill)
     # --- numbers and checks
     cones = []
-    for F, nm, cut, outline in ((T.lower, "lower", cut_lo, outline_lo), (T.upper, "upper", cut_up, outline_up)):
+    for F, nm, cut, outline in parts:
         xs, ys = np.array(outline.minimum_rotated_rectangle.exterior.coords).T
         sd = sorted([math.hypot(xs[1] - xs[0], ys[1] - ys[0]), math.hypot(xs[2] - xs[1], ys[2] - ys[1])])
         cb = cut.bounds
-        sag = 0.0 if F.cyl else float(np.ptp(np.array([F.ring_point("a", f) for f in np.linspace(0, 1, 200)])[:, 1]))
-        sag_b = 0.0 if F.cyl else float(np.ptp(np.array([F.ring_point("b", f) for f in np.linspace(0, 1, 200)])[:, 1]))
-        cones.append(dict(name=nm, r_a=F.r_a, r_b=F.r_b, h=F.h, L=F.L, theta=0.0 if F.cyl else math.degrees(F.theta), cyl=F.cyl,
-                          bbox=(cb[2] - cb[0], cb[3] - cb[1]), tight=sd[0] + 2 * SEAM, sag_a=sag, sag_b=sag_b))
+        if hourglass:
+            sag = sag_b = 0.0
+            cones.append(dict(name=nm, bbox=(cb[2] - cb[0], cb[3] - cb[1]), tight=sd[0] + 2 * SEAM, hourglass=True))
+        else:
+            sag = 0.0 if F.cyl else float(np.ptp(np.array([F.ring_point("a", f) for f in np.linspace(0, 1, 200)])[:, 1]))
+            sag_b = 0.0 if F.cyl else float(np.ptp(np.array([F.ring_point("b", f) for f in np.linspace(0, 1, 200)])[:, 1]))
+            cones.append(dict(name=nm, r_a=F.r_a, r_b=F.r_b, h=F.h, L=F.L, theta=0.0 if F.cyl else math.degrees(F.theta), cyl=F.cyl,
+                              bbox=(cb[2] - cb[0], cb[3] - cb[1]), tight=sd[0] + 2 * SEAM, sag_a=sag, sag_b=sag_b))
         if sd[0] + 2 * SEAM > FABRIC_WIDTH:
-            warn.append(f"The {nm} cone piece is {sd[0] + 2 * SEAM:.0f} mm across (tightest fit) and does not fit the {FABRIC_WIDTH:.0f} mm fabric.")
+            warn.append(f"The {nm} piece is {sd[0] + 2 * SEAM:.0f} mm across (tightest fit) and does not fit the {FABRIC_WIDTH:.0f} mm fabric.")
     if abs(Lf - circ_top) / circ_top > 0.02:
         pct = (Lf / circ_top - 1) * 100
         warn.append(f"The frill is {abs(pct):.0f}% {'longer' if pct > 0 else 'shorter'} than the ring it goes round "
@@ -556,7 +647,7 @@ def build():
     if not fits_bed:
         warn.append(f"The nested pieces need {ext_w:.0f} x {ext_h:.0f} mm but the laser bed is {LASER_BED_SHORT:g} x {LASER_BED_LONG:g} mm (with 5 mm kept free at the edges): "
                     "they will not fit in one go. Use a smaller tube, or cut the pieces in two batches.")
-    info = dict(slit_len=slit_len, slit_single=single, n_air=n_air, n_guide=n_guide, guide_len=T.rm + GUIDE_TAB_EXTRA, laser_extent=(ext_w, ext_h), fits_bed=fits_bed, pieces=len(pieces), tube_s=T.S, cones=cones, circ_top=circ_top, circ_bottom=math.pi * DIAMETER_BOTTOM, circ_mid=circ_mid,
+    info = dict(method=1 if hourglass else 0, hg_edge=(HG.L if hourglass else 0.0), hg_centre=(HG.S_centre if hourglass else 0.0), hg_overlap=(HG.overlap if hourglass else 0.0), slit_len=slit_len, slit_single=single, n_air=n_air, n_guide=n_guide, guide_len=T.rm + GUIDE_TAB_EXTRA, laser_extent=(ext_w, ext_h), fits_bed=fits_bed, pieces=len(pieces), tube_s=T.S, cones=cones, circ_top=circ_top, circ_bottom=math.pi * DIAMETER_BOTTOM, circ_mid=circ_mid,
                 frill_len=Lf, frill_w=W, F=W - y_fringe, n_slits=n_slits, strand=strand,
                 n_tube_notches=n_tube_notches, n_frill_notches=n_fn, notch_w=notch_w, side_tabs=(side_lo, side_up), ring_tabs=n_ring, mid_tabs=n_mid,
                 cap_d=2 * (R_top + SEAM), warnings=warn)
@@ -566,18 +657,28 @@ def build():
 def report(info):
     L = ["SEA ANEMONE POLYP: flat pattern numbers (millimetres)", "", "Settings:"]
     L += [f"  {k:<20} {v:g}" for k, v in settings().items()]
+    hg = info["method"] == 1
     L += ["", "Results:",
-          f"  Tube                            {HEIGHT:g} mm tall: two stacked cones, {DIAMETER_BOTTOM:g} mm across at the bottom, {MID_DIAMETER:g} mm at the central point "
-          f"({MID_HEIGHT:g} mm up), {DIAMETER_TOP:g} mm at the top. Every piece flattens exactly (no stretch)"]
+          (f"  Tube                            {HEIGHT:g} mm tall: TWO HOURGLASS HALVES (cut 2, two vertical seams), {DIAMETER_BOTTOM:g} mm across at the bottom, {MID_DIAMETER:g} mm at the neck "
+           f"({MID_HEIGHT:g} mm up), {DIAMETER_TOP:g} mm at the top. Not exact: see below") if hg else
+          (f"  Tube                            {HEIGHT:g} mm tall: two stacked cones, {DIAMETER_BOTTOM:g} mm across at the bottom, {MID_DIAMETER:g} mm at the central point "
+           f"({MID_HEIGHT:g} mm up), {DIAMETER_TOP:g} mm at the top. Every piece flattens exactly (no stretch)")]
     for c in info["cones"]:
+        if c.get("hourglass"):
+            L.append(f"  {c['name'].capitalize():<31} half the circumference wide at every height; cut size {c['bbox'][0]:.0f} x {c['bbox'][1]:.0f} mm")
+            continue
         shape = ("a plain rectangle (a cylinder)" if c["cyl"] else f"a ring sector of {c['theta']:.1f} degrees; arcs {c['sag_a']:.0f} mm and {c['sag_b']:.0f} mm deep")
         L.append(f"  {c['name'].capitalize() + ' cone':<31} {c['r_a'] * 2:.0f} to {c['r_b'] * 2:.0f} mm across over {c['h']:g} mm; straight seam {c['L']:.0f} mm; "
                  f"{shape}; cut size {c['bbox'][0]:.0f} x {c['bbox'][1]:.0f} mm")
+    if hg:
+        L.append(f"  Hourglass neck                  each half is the half of the lower cone joined to the half of the upper cone at the middle of the neck; the two neck arcs curve opposite ways so they overlap "
+                 f"{info['hg_overlap']:.0f} mm at the sides. The seam edge is {info['hg_edge']:.0f} mm long against {info['hg_centre']:.0f} mm up the middle of the half "
+                 f"({(info['hg_edge'] / info['hg_centre'] - 1) * 100:+.1f}%): expect bunching round the neck")
     L += [f"  Circumference                   bottom {info['circ_bottom']:.0f}, centre {info['circ_mid']:.0f}, top {info['circ_top']:.0f} mm",
           f"  Cap disk                        {info['cap_d']:.0f} mm across with allowance ({DIAMETER_TOP:g} mm sew circle)"
           + (f"; {CAP_HOLE_DIAMETER:g} mm centre hole for the string" if CAP_HOLE_DIAMETER > 0 else ""),
-          (f"  Air holes                       {info['n_air']} holes {AIR_HOLE_DIAMETER:g} mm across, evenly spaced, {AIR_HOLE_DISTANCE:g} mm below the top seam on the upper cone") if info["n_air"] else "  Air holes                       none",
-          (f"  String guide tabs               {info['n_guide']} tabs at the ring seam, shared alternately between the cones; {GUIDE_TAB_WIDTH:g} mm wide, {info['guide_len']:.0f} mm from the sew line to the "
+          (f"  Air holes                       {info['n_air']} holes {AIR_HOLE_DIAMETER:g} mm across, evenly spaced, {AIR_HOLE_DISTANCE:g} mm below the top seam on the {'halves' if hg else 'upper cone'}") if info["n_air"] else "  Air holes                       none",
+          ("  String guide tabs               none: the hourglass method has no seam round the neck to hold them" if hg else None) or (f"  String guide tabs               {info['n_guide']} tabs at the ring seam, shared alternately between the cones; {GUIDE_TAB_WIDTH:g} mm wide, {info['guide_len']:.0f} mm from the sew line to the "
            f"hole centre (on the axis); round end {GUIDE_RING_DIAMETER:g} mm with a {GUIDE_HOLE_DIAMETER:g} mm hole") if info["n_guide"] else "  String guide tabs               none",
           f"  Frill                           one strip {info['frill_len']:.0f} x {info['frill_w']:.0f} mm; {SEAM:g} mm seam allowance"
           + (f", {FRILL_BAND:g} mm solid band" if FRILL_BAND > 0 else "")
@@ -590,9 +691,12 @@ def report(info):
            f"{info['notch_w']:.1f} mm wide at the cut edge (width worked out from the circle)") if info["n_frill_notches"]
           else "  Frill seam notches              none",
           (f"  Tube seam notches               {info['n_tube_notches']} V notches, {TUBE_NOTCHES_BETWEEN_TABS:g} between each pair of tabs, {min(TUBE_NOTCH_DEPTH, SEAM - 2.0):g} mm deep, "
-           f"on the ring seam between the cones and the top edge (none on the straight seams, the open bottom edge or the cap)") if info["n_tube_notches"] else "  Tube seam notches               none",
-          f"  Alignment tabs                  {TAB_SIZE:g} mm squares (frill tabs {TAB_SIZE:g} x {FRILL_TAB_LENGTH:g} mm, long enough to fold into loops for a hoop): {info['side_tabs'][0]} (L) and {info['side_tabs'][1]} (U) numbered pairs on the straight seams, "
-          f"{info['mid_tabs']} lowercase sets on the ring seam between the cones, {info['ring_tabs']} capital sets (top of the tube, cap, frill)",
+           + ("on the top edge (none on the straight seams, the open bottom edge or the cap)" if hg else "on the ring seam between the cones and the top edge (none on the straight seams, the open bottom edge or the cap)"))
+          if info["n_tube_notches"] else "  Tube seam notches               none",
+          (f"  Alignment tabs                  {TAB_SIZE:g} mm squares (frill tabs {TAB_SIZE:g} x {FRILL_TAB_LENGTH:g} mm, long enough to fold into loops for a hoop): {info['side_tabs'][0]} on each seam edge of a half "
+           f"(P1.. on the left edge, Q1.. on the right edge: sew a P edge to a Q edge of the other half), {info['ring_tabs']} capital letters round the top (tube top, cap, frill)") if hg else
+          (f"  Alignment tabs                  {TAB_SIZE:g} mm squares (frill tabs {TAB_SIZE:g} x {FRILL_TAB_LENGTH:g} mm, long enough to fold into loops for a hoop): {info['side_tabs'][0]} (L) and {info['side_tabs'][1]} (U) numbered pairs on the straight seams, "
+           f"{info['mid_tabs']} lowercase sets on the ring seam between the cones, {info['ring_tabs']} capital sets (top of the tube, cap, frill)"),
           f"  Pieces to cut                   {info['pieces']}",
           f"  Laser sheet                     nested pieces need {info['laser_extent'][0]:.0f} x {info['laser_extent'][1]:.0f} mm; bed {LASER_BED_SHORT:g} x {LASER_BED_LONG:g} mm: "
           + ("fits" if info["fits_bed"] else "DOES NOT FIT"), ""]
@@ -624,7 +728,9 @@ def layout(pieces):
 
 
 def title(name):
-    return {"lower": "LOWER CONE (cut 1). Sew its two straight edges together; its top arc goes to the upper cone's bottom arc",
+    return {"half1": "HALF 1 (cut 1). Sew P edges to the other half's Q edges; top arc to the cap and frill",
+            "half2": "HALF 2 (cut 1). Sew P edges to the other half's Q edges; top arc to the cap and frill",
+            "lower": "LOWER CONE (cut 1). Sew its two straight edges together; its top arc goes to the upper cone's bottom arc",
             "upper": "UPPER CONE (cut 1). Sew its two straight edges together; its top arc goes to the cap and frill",
             "cap": "CAP DISK (cut 1)",
             "frill": "FRILL STRIP (cut 1). Sew along the blue line; the slits make the fringe" + ("; cut off the thin strip at the free ends afterwards" if SACRIFICE_STRIP_WIDTH > 0 else "")}[name]
@@ -823,7 +929,7 @@ def draw_picture(path, T, info):
     ax = fig.add_axes([0, 0, 1, 1], facecolor=BG)
     import anemone_3d
     anemone_3d.draw(ax, T, T.S, DIAMETER_TOP / 2, info["F"], info["strand"], info["n_slits"], FRILL_WAVE, FRILL_WAVE_LENGTH,
-                    mid_frac=T.lower.L / T.S, cap_hole=CAP_HOLE_DIAMETER)
+                    mid_frac=T.lower.L / T.S, cap_hole=CAP_HOLE_DIAMETER, hourglass=info.get("method") == 1)
     fig.savefig(path, dpi=130, facecolor=BG)
     plt.close(fig)
 
