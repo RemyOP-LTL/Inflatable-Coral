@@ -15,7 +15,7 @@ edges and the frill) and along the straight seam. Tack the tabs together, then s
 Outputs, in the folder given with --out:
   <name>-detailed.pdf/.svg/.dxf   every line, tab numbers included, true size in mm
   <name>-outline.pdf/.svg/.dxf    only the cut lines for the laser (the frill outline plus one closed loop per gap between strands), true size in mm
-  <name>.png (flat pieces + 3D sketch) and <name>-outline.png   the two previews
+  <name>.png and <name>-outline.png (flat previews), <name>-3d.png (the inflated cone picture)
   <name>.txt      the numbers and the checks
 
 Run:  python3 spiral_cone.py --out some-folder
@@ -632,9 +632,8 @@ def draw_png_outline(path, cut, pieces):
 
 
 def draw_png(path, c, outline, cut, pieces, info):
-    fig = plt.figure(figsize=(16, 10))
-    gs = fig.add_gridspec(1, 2, width_ratios=[1.3, 1])
-    ax = fig.add_subplot(gs[0, 0])
+    fig = plt.figure(figsize=(10, 12))
+    ax = fig.add_subplot(111)
     place, ymax = layout(cut, pieces)
     col = {"cut": ("#d00000", "-", 1.1), "sew": ("#1d4ed8", "--", 0.9), "mark": ("#777", ":", 1.0)}
     for p in pieces:
@@ -654,32 +653,19 @@ def draw_png(path, c, outline, cut, pieces, info):
     sx = ax.secondary_xaxis("top", functions=(lambda v: v / 25.4, lambda v: v * 25.4)); sx.set_xlabel("inches")
     sy = ax.secondary_yaxis("right", functions=(lambda v: v / 25.4, lambda v: v * 25.4)); sy.set_ylabel("inches")
     ax.set_title("Flat pieces. Red = cut, blue dashed = sew, numbered squares = alignment tabs that go together", fontsize=10)
-    a3 = fig.add_subplot(gs[0, 1], projection="3d")
-    zz = np.linspace(c.zmin, c.L, 40); tt = np.linspace(0, 2 * math.pi, 60)
-    Z, T = np.meshgrid(zz, tt)
-    R = c.radius(Z)
-    a3.plot_surface(R * np.cos(T), R * np.sin(T), Z, color="#dbe7f5", alpha=0.45, linewidth=0, shade=True)
-    th, z = c.thg, c.zg
-    r = c.radius(z)
-    a3.plot(r * np.cos(th), r * np.sin(th), z, color="#1d4ed8", lw=1.2)
-    zs = np.array([c.Ls, c.L]); rs = c.radius(zs)
-    a3.plot(rs * math.cos(c.theta_end), rs * math.sin(c.theta_end), zs, color="#1d4ed8", lw=2)   # the straight seam
-    F = info["F"]
-    for k in range(0, len(th), 40):
-        if z[k] < FRILL_START or z[k] > c.z_f1:
-            continue
-        n = np.array([c.cosg * math.cos(th[k]), c.cosg * math.sin(th[k]), c.sing])
-        p0 = np.array([r[k] * math.cos(th[k]), r[k] * math.sin(th[k]), z[k]])
-        a3.plot(*zip(p0, p0 + F * n), color="#c4492f", lw=0.9)
-    a3.plot(c.r0 * np.cos(tt), c.r0 * np.sin(tt), 0 * tt, color="k", lw=1)
-    m = max(c.L, 2 * float(c.radius(c.zmin)) + 2 * F) / 2
-    a3.set_xlim(-m, m); a3.set_ylim(-m, m); a3.set_zlim(c.zmin, c.L)
-    a3.set_box_aspect((1, 1, (c.L - c.zmin) / (2 * m)))
-    a3.view_init(18, -60)
-    a3.set_title(f"Finished cone: {info['turns']:.1f} turns, then a straight seam for the last {info['straight']:.0f} mm.\n"
-                 f"Blue = seam, red lines = frill fringe ({F:.0f} mm out, from {FRILL_START:g} mm up to {FRILL_END_FROM_TIP:g} mm from the tip)", fontsize=9)
     fig.tight_layout()
     fig.savefig(path, dpi=100)
+    plt.close(fig)
+
+
+def draw_picture(path, c, info):
+    """The inflated 3D picture: white fabric on the dark background (same look as the sea anemone tool's picture)."""
+    import cone_3d
+    BG = "#1c1b1a"
+    fig = plt.figure(figsize=(8, 9.5), facecolor=BG)
+    ax = fig.add_axes([0, 0, 1, 1], facecolor=BG)
+    cone_3d.draw(ax, c, info["F"], info["strand"], info["n_slits"], FRILL_WAVE, FRILL_WAVE_LENGTH, c.s_f0, c.s_f1, bool(CUFF_IN_STRIP), CUFF_HEIGHT)
+    fig.savefig(path, dpi=130, facecolor=BG)
     plt.close(fig)
 
 
@@ -691,6 +677,7 @@ def make(out, name="spiral-cone"):
             fn(os.path.join(out, f"{name}-{view}.{ext}"), cut, pieces, detailed)
     draw_png_outline(os.path.join(out, name + "-outline.png"), cut, pieces)
     draw_png(os.path.join(out, name + ".png"), c, outline, cut, pieces, info)
+    draw_picture(os.path.join(out, name + "-3d.png"), c, info)
     text = report(info)
     with open(os.path.join(out, name + ".txt"), "w") as f:
         f.write(text + "\n")

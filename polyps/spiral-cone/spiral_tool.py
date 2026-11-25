@@ -228,7 +228,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200 if p else 404, json.dumps(p or {"error": "No such snapshot."}), "application/json")
         elif path.startswith("/out/"):
             parts = path.split("/")[2:]
-            ok = len(parts) == 2 and re.fullmatch(r"[0-9a-f]{12}", parts[0]) and re.fullmatch(r"spiral-cone(-detailed|-outline)?\.(png|svg|dxf|pdf|txt)", parts[1])
+            ok = len(parts) == 2 and re.fullmatch(r"[0-9a-f]{12}", parts[0]) and re.fullmatch(r"spiral-cone(-detailed|-outline)?\.(png|svg|dxf|pdf|txt)|spiral-cone-3d\.png", parts[1])
             f = os.path.join(OUT, *parts) if ok else None
             if f and os.path.isfile(f):
                 ext = f.rsplit(".", 1)[-1]
@@ -320,6 +320,7 @@ PAGE = r"""<!doctype html>
   .reset { background:none; border:none; color:var(--mute); text-decoration:underline; font-weight:400; width:auto; padding:0; margin:8px 0 0; }
   .sticky { position:sticky; top:0; z-index:5; }
   button:disabled { opacity:.4; cursor:default; }
+  .viewer3d { background:#1c1b1a; border-radius:8px; margin-top:10px; } .viewer3d img { display:block; max-width:520px; width:100%; margin:0 auto; background:none; }
   .saved { color:#2e8b57; font-weight:600; margin:6px 0; }
   .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-bottom:8px; } .seg button { width:auto; margin:0; border:0; border-radius:0; background:var(--bg); color:var(--ink); padding:6px 14px; cursor:pointer; font:inherit; } .seg button.on { background:var(--ink); color:var(--bg); }
   dialog { border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); padding:16px; max-width:380px; } dialog input[type=text] { width:100%; box-sizing:border-box; font:inherit; padding:6px; margin-top:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
@@ -347,6 +348,7 @@ PAGE = r"""<!doctype html>
       <div id="warnings"></div>
       <div class="seg"><button id="v-detailed" class="on" type="button">Detailed</button><button id="v-outline" type="button">Laser cut</button></div>
       <img id="pic" alt="">
+      <div id="pic3dbox"><div class="viewer3d"><img id="pic3d" alt=""></div><p class="derived">The finished cone, inflated: a picture, not a simulation. The spiral seam winds up the cone and the frill strands stand out from it, blown up by air from the base. No motion.</p></div>
       <p id="dlhelp" class="derived"></p>
       <p><a id="pdf" href="#">Save PDF</a> &nbsp; <a id="dxf" href="#">Save DXF</a> &nbsp; <a id="svg" href="#">Save SVG</a></p>
       <div id="dlmsg" class="derived"></div>
@@ -431,7 +433,8 @@ const HELP = {detailed: 'Exports every line shown (cut, sew, cuff line, numbered
               outline: 'Exports only the cut lines the laser follows (the frill is its outline plus one closed loop per gap between strands), true size in mm, no scales or grid.'};
 function showView() {
   $('v-detailed').classList.toggle('on', view === 'detailed'); $('v-outline').classList.toggle('on', view === 'outline');
-  if (curKey) $('pic').src = '/out/' + curKey + '/spiral-cone' + (view === 'outline' ? '-outline' : '') + '.png';
+  if (curKey) { $('pic').src = '/out/' + curKey + '/spiral-cone' + (view === 'outline' ? '-outline' : '') + '.png'; $('pic3d').src = '/out/' + curKey + '/spiral-cone-3d.png'; }
+  $('pic3dbox').style.display = view === 'detailed' ? '' : 'none';
   $('dlhelp').textContent = HELP[view];
 }
 $('v-detailed').onclick = () => { view = 'detailed'; showView(); };
