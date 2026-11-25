@@ -56,7 +56,8 @@ SEAM = 12.0                 # seam allowance on every edge
 TUBE_NOTCH_DEPTH = 6.0      # Remy: about 6 mm. V notches in the allowance of the curved (arc) edges of the two cone pieces: the ring seam between them and the top edge (0 = none). Their straight side edges and the open bottom edge have none
 TUBE_NOTCHES_BETWEEN_TABS = 3.0   # ASSUMED. How many notches go between each pair of neighbouring ring tabs along those arc edges
 FABRIC_WIDTH = 1470.0       # ASSUMED usable fabric width (about 58 in), for the fit check
-TAB_SIZE = 12.0             # alignment tabs are this-size squares (and the width of the frill tabs)
+TAB_SIZE = 12.0             # alignment tab width along the edge (and the width of the frill tabs)
+TAB_LENGTH = 12.0           # how far alignment tabs reach out from the seam allowance (12 = square tabs)
 LASER_BED_SHORT = 609.6     # laser bed, short side in mm (24 in)
 LASER_BED_LONG = 914.4      # laser bed, long side in mm (36 in)
 NEST_GAP = 3.0             # space between pieces on the laser sheet (Laser cut view and its exports). The Detailed view keeps its own readable layout
@@ -83,7 +84,7 @@ TABS_HALF_SEAM = 3.0              # hourglass method: number of alignment tabs a
 
 NAMES = ["HEIGHT", "DIAMETER_BOTTOM", "DIAMETER_TOP", "MID_HEIGHT", "MID_DIAMETER", "FRILL_STRIP_LENGTH", "FRILL_LENGTH", "FRINGE_WIDTH",
          "FRILL_WAVE", "FRILL_WAVE_LENGTH", "FRILL_BAND", "FRILL_NOTCH_DEPTH", "FRILL_NOTCHES_BETWEEN_TABS", "SEAM", "TUBE_NOTCH_DEPTH", "TUBE_NOTCHES_BETWEEN_TABS",
-         "FABRIC_WIDTH", "LASER_BED_SHORT", "LASER_BED_LONG", "NEST_GAP", "TAB_SIZE", "FRILL_TAB_LENGTH", "TABS_LOWER_SEAM", "TABS_MID_RING", "TABS_UPPER_SEAM", "TABS_TOP_RING",
+         "FABRIC_WIDTH", "LASER_BED_SHORT", "LASER_BED_LONG", "NEST_GAP", "TAB_SIZE", "TAB_LENGTH", "FRILL_TAB_LENGTH", "TABS_LOWER_SEAM", "TABS_MID_RING", "TABS_UPPER_SEAM", "TABS_TOP_RING",
          "CAP_HOLE_DIAMETER", "AIR_HOLE_DIAMETER", "AIR_HOLE_DISTANCE", "AIR_HOLE_COUNT", "GUIDE_TABS", "GUIDE_TAB_WIDTH", "GUIDE_RING_DIAMETER", "GUIDE_HOLE_DIAMETER", "GUIDE_TAB_EXTRA",
          "SACRIFICE_STRIP_WIDTH", "SACRIFICE_CONNECTOR_WIDTH", "SACRIFICE_CONNECTOR_LENGTH", "SLIT_SINGLE_LINE", "PATTERN_METHOD", "TABS_HALF_SEAM"]
 
@@ -255,9 +256,10 @@ class StackedTube:
         self.r = np.interp(self.z, [0, MID_HEIGHT, H], [rb, rm, rt])
 
 
-def tab_square(p, t, n, off, size):
-    """A square tab on the side n of the edge point p (tangent t), starting `off` from the edge."""
-    a, b = off - 5, off + size
+def tab_square(p, t, n, off, size, length=None):
+    """A tab on the side n of the edge point p (tangent t): `size` wide along the edge, reaching `length` (default: size) beyond
+    `off` from the edge."""
+    a, b = off - 5, off + (size if length is None else length)
     h = size / 2
     return Polygon([p + t * -h + n * a, p + t * h + n * a, p + t * h + n * b, p + t * -h + n * b])
 
@@ -370,7 +372,7 @@ def build():
             for side in (-1, 1):
                 p, t = F.side_frame(side, lam)
                 n = outward(p, t, outline)
-                squares.append(tab_square(p, t, n, SEAM, TAB_SIZE))
+                squares.append(tab_square(p, t, n, SEAM, TAB_SIZE, TAB_LENGTH))
                 labels.append((p + n * (SEAM + h), f"{prefix if side_prefix is None else side_prefix[0 if side < 0 else 1]}{i}"))
         for which, fr, lab in (("b", top_f, top_lab), ("a", bot_f, bot_lab)):
             if fr is None:
@@ -378,7 +380,7 @@ def build():
             for f, lt in zip(fr, lab):
                 p, t = F.ring_frame(which, f)
                 n = outward(p, t, outline)
-                squares.append(tab_square(p, t, n, SEAM, TAB_SIZE))
+                squares.append(tab_square(p, t, n, SEAM, TAB_SIZE, TAB_LENGTH))
                 labels.append((p + n * (SEAM + h), lt))
         guide_polys, guide_holes = [], []
         for which, f, lab in guides:                                       # long string-guide tabs: stem + round end with a hole on the tube's axis
@@ -477,7 +479,7 @@ def build():
         n = np.array([math.cos(a), math.sin(a)])
         p = np.array([ccx, ccy]) + n * R_top
         t = np.array([-n[1], n[0]])
-        csq.append(tab_square(p, t, n, SEAM, TAB_SIZE))
+        csq.append(tab_square(p, t, n, SEAM, TAB_SIZE, TAB_LENGTH))
         clab.append((p + n * (SEAM + h), lab))
     ccut = unary_union([Point(ccx, ccy).buffer(R_top + SEAM, 180)] + csq)
     cap = Piece("cap")
@@ -693,9 +695,9 @@ def report(info):
           (f"  Tube seam notches               {info['n_tube_notches']} V notches, {TUBE_NOTCHES_BETWEEN_TABS:g} between each pair of tabs, {min(TUBE_NOTCH_DEPTH, SEAM - 2.0):g} mm deep, "
            + ("on the top edge (none on the straight seams, the open bottom edge or the cap)" if hg else "on the ring seam between the cones and the top edge (none on the straight seams, the open bottom edge or the cap)"))
           if info["n_tube_notches"] else "  Tube seam notches               none",
-          (f"  Alignment tabs                  {TAB_SIZE:g} mm squares (frill tabs {TAB_SIZE:g} x {FRILL_TAB_LENGTH:g} mm, long enough to fold into loops for a hoop): {info['side_tabs'][0]} on each seam edge of a half "
+          (f"  Alignment tabs                  {TAB_SIZE:g} wide x {TAB_LENGTH:g} mm long (frill tabs {TAB_SIZE:g} x {FRILL_TAB_LENGTH:g} mm, long enough to fold into loops for a hoop): {info['side_tabs'][0]} on each seam edge of a half "
            f"(P1.. on the left edge, Q1.. on the right edge: sew a P edge to a Q edge of the other half), {info['ring_tabs']} capital letters round the top (tube top, cap, frill)") if hg else
-          (f"  Alignment tabs                  {TAB_SIZE:g} mm squares (frill tabs {TAB_SIZE:g} x {FRILL_TAB_LENGTH:g} mm, long enough to fold into loops for a hoop): {info['side_tabs'][0]} (L) and {info['side_tabs'][1]} (U) numbered pairs on the straight seams, "
+          (f"  Alignment tabs                  {TAB_SIZE:g} wide x {TAB_LENGTH:g} mm long (frill tabs {TAB_SIZE:g} x {FRILL_TAB_LENGTH:g} mm, long enough to fold into loops for a hoop): {info['side_tabs'][0]} (L) and {info['side_tabs'][1]} (U) numbered pairs on the straight seams, "
            f"{info['mid_tabs']} lowercase sets on the ring seam between the cones, {info['ring_tabs']} capital sets (top of the tube, cap, frill)"),
           f"  Pieces to cut                   {info['pieces']}",
           f"  Laser sheet                     nested pieces need {info['laser_extent'][0]:.0f} x {info['laser_extent'][1]:.0f} mm; bed {LASER_BED_SHORT:g} x {LASER_BED_LONG:g} mm: "

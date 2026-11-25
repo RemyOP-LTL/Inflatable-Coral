@@ -106,3 +106,6 @@ The profile is a smooth curve (quadratic) through the three diameters. A smooth 
 - (2026-11-18) Remy is sewing a real sample and will send a photo. Then rework the 3D picture / simulation of the inflated shape against it (dome height, corner roundness, how the tube and gathers really sit, how the frill really hangs). Useful to note with the photo: settings used (a saved snapshot name), fabric, whether it was inflated, and any measurements (height, widest diameter, dome height).
 - Remy runs `./install-app.sh` here, opens Sea Anemone, tries a test cut on paper or cheap fabric.
 - Settle notch depths and the frill band from the test sew.
+
+## Tab length (2026-11-25)
+New setting `TAB_LENGTH` (default 12 mm = square tabs): how far the alignment tabs reach out from the seam allowance. `TAB_SIZE` is now the tab width along the edge. Frill tabs keep their own `FRILL_TAB_LENGTH`.
